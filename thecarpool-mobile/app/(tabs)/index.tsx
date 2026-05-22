@@ -18,7 +18,6 @@ export default function RiderInterface() {
       {/* Light Mode Map Background */}
       <MapView 
         style={styles.map} 
-        provider={PROVIDER_GOOGLE}
         initialRegion={{ ...riderLocation, latitudeDelta: 0.05, longitudeDelta: 0.05 }}
       >
         <Marker coordinate={riderLocation} title="You" pinColor="#0f766e" />
@@ -27,8 +26,8 @@ export default function RiderInterface() {
       {/* Floating Header & "Start Earning" Upgrade Banner */}
       <View style={styles.topArea}>
         <View style={styles.header}>
-          <View style={styles.logoBox}><Text style={styles.logoText}>R</Text></View>
-          <Text style={styles.headerTitle}>RideShare <Text style={styles.tealText}>Global</Text></Text>
+          <View style={styles.logoBox}><Text style={styles.logoText}>T</Text></View>
+          <Text style={styles.headerTitle}>TheCar<Text style={styles.tealText}>Pool</Text></Text>
         </View>
 
         {!activeTrip && (
