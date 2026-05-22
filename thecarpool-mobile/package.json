@@ -17,11 +17,15 @@
     "lucide-react-native": "^1.16.0",
     "react": "18.2.0",
     "react-dom": "^18.2.0",
-    "react-native": "0.72.6",
-    "react-native-maps": "^1.7.0",
-    "react-native-web": "^0.21.2",
+    "react-native": "0.72.10",
+    "react-native-maps": "1.7.1",
+    "react-native-web": "~0.19.6",
     "socket.io-client": "^4.7.2",
-    "zustand": "^4.4.6"
+    "zustand": "^4.4.6",
+    "react-native-gesture-handler": "~2.12.0",
+    "react-native-safe-area-context": "4.6.3",
+    "react-native-screens": "~3.22.0",
+    "react-native-svg": "13.9.0"
   },
   "devDependencies": {
     "@babel/core": "^7.20.0",

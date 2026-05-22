@@ -20,7 +20,8 @@
       "buildNumber": "1.0.0",
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "TheCarPool requires location access to find nearby workplace carpools and match you with active co-workers on your route.",
-        "NSLocationAlwaysAndWhenInUseUsageDescription": "TheCarPool requires background location access to monitor route detour deviations and ensure real-time safety during active trips."
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "TheCarPool requires background location access to monitor route detour deviations and ensure real-time safety during active trips.",
+        "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
