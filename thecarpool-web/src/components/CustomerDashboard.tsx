@@ -2,8 +2,10 @@
 
 import React, { useState } from "react";
 import { Leaf, MapPin, Navigation, Map as MapIcon, CreditCard, Wallet, Settings, HelpCircle, Activity } from "lucide-react";
+import { useUser, UserButton } from "@clerk/nextjs";
 
 export default function CustomerDashboard() {
+  const { user } = useUser();
   const [activeTab, setActiveTab] = useState('dashboard');
 
   return (
@@ -20,6 +22,11 @@ export default function CustomerDashboard() {
           <NavItem icon={<Settings />} label="Settings" active={activeTab === 'settings'} onClick={() => setActiveTab('settings')} />
           <NavItem icon={<HelpCircle />} label="Help & Support" active={activeTab === 'help'} onClick={() => setActiveTab('help')} />
         </nav>
+
+        {/* User Profile / Sign Out */}
+        <div className="pt-4 border-t border-slate-200 dark:border-slate-700 mt-auto flex items-center justify-between">
+          <UserButton showName appearance={{ elements: { userButtonBox: "flex-row-reverse" } }} />
+        </div>
       </aside>
 
       {/* Main Content Area */}
@@ -127,11 +134,11 @@ export default function CustomerDashboard() {
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="block text-xs text-slate-500 uppercase font-bold mb-1">Full Name</label>
-                    <input type="text" defaultValue="Pooja Yadav" className="w-full p-3 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900" />
+                    <input type="text" key={user?.fullName || "name"} defaultValue={user?.fullName || "Pooja Yadav"} className="w-full p-3 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900" />
                   </div>
                   <div>
-                    <label className="block text-xs text-slate-500 uppercase font-bold mb-1">Mobile Number</label>
-                    <input type="text" defaultValue="+91 9876543210" className="w-full p-3 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900" />
+                    <label className="block text-xs text-slate-500 uppercase font-bold mb-1">Email Address</label>
+                    <input type="text" key={user?.primaryEmailAddress?.emailAddress || "email"} defaultValue={user?.primaryEmailAddress?.emailAddress || "pooja.yadav@example.com"} className="w-full p-3 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900" readOnly />
                   </div>
                 </div>
               </div>

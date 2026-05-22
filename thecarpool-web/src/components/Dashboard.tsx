@@ -12,7 +12,7 @@ export default function AdminDashboard() {
       {/* Enterprise Sidebar */}
       <aside className="w-72 bg-slate-900 border-r border-slate-800 p-6 flex flex-col">
         <div className="mb-10">
-          <h2 className="text-2xl font-black text-white tracking-tight">RideShare <span className="text-teal-500">Admin</span></h2>
+          <h2 className="text-2xl font-black text-white tracking-tight">TheCarPool <span className="text-teal-500">Admin</span></h2>
           <p className="text-xs text-slate-500 font-bold uppercase tracking-widest mt-1">Enterprise Console</p>
         </div>
         

@@ -1,43 +1,46 @@
 "use client";
 
-import React, { useState } from 'react';
+import React from 'react';
 import { useRouter } from 'next/navigation';
 import { ShieldCheck, Map, Smartphone, Globe, ArrowRight, Lock, CheckCircle, Users } from 'lucide-react';
-import AuthModal from '../components/AuthModal';
+import { useAuth, SignInButton, SignUpButton, UserButton } from "@clerk/nextjs";
 
-export default function RideShareGlobalLanding() {
+export default function TheCarPoolLanding() {
   const router = useRouter();
-  const [isAuthOpen, setAuthOpen] = useState(false);
-  const [pendingRoute, setPendingRoute] = useState('');
-
-  const handleLogin = (route: string) => {
-    setPendingRoute(route);
-    setAuthOpen(true);
-  };
-
-  const handleAuthSuccess = () => {
-    setAuthOpen(false);
-    router.push(pendingRoute);
-  };
+  const { isLoaded, isSignedIn } = useAuth();
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-900 font-sans text-slate-800 dark:text-slate-200 overflow-x-hidden">
-      <AuthModal isOpen={isAuthOpen} onClose={() => setAuthOpen(false)} onSuccess={handleAuthSuccess} />
       
       {/* Navigation Bar */}
       <nav className="fixed top-0 w-full bg-white/80 dark:bg-slate-900/80 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 z-40 px-8 py-4 flex justify-between items-center">
         <div className="flex items-center space-x-2">
-          <div className="w-8 h-8 bg-teal-700 rounded-lg flex items-center justify-center text-white font-bold text-xl">R</div>
-          <span className="text-xl font-black text-slate-800 dark:text-white tracking-tight">RideShare <span className="text-teal-700 dark:text-teal-500">Global</span></span>
+          <div className="w-8 h-8 bg-teal-700 rounded-lg flex items-center justify-center text-white font-bold text-xl">T</div>
+          <span className="text-xl font-black text-slate-800 dark:text-white tracking-tight">TheCar<span className="text-teal-700 dark:text-teal-500">Pool</span></span>
         </div>
         <div className="hidden md:flex space-x-8 font-semibold text-sm">
           <a href="#how-it-works" className="hover:text-teal-700 transition-colors">How it Works</a>
           <a href="#safety" className="hover:text-teal-700 transition-colors">Safety</a>
           <a href="#coverage" className="hover:text-teal-700 transition-colors">Global Coverage</a>
         </div>
-        <div className="flex space-x-4">
-          <button onClick={() => handleLogin('/customer')} className="font-bold text-teal-700 dark:text-teal-400 hover:text-teal-800 px-4 py-2">Log In</button>
-          <button onClick={() => handleLogin('/customer')} className="bg-teal-700 hover:bg-teal-800 text-white font-bold px-5 py-2 rounded-full shadow-lg shadow-teal-700/30 transition-transform hover:scale-105">Get the App</button>
+        <div className="flex space-x-4 items-center">
+          {!isLoaded ? (
+            <span className="text-sm text-slate-400">Loading...</span>
+          ) : !isSignedIn ? (
+            <>
+              <SignInButton mode="modal" forceRedirectUrl="/customer">
+                <button className="font-bold text-teal-700 dark:text-teal-400 hover:text-teal-800 px-4 py-2 cursor-pointer">Log In</button>
+              </SignInButton>
+              <SignInButton mode="modal" forceRedirectUrl="/customer">
+                <button className="bg-teal-700 hover:bg-teal-800 text-white font-bold px-5 py-2 rounded-full shadow-lg shadow-teal-700/30 transition-transform hover:scale-105 cursor-pointer">Get Started</button>
+              </SignInButton>
+            </>
+          ) : (
+            <>
+              <button onClick={() => router.push('/customer')} className="font-bold text-teal-700 dark:text-teal-400 hover:text-teal-800 px-4 py-2 cursor-pointer">Dashboard</button>
+              <UserButton />
+            </>
+          )}
         </div>
       </nav>
 
@@ -54,12 +57,19 @@ export default function RideShareGlobalLanding() {
             The world's most trusted carpool network. Split costs, reduce your carbon footprint, and travel securely with strict government ID-verified peers.
           </p>
           <div className="flex flex-col sm:flex-row gap-4 pt-4">
-            <button onClick={() => handleLogin('/customer')} className="bg-slate-900 dark:bg-white text-white dark:text-slate-900 font-bold px-8 py-4 rounded-xl flex items-center justify-center gap-2 hover:opacity-90 transition-opacity">
-              <Smartphone size={20} /> Download for iOS
-            </button>
-            <button onClick={() => handleLogin('/customer')} className="bg-slate-200 dark:bg-slate-800 text-slate-800 dark:text-white font-bold px-8 py-4 rounded-xl flex items-center justify-center gap-2 hover:bg-slate-300 dark:hover:bg-slate-700 transition-colors">
-              Download for Android
-            </button>
+            {!isLoaded ? (
+              <span className="text-sm text-slate-400">Loading...</span>
+            ) : !isSignedIn ? (
+              <SignUpButton mode="modal" forceRedirectUrl="/customer">
+                <button className="bg-slate-900 dark:bg-white text-white dark:text-slate-900 font-bold px-8 py-4 rounded-xl flex items-center justify-center gap-2 hover:opacity-90 transition-opacity cursor-pointer">
+                  <Smartphone size={20} /> Sign Up Now
+                </button>
+              </SignUpButton>
+            ) : (
+              <button onClick={() => router.push('/customer')} className="bg-slate-900 dark:bg-white text-white dark:text-slate-900 font-bold px-8 py-4 rounded-xl flex items-center justify-center gap-2 hover:opacity-90 transition-opacity cursor-pointer">
+                Go to Dashboard <ArrowRight size={20} />
+              </button>
+            )}
           </div>
         </div>
         
@@ -85,7 +95,7 @@ export default function RideShareGlobalLanding() {
       <section id="how-it-works" className="py-24 bg-white dark:bg-slate-900 border-t border-slate-100 dark:border-slate-800">
         <div className="max-w-7xl mx-auto px-8">
           <div className="text-center mb-16">
-            <h2 className="text-3xl lg:text-4xl font-black mb-4">How RideShare Global Works</h2>
+            <h2 className="text-3xl lg:text-4xl font-black mb-4">How TheCarPool Works</h2>
             <p className="text-slate-500 max-w-2xl mx-auto">Seamless matching backed by enterprise-grade technology.</p>
           </div>
           
@@ -119,7 +129,7 @@ export default function RideShareGlobalLanding() {
           <div>
             <h2 className="text-3xl lg:text-5xl font-black mb-6">Your Safety is our <span className="text-teal-400">Core Architecture.</span></h2>
             <p className="text-slate-400 text-lg mb-8 leading-relaxed">
-              We do not compromise on security. From mandatory liveness checks to continuous route-deviation monitoring, RideShare Global is engineered to protect you.
+              We do not compromise on security. From mandatory liveness checks to continuous route-deviation monitoring, TheCarPool is engineered to protect you.
             </p>
             <ul className="space-y-6">
               <li className="flex items-start gap-4">
@@ -184,8 +194,8 @@ export default function RideShareGlobalLanding() {
       <footer className="bg-slate-950 py-12 px-8 text-slate-400 text-sm">
         <div className="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-center gap-6 border-b border-slate-800 pb-8 mb-8">
           <div className="flex items-center space-x-2">
-            <div className="w-6 h-6 bg-teal-700 rounded items-center justify-center text-white font-bold text-xs flex">R</div>
-            <span className="font-black text-white tracking-tight">RideShare <span className="text-teal-500">Global</span></span>
+            <div className="w-6 h-6 bg-teal-700 rounded items-center justify-center text-white font-bold text-xs flex">T</div>
+            <span className="font-black text-white tracking-tight">TheCar<span className="text-teal-500">Pool</span></span>
           </div>
           <div className="flex space-x-6 font-bold">
             <a href="/partner" className="hover:text-white transition-colors">Fleet Partners Portal</a>
@@ -193,7 +203,7 @@ export default function RideShareGlobalLanding() {
           </div>
         </div>
         <div className="max-w-7xl mx-auto flex justify-between items-center">
-          <p>© 2026 RideShare Global Inc. All rights reserved.</p>
+          <p>© 2026 TheCarPool Inc. All rights reserved.</p>
           <div className="flex space-x-4">
             <span>Privacy</span>
             <span>Terms</span>
