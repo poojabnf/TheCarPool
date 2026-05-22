@@ -1,0 +1,25 @@
+{
+  "name": "thecarpool-backend",
+  "version": "1.0.0",
+  "description": "Main API gateway scheduler and match validator for TheCarPool carpooling",
+  "main": "dist/server.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/server.js",
+    "dev": "nodemon --watch src -e ts --exec ts-node src/server.ts"
+  },
+  "dependencies": {
+    "dotenv": "^16.3.1",
+    "fastify": "^4.24.3",
+    "pg": "^8.11.3",
+    "redis": "^4.6.10",
+    "socket.io": "^4.7.2"
+  },
+  "devDependencies": {
+    "@types/node": "^20.8.10",
+    "@types/pg": "^8.10.7",
+    "nodemon": "^3.0.1",
+    "ts-node": "^10.9.1",
+    "typescript": "^5.2.2"
+  }
+}

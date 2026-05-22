@@ -1,0 +1,3873 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>TheCarPool — Product Roadmap Dashboard</title>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700;800&family=Inter:wght@300;400;500;600;700&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet"/>
+<style>
+  :root {
+    --bg-main: #060913;
+    --bg-card: #0e1322;
+    --bg-card-hover: #151d30;
+    --border-color: rgba(255, 255, 255, 0.07);
+    --border-hover: rgba(255, 255, 255, 0.15);
+    
+    --text-primary: #f3f4f6;
+    --text-secondary: #9ca3af;
+    --text-muted: #6b7280;
+
+    --primary: #ff6b35; /* TheCarPool Orange */
+    --primary-glow: rgba(255, 107, 53, 0.15);
+    --primary-border: rgba(255, 107, 53, 0.3);
+
+    --success: #10b981; /* Emerald Green */
+    --success-glow: rgba(16, 185, 129, 0.15);
+    --success-border: rgba(16, 185, 129, 0.3);
+
+    --ai-indigo: #6366f1; /* AI Indigo */
+    --ai-glow: rgba(99, 102, 241, 0.15);
+    --ai-border: rgba(99, 102, 241, 0.3);
+
+    --warning: #f59e0b; /* Amber */
+    --warning-glow: rgba(245, 158, 11, 0.15);
+    --warning-border: rgba(245, 158, 11, 0.3);
+
+    --info: #3b82f6; /* Info Blue */
+    --info-glow: rgba(59, 130, 246, 0.15);
+    --info-border: rgba(59, 130, 246, 0.3);
+
+    --teal: #0d9488; /* Teal */
+    --teal-glow: rgba(13, 148, 136, 0.15);
+    --teal-border: rgba(13, 148, 136, 0.3);
+
+    --danger: #ef4444;
+    --danger-glow: rgba(239, 68, 68, 0.15);
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  
+  /* Custom scrollbar */
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
+  ::-webkit-scrollbar-track { background: var(--bg-main); }
+  ::-webkit-scrollbar-thumb { background: #1f293d; border-radius: 4px; }
+  ::-webkit-scrollbar-thumb:hover { background: #2d3748; }
+
+  body {
+    font-family: 'Inter', sans-serif;
+    background: var(--bg-main);
+    color: var(--text-primary);
+    line-height: 1.6;
+    overflow-x: hidden;
+  }
+
+  h1, h2, h3, h4, .font-title {
+    font-family: 'Sora', sans-serif;
+  }
+
+  /* HERO */
+  .hero {
+    background: radial-gradient(circle at 80% 20%, rgba(255, 107, 53, 0.08) 0%, transparent 50%),
+                radial-gradient(circle at 10% 80%, rgba(99, 102, 241, 0.08) 0%, transparent 50%),
+                #080c15;
+    border-bottom: 1px solid var(--border-color);
+    padding: 70px 48px 60px;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .hero::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: linear-gradient(180deg, rgba(8, 12, 21, 0) 60%, var(--bg-main) 100%);
+    pointer-events: none;
+  }
+
+  .hero-badge {
+    display: inline-flex; align-items: center; gap: 8px;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 100px;
+    padding: 6px 16px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--primary);
+    margin-bottom: 24px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+  }
+
+  .hero-badge .dot {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: var(--primary);
+    box-shadow: 0 0 10px var(--primary);
+    animation: pulse 1.8s infinite;
+  }
+
+  @keyframes pulse {
+    0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(255, 107, 53, 0.7); }
+    70% { transform: scale(1); box-shadow: 0 0 0 6px rgba(255, 107, 53, 0); }
+    100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(255, 107, 53, 0); }
+  }
+
+  .hero h1 {
+    font-size: 56px;
+    font-weight: 800;
+    line-height: 1.1;
+    letter-spacing: -0.03em;
+    margin-bottom: 14px;
+    background: linear-gradient(135deg, #fff 30%, #a5b4fc 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+
+  .hero h1 span {
+    background: linear-gradient(135deg, var(--primary) 30%, #ff9e7d 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+
+  .hero-sub {
+    font-size: 18px;
+    font-weight: 350;
+    color: var(--text-secondary);
+    max-width: 680px;
+    margin-bottom: 40px;
+  }
+
+  .hero-stats {
+    display: flex; gap: 48px; flex-wrap: wrap;
+    position: relative;
+    z-index: 2;
+  }
+
+  .stat {
+    background: rgba(255, 255, 255, 0.01);
+    border: 1px solid rgba(255, 255, 255, 0.04);
+    border-radius: 12px;
+    padding: 14px 20px;
+    min-width: 140px;
+  }
+
+  .stat-num {
+    font-size: 32px; font-weight: 800;
+    color: #fff;
+    letter-spacing: -0.02em;
+    display: flex;
+    align-items: baseline;
+    gap: 2px;
+  }
+
+  .stat-num span { color: var(--primary); }
+  .stat-label { font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.08em; margin-top: 4px; font-weight: 600; }
+
+  /* TABS BAR */
+  .tabs-wrap {
+    background: rgba(8, 12, 21, 0.75);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border-bottom: 1px solid var(--border-color);
+    position: sticky; top: 0; z-index: 100;
+  }
+
+  .tabs {
+    display: flex;
+    padding: 0 48px;
+    gap: 8px;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .tabs::-webkit-scrollbar { display: none; }
+
+  .tab {
+    padding: 18px 24px;
+    font-size: 13.5px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    cursor: pointer;
+    border: none;
+    border-bottom: 3px solid transparent;
+    white-space: nowrap;
+    transition: all 0.2s ease;
+    background: none;
+    font-family: 'Sora', sans-serif;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .tab:hover {
+    color: #fff;
+    background: rgba(255, 255, 255, 0.02);
+  }
+
+  .tab.active {
+    color: var(--primary);
+    border-bottom-color: var(--primary);
+    text-shadow: 0 0 10px rgba(255, 107, 53, 0.2);
+  }
+
+  /* SECTIONS CONTAINER */
+  .section {
+    display: none;
+    padding: 48px;
+    animation: fadeIn 0.4s ease-out;
+  }
+
+  .section.active { display: block; }
+
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .section-title {
+    font-size: 28px; font-weight: 700;
+    letter-spacing: -0.02em;
+    margin-bottom: 8px;
+    color: #fff;
+  }
+
+  .section-desc { font-size: 14.5px; color: var(--text-secondary); margin-bottom: 36px; max-width: 800px; }
+
+  /* SEARCH & FILTERS */
+  .filter-bar {
+    display: flex;
+    gap: 16px;
+    margin-bottom: 28px;
+    flex-wrap: wrap;
+    align-items: center;
+    background: rgba(255,255,255,0.02);
+    border: 1px solid var(--border-color);
+    padding: 16px;
+    border-radius: 12px;
+  }
+
+  .search-input-wrap {
+    position: relative;
+    flex: 1;
+    min-width: 250px;
+  }
+
+  .search-input-wrap input {
+    width: 100%;
+    background: #0b0f19;
+    border: 1px solid var(--border-color);
+    padding: 10px 16px 10px 40px;
+    border-radius: 8px;
+    color: #fff;
+    font-family: inherit;
+    font-size: 13px;
+    transition: all 0.2s;
+  }
+
+  .search-input-wrap input:focus {
+    outline: none;
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px rgba(255, 107, 53, 0.15);
+  }
+
+  .search-input-wrap svg {
+    position: absolute;
+    left: 14px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 16px;
+    height: 16px;
+    color: var(--text-muted);
+  }
+
+  .filter-btns {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  .filter-btn {
+    background: rgba(255,255,255,0.03);
+    border: 1px solid var(--border-color);
+    color: var(--text-secondary);
+    padding: 8px 16px;
+    border-radius: 8px;
+    font-size: 12.5px;
+    cursor: pointer;
+    font-weight: 550;
+    transition: all 0.2s;
+  }
+
+  .filter-btn:hover {
+    background: rgba(255,255,255,0.07);
+    color: #fff;
+    border-color: var(--border-hover);
+  }
+
+  .filter-btn.active {
+    background: var(--primary-glow);
+    border-color: var(--primary);
+    color: var(--primary);
+  }
+
+  .filter-select {
+    background: #0b0f19;
+    border: 1px solid var(--border-color);
+    color: var(--text-secondary);
+    padding: 8px 16px;
+    border-radius: 8px;
+    font-size: 12.5px;
+    cursor: pointer;
+    font-family: inherit;
+    font-weight: 550;
+    transition: all 0.2s;
+  }
+
+  .filter-select:focus {
+    outline: none;
+    border-color: var(--primary);
+  }
+
+  /* ROADMAP PHASES TAB */
+  .phases-list { display: flex; flex-direction: column; gap: 20px; }
+  
+  .phase-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: 16px;
+    overflow: hidden;
+    transition: all 0.3s ease;
+  }
+
+  .phase-card.active-phase {
+    border-color: var(--primary-border);
+    box-shadow: 0 0 25px rgba(255, 107, 53, 0.05);
+  }
+
+  .phase-card-header {
+    display: flex; align-items: center; gap: 20px;
+    padding: 24px 28px;
+    cursor: pointer;
+    user-select: none;
+    transition: background 0.2s;
+  }
+
+  .phase-card-header:hover { background: rgba(255, 255, 255, 0.02); }
+
+  .phase-badge-num {
+    width: 42px; height: 42px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 15px; font-weight: 800;
+    flex-shrink: 0;
+  }
+
+  .phase-card-meta { flex: 1; }
+  .phase-card-name { font-size: 18px; font-weight: 700; color: #fff; }
+  .phase-card-timeline { font-size: 12px; color: var(--text-secondary); margin-top: 3px; font-family: 'Fira Code', monospace; }
+
+  .phase-badge-status {
+    font-size: 10px; font-weight: 700;
+    padding: 6px 14px; border-radius: 100px;
+    text-transform: uppercase; letter-spacing: 0.08em;
+    border: 1px solid transparent;
+  }
+
+  .phase-chevron {
+    font-size: 14px; color: var(--text-muted); transition: transform 0.3s; margin-left: 12px;
+  }
+
+  .phase-card.open .phase-chevron { transform: rotate(180deg); }
+  
+  .phase-card-body {
+    display: none;
+    padding: 0 28px 28px;
+    border-top: 1px solid rgba(255, 255, 255, 0.03);
+    background: rgba(0, 0, 0, 0.15);
+  }
+
+  .phase-card.open .phase-card-body { display: block; }
+  
+  .phase-card-intro {
+    font-size: 13.5px;
+    color: var(--text-secondary);
+    margin: 20px 0;
+    line-height: 1.6;
+    padding-left: 8px;
+    border-left: 2px solid var(--border-color);
+  }
+
+  .deliverables-grid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 16px;
+  }
+
+  .deliv-card {
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    padding: 18px;
+    background: #0b0f19;
+    transition: all 0.2s;
+  }
+
+  .deliv-card:hover {
+    border-color: var(--border-hover);
+    transform: translateY(-2px);
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.2);
+  }
+
+  .deliv-card-header {
+    display: flex; justify-content: space-between; align-items: flex-start;
+    margin-bottom: 12px;
+  }
+
+  .deliv-card-title { font-weight: 700; font-size: 14px; color: #fff; }
+  
+  .deliv-card-tag {
+    font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em;
+    padding: 3px 8px; border-radius: 4px;
+    border: 1px solid transparent;
+  }
+
+  .deliv-card-desc { font-size: 12px; color: var(--text-secondary); line-height: 1.5; }
+
+  /* FEATURE SET TAB */
+  .features-container {
+    display: flex;
+    flex-direction: column;
+    gap: 40px;
+  }
+
+  .features-category {
+    background: rgba(255, 255, 255, 0.01);
+    border: 1px solid var(--border-color);
+    padding: 28px;
+    border-radius: 16px;
+  }
+
+  .features-category-header {
+    font-size: 15px; font-weight: 700; letter-spacing: 0.08em;
+    text-transform: uppercase; color: var(--text-secondary);
+    margin-bottom: 20px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--border-color);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .features-category-header span {
+    font-size: 18px;
+  }
+
+  .features-grid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 16px;
+  }
+
+  .feature-card {
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    padding: 20px;
+    background: var(--bg-card);
+    transition: all 0.25s ease;
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+  }
+
+  .feature-card:hover {
+    border-color: var(--border-hover);
+    transform: translateY(-3px);
+    box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+  }
+
+  .feature-icon-box {
+    width: 40px; height: 40px; border-radius: 10px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 20px; margin-bottom: 16px;
+    border: 1px solid transparent;
+  }
+
+  .feature-title { font-size: 14.5px; font-weight: 700; margin-bottom: 8px; color: #fff; }
+  .feature-desc { font-size: 12px; color: var(--text-secondary); line-height: 1.55; flex-grow: 1; }
+
+  .feature-tags {
+    display: flex;
+    gap: 6px;
+    margin-top: 16px;
+    flex-wrap: wrap;
+  }
+
+  .feature-tag-badge {
+    font-size: 9px; font-weight: 750; text-transform: uppercase; letter-spacing: 0.06em;
+    padding: 3px 8px; border-radius: 4px;
+    border: 1px solid transparent;
+  }
+
+  /* AI DEEP DIVE & SIMULATOR */
+  .ai-deep-grid {
+    display: grid;
+    grid-template-columns: 1.2fr 1fr;
+    gap: 28px;
+    margin-bottom: 40px;
+  }
+
+  @media (max-width: 1024px) {
+    .ai-deep-grid { grid-template-columns: 1fr; }
+  }
+
+  .ai-info-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: 20px;
+    padding: 32px;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .ai-info-card::before {
+    content: '';
+    position: absolute;
+    top: -40px; right: -40px;
+    width: 180px; height: 180px;
+    background: radial-gradient(circle, var(--ai-indigo) 0%, transparent 70%);
+    opacity: 0.15;
+    pointer-events: none;
+  }
+
+  .ai-info-header {
+    display: flex; align-items: center; gap: 16px;
+    margin-bottom: 20px;
+  }
+
+  .ai-info-icon {
+    font-size: 32px;
+    width: 56px; height: 56px;
+    background: var(--ai-glow);
+    border: 1px solid var(--ai-border);
+    border-radius: 12px;
+    display: flex; align-items: center; justify-content: center;
+  }
+
+  .ai-info-title-box h3 { font-size: 20px; color: #fff; font-weight: 700; }
+  .ai-info-title-box p { font-size: 12px; color: var(--ai-indigo); font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; margin-top: 2px; }
+
+  .ai-info-desc {
+    font-size: 13.5px;
+    color: var(--text-secondary);
+    line-height: 1.6;
+    margin-bottom: 24px;
+  }
+
+  .ai-steps-list {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+
+  .ai-step-item {
+    display: flex;
+    gap: 14px;
+    align-items: flex-start;
+    padding: 12px 16px;
+    background: rgba(255,255,255,0.01);
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+  }
+
+  .ai-step-num-badge {
+    width: 22px; height: 22px;
+    border-radius: 50%;
+    background: var(--ai-indigo);
+    color: #fff;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 11px; font-weight: 700;
+    flex-shrink: 0;
+    box-shadow: 0 0 8px rgba(99, 102, 241, 0.4);
+  }
+
+  .ai-step-text {
+    font-size: 12.5px;
+    color: var(--text-secondary);
+    line-height: 1.5;
+  }
+
+  .ai-step-text strong {
+    color: #fff;
+    display: block;
+    margin-bottom: 2px;
+  }
+
+  /* CALL SIMULATOR PANEL */
+  .simulator-panel {
+    background: #090d16;
+    border: 1px solid var(--border-color);
+    border-radius: 20px;
+    padding: 24px;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 15px 30px rgba(0,0,0,0.5);
+    height: 520px;
+  }
+
+  .sim-header {
+    display: flex; justify-content: space-between; align-items: center;
+    padding-bottom: 14px;
+    border-bottom: 1px solid var(--border-color);
+    margin-bottom: 16px;
+  }
+
+  .sim-title-group { display: flex; align-items: center; gap: 10px; }
+  .sim-status-dot { width: 8px; height: 8px; border-radius: 50%; background: #6b7280; }
+  .sim-status-dot.active { background: var(--success); box-shadow: 0 0 8px var(--success); animation: pulseGreen 1.5s infinite; }
+  
+  @keyframes pulseGreen {
+    0% { transform: scale(0.9); opacity: 0.6; }
+    50% { transform: scale(1.1); opacity: 1; }
+    100% { transform: scale(0.9); opacity: 0.6; }
+  }
+
+  .sim-title { font-size: 13px; font-weight: 700; color: #fff; text-transform: uppercase; letter-spacing: 0.08em; }
+  .sim-mode-select {
+    display: flex;
+    background: rgba(255,255,255,0.03);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 3px;
+  }
+
+  .sim-mode-btn {
+    background: none; border: none;
+    color: var(--text-secondary);
+    padding: 6px 12px;
+    border-radius: 6px;
+    font-size: 11.5px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+
+  .sim-mode-btn.active {
+    background: var(--ai-indigo);
+    color: #fff;
+  }
+
+  .sim-display {
+    flex: 1;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 8px;
+    background: rgba(0,0,0,0.2);
+    border-radius: 12px;
+    border: 1px solid rgba(255,255,255,0.02);
+    margin-bottom: 16px;
+  }
+
+  .sim-bubble {
+    max-width: 80%;
+    padding: 10px 14px;
+    border-radius: 12px;
+    font-size: 12.5px;
+    line-height: 1.45;
+    animation: bubblePop 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  }
+
+  @keyframes bubblePop {
+    from { opacity: 0; transform: scale(0.9) translateY(5px); }
+    to { opacity: 1; transform: scale(1) translateY(0); }
+  }
+
+  .sim-bubble.ai {
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    color: #fff;
+    align-self: flex-start;
+    border-bottom-left-radius: 2px;
+  }
+
+  .sim-bubble.user {
+    background: var(--ai-indigo);
+    color: #fff;
+    align-self: flex-end;
+    border-bottom-right-radius: 2px;
+  }
+
+  .sim-bubble.system {
+    background: rgba(255,255,255,0.02);
+    border: 1px solid rgba(255,255,255,0.04);
+    color: var(--text-secondary);
+    font-family: 'Fira Code', monospace;
+    font-size: 11px;
+    align-self: center;
+    max-width: 95%;
+  }
+
+  /* Audio wave animation */
+  .waveform-container {
+    display: none;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    height: 36px;
+    margin: 10px 0;
+  }
+
+  .waveform-bar {
+    width: 3px;
+    height: 6px;
+    background: var(--ai-indigo);
+    border-radius: 3px;
+    animation: wave 1.2s ease-in-out infinite alternate;
+  }
+
+  .waveform-bar:nth-child(2) { animation-delay: 0.1s; }
+  .waveform-bar:nth-child(3) { animation-delay: 0.2s; }
+  .waveform-bar:nth-child(4) { animation-delay: 0.3s; }
+  .waveform-bar:nth-child(5) { animation-delay: 0.4s; }
+  .waveform-bar:nth-child(6) { animation-delay: 0.5s; }
+  .waveform-bar:nth-child(7) { animation-delay: 0.6s; }
+
+  @keyframes wave {
+    0% { height: 6px; }
+    100% { height: 32px; }
+  }
+
+  .sim-controls {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .sim-input-suggestions {
+    display: flex;
+    gap: 8px;
+    overflow-x: auto;
+    scrollbar-width: none;
+    padding-bottom: 4px;
+  }
+
+  .sim-input-suggestions::-webkit-scrollbar { display: none; }
+
+  .sim-suggestion-chip {
+    background: rgba(99, 102, 241, 0.08);
+    border: 1px solid rgba(99, 102, 241, 0.2);
+    color: var(--ai-indigo);
+    padding: 8px 14px;
+    border-radius: 100px;
+    font-size: 11.5px;
+    font-weight: 600;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: all 0.2s;
+  }
+
+  .sim-suggestion-chip:hover {
+    background: rgba(99, 102, 241, 0.15);
+    border-color: var(--ai-indigo);
+    color: #fff;
+  }
+
+  .sim-action-btn {
+    background: var(--primary);
+    color: #fff;
+    border: none;
+    padding: 12px;
+    border-radius: 8px;
+    font-weight: 700;
+    font-size: 13px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    transition: all 0.2s;
+    font-family: 'Sora', sans-serif;
+  }
+
+  .sim-action-btn:hover {
+    filter: brightness(1.1);
+    box-shadow: 0 4px 14px rgba(255, 107, 53, 0.3);
+  }
+
+  .sim-action-btn.hangup {
+    background: var(--danger);
+  }
+
+  /* ONBOARDING FLOW TAB */
+  .onboarding-grid {
+    display: grid;
+    grid-template-columns: 1.1fr 1fr;
+    gap: 36px;
+    align-items: start;
+  }
+
+  @media (max-width: 900px) {
+    .onboarding-grid { grid-template-columns: 1fr; }
+  }
+
+  .flow-selector-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 28px;
+  }
+
+  .ob-flow-type {
+    background: rgba(255,255,255,0.01);
+    border: 1px solid var(--border-color);
+    padding: 24px;
+    border-radius: 16px;
+  }
+
+  .ob-flow-type-title {
+    font-size: 15px; font-weight: 700; letter-spacing: 0.08em;
+    text-transform: uppercase; color: var(--text-secondary);
+    margin-bottom: 16px;
+    display: flex; align-items: center; gap: 8px;
+  }
+
+  .ob-steps-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .ob-step-btn {
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    padding: 14px 18px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    cursor: pointer;
+    transition: all 0.2s;
+    text-align: left;
+    width: 100%;
+    color: var(--text-secondary);
+  }
+
+  .ob-step-btn:hover {
+    border-color: var(--border-hover);
+    color: #fff;
+    background: rgba(255,255,255,0.02);
+  }
+
+  .ob-step-btn.active {
+    background: var(--primary-glow);
+    border-color: var(--primary);
+    color: #fff;
+    box-shadow: 0 4px 12px rgba(255, 107, 53, 0.05);
+  }
+
+  .ob-step-btn-info {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .ob-step-btn-num {
+    width: 24px; height: 24px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.05);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 11px; font-weight: 700;
+  }
+
+  .ob-step-btn.active .ob-step-btn-num {
+    background: var(--primary);
+    color: #fff;
+  }
+
+  .ob-step-btn-text strong {
+    display: block;
+    font-size: 13.5px;
+    margin-bottom: 2px;
+  }
+
+  .ob-step-btn-text span {
+    font-size: 11px;
+    color: var(--text-muted);
+  }
+
+  .ob-step-btn.active .ob-step-btn-text span {
+    color: rgba(255,255,255,0.7);
+  }
+
+  .ob-step-chevron {
+    font-size: 12px;
+    color: var(--text-muted);
+    transition: transform 0.2s;
+  }
+
+  .ob-step-btn.active .ob-step-chevron {
+    transform: translateX(4px);
+    color: var(--primary);
+  }
+
+  /* PHONE MOCKUP UI */
+  .phone-wrapper {
+    display: flex;
+    justify-content: center;
+    position: sticky;
+    top: 90px;
+  }
+
+  .phone-container {
+    width: 310px;
+    height: 600px;
+    border: 10px solid #242936;
+    border-radius: 40px;
+    background: #0d1117;
+    position: relative;
+    box-shadow: 0 25px 50px -12px rgba(0,0,0,0.6), 0 0 50px rgba(99,102,241,0.1);
+    overflow: hidden;
+  }
+
+  .phone-notch {
+    width: 110px;
+    height: 18px;
+    background: #242936;
+    border-bottom-left-radius: 12px;
+    border-bottom-right-radius: 12px;
+    position: absolute;
+    top: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 10;
+  }
+
+  .phone-screen {
+    width: 100%;
+    height: 100%;
+    padding: 24px 16px 16px;
+    display: flex;
+    flex-direction: column;
+    color: #f3f4f6;
+    background: #07090e;
+    font-size: 12.5px;
+    position: relative;
+    overflow-y: auto;
+  }
+
+  .phone-screen::-webkit-scrollbar { display: none; }
+
+  .phone-status-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 10px;
+    color: var(--text-muted);
+    margin-bottom: 12px;
+    font-weight: 600;
+  }
+
+  .phone-app-content {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    animation: screenFade 0.25s ease-out;
+  }
+
+  @keyframes screenFade {
+    from { opacity: 0; transform: scale(0.98); }
+    to { opacity: 1; transform: scale(1); }
+  }
+
+  /* Specific Mockup Screens styling */
+  .mock-header {
+    font-family: 'Sora', sans-serif;
+    font-size: 15px;
+    font-weight: 750;
+    color: #fff;
+    margin-bottom: 16px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .mock-card {
+    background: rgba(255,255,255,0.03);
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    padding: 12px;
+    margin-bottom: 12px;
+  }
+
+  .mock-input {
+    width: 100%;
+    background: rgba(0,0,0,0.3);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    padding: 8px 12px;
+    color: #fff;
+    font-size: 12px;
+    margin-bottom: 10px;
+  }
+
+  .mock-input:focus {
+    outline: none;
+    border-color: var(--primary);
+  }
+
+  .mock-btn {
+    width: 100%;
+    background: var(--primary);
+    color: #fff;
+    border: none;
+    padding: 10px;
+    border-radius: 6px;
+    font-weight: 700;
+    font-size: 12px;
+    cursor: pointer;
+    transition: all 0.2s;
+    text-align: center;
+  }
+
+  .mock-btn:hover {
+    filter: brightness(1.1);
+  }
+
+  /* OCR Laser scan effect */
+  .ocr-scan-box {
+    position: relative;
+    overflow: hidden;
+    height: 100px;
+    border: 1.5px dashed var(--border-color);
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(255,255,255,0.01);
+    margin-bottom: 12px;
+    cursor: pointer;
+  }
+
+  .ocr-scan-box.scanning::after {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 3px;
+    background: var(--success);
+    box-shadow: 0 0 10px var(--success), 0 0 20px var(--success);
+    animation: scanLaser 1.8s ease-in-out infinite;
+  }
+
+  @keyframes scanLaser {
+    0% { top: 0%; }
+    50% { top: 100%; }
+    100% { top: 0%; }
+  }
+
+  /* Facial match radar effect */
+  .selfie-circle {
+    width: 90px; height: 90px;
+    border-radius: 50%;
+    border: 2px solid var(--border-color);
+    margin: 10px auto 16px;
+    position: relative;
+    overflow: hidden;
+    background: rgba(255,255,255,0.02);
+  }
+
+  .selfie-circle.scanning::after {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: radial-gradient(circle, transparent 40%, rgba(16, 185, 129, 0.2) 100%);
+    border: 2.5px solid var(--success);
+    border-radius: 50%;
+    box-shadow: 0 0 15px var(--success);
+    animation: pulseCircle 1.6s infinite alternate;
+  }
+
+  @keyframes pulseCircle {
+    0% { transform: scale(0.96); opacity: 0.4; }
+    100% { transform: scale(1.02); opacity: 1; box-shadow: 0 0 25px var(--success); }
+  }
+
+  /* Mini SVG Vector Map */
+  .mini-map {
+    width: 100%;
+    height: 130px;
+    background: #0f1422;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    position: relative;
+    overflow: hidden;
+    margin-bottom: 12px;
+  }
+
+  .mini-map-path {
+    stroke: var(--primary);
+    stroke-dasharray: 6;
+    animation: routeDash 1.2s linear infinite;
+  }
+
+  @keyframes routeDash {
+    to { stroke-dashoffset: -12; }
+  }
+
+  .mini-map-car {
+    animation: moveCar 8s linear infinite;
+  }
+
+  @keyframes moveCar {
+    0% { transform: translate(30px, 90px); }
+    50% { transform: translate(130px, 45px); }
+    100% { transform: translate(230px, 20px); }
+  }
+
+  /* UX PRINCIPLES TAB */
+  .ux-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 20px;
+  }
+
+  .ux-card-wrapper {
+    perspective: 1000px;
+    height: 250px;
+  }
+
+  .ux-card-inner {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    transition: transform 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+    transform-style: preserve-3d;
+    cursor: pointer;
+  }
+
+  .ux-card-wrapper.flipped .ux-card-inner {
+    transform: rotateY(180deg);
+  }
+
+  .ux-card-front, .ux-card-back {
+    position: absolute;
+    width: 100%;
+    height: 100%;
+    -webkit-backface-visibility: hidden;
+    backface-visibility: hidden;
+    border: 1px solid var(--border-color);
+    border-radius: 16px;
+    padding: 24px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+  }
+
+  .ux-card-front {
+    background: var(--bg-card);
+    align-items: center;
+    text-align: center;
+  }
+
+  .ux-card-front:hover {
+    border-color: var(--border-hover);
+    box-shadow: 0 8px 24px rgba(255, 107, 53, 0.04);
+  }
+
+  .ux-card-front-emoji {
+    font-size: 38px;
+    margin-bottom: 16px;
+    width: 64px; height: 64px;
+    background: rgba(255, 255, 255, 0.02);
+    border: 1px solid var(--border-color);
+    border-radius: 14px;
+    display: flex; align-items: center; justify-content: center;
+    transition: transform 0.2s;
+  }
+
+  .ux-card-wrapper:hover .ux-card-front-emoji {
+    transform: scale(1.08) rotate(4deg);
+    border-color: var(--primary-border);
+  }
+
+  .ux-card-front-title {
+    font-size: 16px; font-weight: 750; color: #fff; margin-bottom: 8px;
+  }
+
+  .ux-card-front-desc {
+    font-size: 12.5px; color: var(--text-secondary); line-height: 1.5;
+  }
+
+  .ux-card-back {
+    background: #090d16;
+    transform: rotateY(180deg);
+    border-color: var(--primary-border);
+    justify-content: space-between;
+  }
+
+  .ux-card-back-title {
+    font-size: 13.5px; font-weight: 700; color: var(--primary);
+    margin-bottom: 8px; border-bottom: 1px solid var(--primary-border);
+    padding-bottom: 4px;
+  }
+
+  .ux-card-back-body {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+  }
+
+  .ux-card-back-footer {
+    font-size: 10px; color: var(--text-muted); text-transform: uppercase;
+    letter-spacing: 0.06em; text-align: right; margin-top: 8px;
+  }
+
+  /* TECH STACK ARCHITECTURE */
+  .tech-stack-layout {
+    display: flex;
+    flex-direction: column;
+    gap: 28px;
+  }
+
+  .tech-stack-row {
+    background: rgba(255,255,255,0.01);
+    border: 1px solid var(--border-color);
+    padding: 24px;
+    border-radius: 16px;
+  }
+
+  .tech-stack-row-name {
+    font-size: 11px; font-weight: 750; letter-spacing: 0.1em;
+    text-transform: uppercase; color: var(--text-secondary);
+    margin-bottom: 16px;
+    display: flex; align-items: center; gap: 8px;
+  }
+
+  .tech-stack-row-name span { font-size: 14px; }
+
+  .tech-badges-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+
+  .tech-badge {
+    background: var(--bg-card);
+    border: 1.5px solid var(--border-color);
+    border-radius: 12px;
+    padding: 12px 18px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    cursor: pointer;
+    transition: all 0.25s ease;
+    user-select: none;
+  }
+
+  .tech-badge:hover {
+    border-color: var(--border-hover);
+    transform: translateY(-2px);
+  }
+
+  .tech-badge.active-rel {
+    background: var(--ai-glow);
+    border-color: var(--ai-indigo);
+    box-shadow: 0 0 16px rgba(99, 102, 241, 0.15);
+  }
+
+  .tech-badge.active-main {
+    background: var(--primary-glow);
+    border-color: var(--primary);
+    box-shadow: 0 0 20px rgba(255, 107, 53, 0.2);
+  }
+
+  .tech-badge-dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  .tech-badge-info strong {
+    display: block;
+    font-size: 13px;
+    color: #fff;
+  }
+
+  .tech-badge-info span {
+    display: block;
+    font-size: 10.5px;
+    color: var(--text-secondary);
+    margin-top: 1px;
+  }
+
+  /* TIMELINE Milestone SCRUBBER */
+  .timeline-container {
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: 20px;
+    padding: 32px;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .timeline-scrubber {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    position: relative;
+    margin-bottom: 40px;
+    padding: 0 10px;
+  }
+
+  .timeline-scrubber::before {
+    content: '';
+    position: absolute;
+    left: 0; right: 0; top: 50%;
+    height: 2px;
+    background: var(--border-color);
+    transform: translateY(-50%);
+    z-index: 1;
+  }
+
+  .timeline-scrubber-progress {
+    position: absolute;
+    left: 0; top: 50%;
+    height: 2px;
+    background: var(--primary);
+    transform: translateY(-50%);
+    z-index: 2;
+    transition: width 0.3s ease;
+    width: 0%;
+  }
+
+  .scrubber-node {
+    width: 38px; height: 38px;
+    border-radius: 50%;
+    background: #0c101b;
+    border: 2px solid var(--border-color);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 12.5px; font-weight: 750;
+    color: var(--text-secondary);
+    cursor: pointer;
+    z-index: 3;
+    transition: all 0.2s;
+    font-family: 'Sora', sans-serif;
+  }
+
+  .scrubber-node:hover {
+    border-color: var(--border-hover);
+    color: #fff;
+    transform: scale(1.08);
+  }
+
+  .scrubber-node.active {
+    background: var(--primary);
+    border-color: var(--primary);
+    color: #fff;
+    box-shadow: 0 0 16px var(--primary);
+    transform: scale(1.12);
+  }
+
+  .timeline-details {
+    background: #090d16;
+    border: 1px solid var(--border-color);
+    border-radius: 16px;
+    padding: 28px;
+    display: flex;
+    gap: 32px;
+    animation: slideTimeline 0.3s ease-out;
+  }
+
+  @keyframes slideTimeline {
+    from { opacity: 0; transform: translateX(20px); }
+    to { opacity: 1; transform: translateX(0); }
+  }
+
+  @media (max-width: 768px) {
+    .timeline-details { flex-direction: column; gap: 20px; }
+  }
+
+  .timeline-details-left {
+    flex: 1.2;
+  }
+
+  .tl-detail-month {
+    font-size: 11px; font-weight: 750; color: var(--primary);
+    text-transform: uppercase; letter-spacing: 0.1em;
+    font-family: 'Fira Code', monospace;
+    margin-bottom: 6px;
+  }
+
+  .tl-detail-milestone {
+    font-size: 20px; font-weight: 750; color: #fff;
+    margin-bottom: 12px;
+  }
+
+  .tl-detail-summary {
+    font-size: 13.5px; color: var(--text-secondary);
+    line-height: 1.6;
+  }
+
+  .timeline-details-right {
+    flex: 1;
+    border-left: 1px solid var(--border-color);
+    padding-left: 32px;
+  }
+
+  @media (max-width: 768px) {
+    .timeline-details-right { border-left: none; padding-left: 0; border-top: 1px solid var(--border-color); padding-top: 20px; }
+  }
+
+  .tl-checklist-title {
+    font-size: 11px; font-weight: 750; color: var(--text-secondary);
+    text-transform: uppercase; letter-spacing: 0.08em;
+    margin-bottom: 16px;
+  }
+
+  .tl-checklist-items {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .tl-checklist-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 12.5px;
+    color: var(--text-secondary);
+  }
+
+  .tl-check-bullet {
+    width: 16px; height: 16px; border-radius: 50%;
+    background: rgba(16, 185, 129, 0.1);
+    border: 1.5px solid var(--success);
+    color: var(--success);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 9px; font-weight: 850;
+    flex-shrink: 0;
+  }
+
+  /* UTILITY & COLOR MODIFIERS */
+  .badge-p1 { border-color: var(--success-border); background: var(--success-glow); color: var(--success); }
+  .badge-p2 { border-color: var(--ai-border); background: var(--ai-glow); color: var(--ai-indigo); }
+  .badge-p3 { border-color: var(--warning-border); background: var(--warning-glow); color: var(--warning); }
+  .badge-p4 { border-color: var(--info-border); background: var(--info-glow); color: var(--info); }
+  .badge-p5 { border-color: var(--teal-border); background: var(--teal-glow); color: var(--teal); }
+
+  .bg-p1 { background: var(--success); color: #fff; }
+  .bg-p2 { background: var(--ai-indigo); color: #fff; }
+  .bg-p3 { background: var(--warning); color: #000; }
+  .bg-p4 { background: var(--info); color: #fff; }
+  .bg-p5 { background: var(--teal); color: #fff; }
+
+  .hidden { display: none !important; }
+
+  /* BRANDING HEADER SYSTEM */
+  .hero-brand-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 44px;
+    flex-wrap: wrap;
+    gap: 20px;
+    position: relative;
+    z-index: 10;
+  }
+
+  .brand-logo-container {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+  }
+
+  .brand-name-wrap {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .brand-title {
+    font-family: 'Sora', sans-serif;
+    font-size: 32px;
+    font-weight: 850;
+    line-height: 1.1;
+    letter-spacing: -0.03em;
+    color: #fff;
+  }
+
+  .brand-title span {
+    background: linear-gradient(135deg, var(--primary) 35%, #ffa382 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+
+  .brand-tagline {
+    font-size: 10px;
+    color: var(--text-secondary);
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    margin-top: 3px;
+    opacity: 0.8;
+  }
+
+  @media (max-width: 768px) {
+    .hero { padding: 40px 24px; }
+    .hero h1 { font-size: 38px; }
+    .section { padding: 32px 20px; }
+    .tabs { padding: 0 20px; }
+    .hero-brand-bar { flex-direction: column; align-items: flex-start; gap: 16px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- HERO -->
+<div class="hero">
+  <div class="hero-brand-bar">
+    <div class="brand-logo-container">
+      <svg class="brand-logo-svg" width="48" height="48" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg" style="filter: drop-shadow(0 0 8px rgba(255, 107, 53, 0.25)); flex-shrink: 0;">
+        <defs>
+          <linearGradient id="logo-orange" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stop-color="#ff6b35" />
+            <stop offset="100%" stop-color="#ff9f1c" />
+          </linearGradient>
+          <linearGradient id="logo-indigo" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stop-color="#6366f1" />
+            <stop offset="100%" stop-color="#4f46e5" />
+          </linearGradient>
+          <filter id="glow-effect" x="-25%" y="-25%" width="150%" height="150%">
+            <feGaussianBlur stdDeviation="3" result="blur" />
+            <feMerge>
+              <feMergeNode in="blur" />
+              <feMergeNode in="SourceGraphic" />
+            </feMerge>
+          </filter>
+        </defs>
+        <!-- Background glowing ring/backdrop -->
+        <rect x="2" y="2" width="60" height="60" rx="16" fill="rgba(14, 19, 34, 0.6)" stroke="rgba(255, 255, 255, 0.08)" stroke-width="1.5"/>
+        <!-- Commute Route Loop 1 (Orange) -->
+        <path d="M20 32 C20 22, 28 16, 36 22 C44 28, 44 36, 36 42 C28 48, 20 42, 20 32 Z" stroke="url(#logo-orange)" stroke-width="4" stroke-linecap="round" filter="url(#glow-effect)" />
+        <!-- Commute Route Loop 2 (Indigo) - Matched and overlapping -->
+        <path d="M44 32 C44 42, 36 48, 28 42 C20 36, 20 28, 28 22 C36 16, 44 22, 44 32 Z" stroke="url(#logo-indigo)" stroke-width="4" stroke-linecap="round" filter="url(#glow-effect)" opacity="0.9" />
+        <!-- Match Point Circle -->
+        <circle cx="32" cy="32" r="5" fill="#ffffff" filter="url(#glow-effect)"/>
+        <circle cx="32" cy="32" r="2.5" fill="#ff6b35"/>
+      </svg>
+      <div class="brand-name-wrap">
+        <div class="brand-title">Safar<span>Mate</span></div>
+        <div class="brand-tagline">Rethinking Commutes · Restoring Trust</div>
+      </div>
+    </div>
+    <div class="hero-badge"><span class="dot"></span> TheCarPool Roadmap v2.0</div>
+  </div>
+
+  <h1>India's Smartest <span>AI-First</span> Carpooling Ecosystem</h1>
+  <p class="hero-sub">Combining automated pre-ride calls, precision landmark matching, and corporate trust circles to out-innovate traditional transit models.</p>
+  
+  <div class="hero-stats">
+    <div class="stat">
+      <div class="stat-num">5<span></span></div>
+      <div class="stat-label">Product Phases</div>
+    </div>
+    <div class="stat">
+      <div class="stat-num">44<span></span></div>
+      <div class="stat-label">Core Features</div>
+    </div>
+    <div class="stat">
+      <div class="stat-num">5<span> AI</span></div>
+      <div class="stat-label">Engine Verticals</div>
+    </div>
+    <div class="stat">
+      <div class="stat-num">18<span>mo</span></div>
+      <div class="stat-label">Full Timeline</div>
+    </div>
+  </div>
+</div>
+
+<!-- STICKY TABS -->
+<div class="tabs-wrap">
+  <div class="tabs">
+    <button class="tab active" onclick="showTab('phases')">🗺 Roadmap Phases</button>
+    <button class="tab" onclick="showTab('features')">⚡ Feature Set (44)</button>
+    <button class="tab" onclick="showTab('ai')">🤖 AI Deep Dives</button>
+    <button class="tab" onclick="showTab('onboarding')">🚗 Onboarding Simulator</button>
+    <button class="tab" onclick="showTab('ux')">🎨 UX Principles</button>
+    <button class="tab" onclick="showTab('tech')">🛠 Tech Stack Relation</button>
+    <button class="tab" onclick="showTab('timeline')">📅 Timeline Scrubber</button>
+  </div>
+</div>
+
+<!-- SECTION 1: ROADMAP PHASES -->
+<div class="section active" id="tab-phases">
+  <div class="section-title">Development Roadmap Phases</div>
+  <div class="section-desc">Progressive phases to construct the TheCarPool platform. Click on a phase to expand its detailed deliverable cards. Use filters to scope view.</div>
+
+  <div class="filter-bar">
+    <div class="search-input-wrap">
+      <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+      </svg>
+      <input type="text" id="phase-search" placeholder="Search phase deliverables (e.g. KYC, Razorpay, SOS)..." oninput="filterPhases()"/>
+    </div>
+    <div class="filter-btns">
+      <button class="filter-btn active" onclick="filterPhaseGroup('all', this)">All Deliverables</button>
+      <button class="filter-btn" onclick="filterPhaseGroup('core', this)">Core Features</button>
+      <button class="filter-btn" onclick="filterPhaseGroup('ai', this)">AI Services</button>
+      <button class="filter-btn" onclick="filterPhaseGroup('safety', this)">Safety & KYC</button>
+      <button class="filter-btn" onclick="filterPhaseGroup('payments', this)">Billing & Ops</button>
+    </div>
+  </div>
+
+  <div class="phases-list">
+
+    <!-- Phase 1 -->
+    <div class="phase-card open active-phase" id="p1">
+      <div class="phase-card-header" onclick="togglePhase('p1')">
+        <div class="phase-badge-num bg-p1">1</div>
+        <div class="phase-card-meta">
+          <div class="phase-card-name">Foundation & MVP</div>
+          <div class="phase-card-timeline">Months 1 – 4 · Core Carpool Engine</div>
+        </div>
+        <span class="phase-badge-status badge-p1">Active Dev</span>
+        <span class="phase-chevron">▼</span>
+      </div>
+      <div class="phase-card-body">
+        <div class="phase-card-intro">Establish the baseline carpooling functionality enabling transaction-safe matching, routing, and peer rating.</div>
+        <div class="deliverables-grid">
+          <div class="deliv-card" data-group="safety">
+            <div class="deliv-card-header">
+              <div class="deliv-card-title">Smart Onboarding</div>
+              <span class="deliv-card-tag badge-p1">Auth</span>
+            </div>
+            <div class="deliv-card-desc">Frictionless SMS OTP verification with Google/Apple SSO linking. Direct home/office setup.</div>
+          </div>
+          <div class="deliv-card" data-group="core">
+            <div class="deliv-card-header">
+              <div class="deliv-card-title">Ride Posting (Driver)</div>
+              <span class="deliv-card-tag badge-p1">Core</span>
+            </div>
+            <div class="deliv-card-desc">Rapid route listing with departure times, available seats, pricing recommendations, and recurring toggles.</div>
+          </div>
+          <div class="deliv-card" data-group="core">
+            <div class="deliv-card-header">
+              <div class="deliv-card-title">Ride Search (Rider)</div>
+              <span class="deliv-card-tag badge-p1">Core</span>
+            </div>
+            <div class="deliv-card-desc">Origin-destination matching with flexible search radius. Commuter demographic filters.</div>
+          </div>
+          <div class="deliv-card" data-group="core">
+            <div class="deliv-card-header">
+              <div class="deliv-card-title">Precise Location Engine</div>
+              <span class="deliv-card-tag badge-p1">Maps</span>
+            </div>
+            <div class="deliv-card-desc">Sub-50m pickup matching, visual landmarks, and warnings if pickup deviates too far from optimal route.</div>
+          </div>
+          <div class="deliv-card" data-group="payments">
+            <div class="deliv-card-header">
+              <div class="deliv-card-title">Razorpay Cost-Sharing</div>
+              <span class="deliv-card-tag badge-p1">Payments</span>
+            </div>
+            <div class="deliv-card-desc">UPI & cards integration. Wallet holding engine to execute payouts strictly after ride finishes.</div>
+          </div>
+          <div class="deliv-card" data-group="safety">
+            <div class="deliv-card-header">
+              <div class="deliv-card-title">Basic Safety Shield</div>
+              <span class="deliv-card-tag badge-p1">Safety</span>
+            </div>
+            <div class="deliv-card-desc">One-tap SOS triggers, live location shareable links, and vehicle license plate checks.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Phase 2 -->
+    <div class="phase-card" id="p2">
+      <div class="phase-card-header" onclick="togglePhase('p2')">
+        <div class="phase-badge-num bg-p2">2</div>
+        <div class="phase-card-meta">
+          <div class="phase-card-name">AI Intelligence Layer</div>
+          <div class="phase-card-timeline">Months 4 – 7 · Advanced Voice & Matching</div>
+        </div>
+        <span class="phase-badge-status badge-p2">Design Phase</span>
+        <span class="phase-chevron">▼</span>
+      </div>
+      <div class="phase-card-body">
+        <div class="phase-card-intro">Integrate LLM features and voice channels to eliminate commute friction and enhance route selection efficiency.</div>
+        <div class="deliverables-grid">
+          <div class="deliv-card" data-group="ai">
+            <div class="deliv-card-header">
+              <div class="deliv-card-title">Pre-Ride Call System</div>
+              <span class="deliv-card-tag badge-p2">AI System</span>
+            </div>
+            <div class="deliv-card-desc">Automated voice confirmation call 1 hour before departure. Handles voice-triggered rescheduling.</div>
+          </div>
+          <div class="deliv-card" data-group="ai">
+            <div class="deliv-card-header">
+              <div class="deliv-card-title">Voice Assistant Engine</div>
+              <span class="deliv-card-tag badge-p2">Voice</span>
+            </div>
+            <div class="deliv-card-desc">Hindi/English voice control for direct route search and bookings using Claude + ElevenLabs.</div>
+          </div>
+          <div class="deliv-card" data-group="core">
+            <div class="deliv-card-header">
+              <div class="deliv-card-title">Workplace Cluster matching</div>
+              <span class="deliv-card-tag badge-p2">Matching</span>
+            </div>
+            <div class="deliv-card-desc">Connects commuters of matching corporate sectors, tech-parks, and mutual verified organizations.</div>
+          </div>
+          <div class="deliv-card" data-group="ai">
+            <div class="deliv-card-header">
+              <div class="deliv-card-title">AI Route Optimizer</div>
+              <span class="deliv-card-tag badge-p2">AI System</span>
+            </div>
+            <div class="deliv-card-desc">Suggests best passenger loading order along complex detour paths to minimize commute duration.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Phase 3 -->
+    <div class="phase-card" id="p3">
+      <div class="phase-card-header" onclick="togglePhase('p3')">
+        <div class="phase-badge-num bg-p3">3</div>
+        <div class="phase-card-meta">
+          <div class="phase-card-name">Community & Engagement</div>
+          <div class="phase-card-timeline">Months 7 – 11 · Recurring Rides & Badges</div>
+        </div>
+        <span class="phase-badge-status badge-p3">Upcoming</span>
+        <span class="phase-chevron">▼</span>
+      </div>
+      <div class="phase-card-body">
+        <div class="phase-card-intro">Cultivate stickiness and build trust with community elements, subscriptions, and reward dashboards.</div>
+        <div class="deliverables-grid">
+          <div class="deliv-card" data-group="core">
+            <div class="deliv-card-header">
+              <div class="deliv-card-title">Commute Subscriptions</div>
+              <span class="deliv-card-tag badge-p3">Sub</span>
+            </div>
+            <div class="deliv-card-desc">Setup Mon-Fri auto-booking, route holding, and easy vacation-skip toggles.</div>
+          </div>
+          <div class="deliv-card" data-group="payments">
+            <div class="deliv-card-header">
+              <div class="deliv-card-title">SafarPoints & Leaderboard</div>
+              <span class="deliv-card-tag badge-p3">Gamify</span>
+            </div>
+            <div class="deliv-card-desc">Earn points per kilometer carpooled. Leaderboards tracking top office fuel-savers.</div>
+          </div>
+          <div class="deliv-card" data-group="payments">
+            <div class="deliv-card-header">
+              <div class="deliv-card-title">Carbon Tracker Dashboard</div>
+              <span class="deliv-card-tag badge-p3">Green</span>
+            </div>
+            <div class="deliv-card-desc">Visual summaries showing personal metrics of metric tons CO2 prevented, shareable on LinkedIn.</div>
+          </div>
+          <div class="deliv-card" data-group="safety">
+            <div class="deliv-card-header">
+              <div class="deliv-card-title">Trust Network Graphs</div>
+              <span class="deliv-card-tag badge-p3">Social</span>
+            </div>
+            <div class="deliv-card-desc">See mutual coworker connections, department linkages, and verified employee profile indicators.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Phase 4 -->
+    <div class="phase-card" id="p4">
+      <div class="phase-card-header" onclick="togglePhase('p4')">
+        <div class="phase-badge-num bg-p4">4</div>
+        <div class="phase-card-meta">
+          <div class="phase-card-name">Scale & Corporate Tier</div>
+          <div class="phase-card-timeline">Months 11 – 15 · Enterprise Portals & OCR</div>
+        </div>
+        <span class="phase-badge-status badge-p4">Upcoming</span>
+        <span class="phase-chevron">▼</span>
+      </div>
+      <div class="phase-card-body">
+        <div class="phase-card-intro">Expand TheCarPool directly inside corporate IT structures with dedicated administration modules and enterprise API links.</div>
+        <div class="deliverables-grid">
+          <div class="deliv-card" data-group="payments">
+            <div class="deliv-card-header">
+              <div class="deliv-card-title">TheCarPool for Business</div>
+              <span class="deliv-card-tag badge-p4">B2B</span>
+            </div>
+            <div class="deliv-card-desc">HR administrative panels, direct billing modules, and corporate shuttle integration controls.</div>
+          </div>
+          <div class="deliv-card" data-group="safety">
+            <div class="deliv-card-header">
+              <div class="deliv-card-title">Aadhaar & Vahan OCR</div>
+              <span class="deliv-card-tag badge-p4">KYC</span>
+            </div>
+            <div class="deliv-card-desc">Automated validation of driver document photos via direct API calls to official government registration bureaus.</div>
+          </div>
+          <div class="deliv-card" data-group="core">
+            <div class="deliv-card-header">
+              <div class="deliv-card-title">Multi-City Launch Sync</div>
+              <span class="deliv-card-tag badge-p4">Scale</span>
+            </div>
+            <div class="deliv-card-desc">Launch and synchronize local databases for NCR, Bengaluru, Mumbai, and Hyderabad.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Phase 5 -->
+    <div class="phase-card" id="p5">
+      <div class="phase-card-header" onclick="togglePhase('p5')">
+        <div class="phase-badge-num bg-p5">5</div>
+        <div class="phase-card-meta">
+          <div class="phase-card-name">Platform & Ecosystem</div>
+          <div class="phase-card-timeline">Months 15 – 18+ · Transit API & Integration</div>
+        </div>
+        <span class="phase-badge-status badge-p5">Future</span>
+        <span class="phase-chevron">▼</span>
+      </div>
+      <div class="phase-card-body">
+        <div class="phase-card-intro">Transition TheCarPool into open transit infrastructure bridging carpools directly into metro and train grids.</div>
+        <div class="deliverables-grid">
+          <div class="deliv-card" data-group="core">
+            <div class="deliv-card-header">
+              <div class="deliv-card-title">Transit Stitching Engine</div>
+              <span class="deliv-card-tag badge-p5">Integrate</span>
+            </div>
+            <div class="deliv-card-desc">Provides multi-modal route planning connecting carpool legs directly to local metro schedules.</div>
+          </div>
+          <div class="deliv-card" data-group="payments">
+            <div class="deliv-card-header">
+              <div class="deliv-card-title">Public API & SDK</div>
+              <span class="deliv-card-tag badge-p5">Platform</span>
+            </div>
+            <div class="deliv-card-desc">Enable third-party developer integrations allowing external corporate calendar software to book rides.</div>
+          </div>
+          <div class="deliv-card" data-group="ai">
+            <div class="deliv-card-header">
+              <div class="deliv-card-title">Fully Autonomous Bookings</div>
+              <span class="deliv-card-tag badge-p5">AI System</span>
+            </div>
+            <div class="deliv-card-desc">Predictive machine-learning matching engines queueing rides without manual searches.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- SECTION 2: FEATURE EXPLORER (44 FEATURES) -->
+<div class="section" id="tab-features">
+  <div class="section-title">Complete Interactive Feature Set</div>
+  <div class="section-desc">Explore the 44 core features mapping out the entirety of the TheCarPool ecosystem. Use the search and category filters below.</div>
+
+  <div class="filter-bar">
+    <div class="search-input-wrap">
+      <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+      </svg>
+      <input type="text" id="feat-search" placeholder="Search all 44 features..." oninput="filterFeatures()"/>
+    </div>
+    
+    <select class="filter-select" id="feat-phase-select" onchange="filterFeatures()">
+      <option value="all">All Phases</option>
+      <option value="phase 1">Phase 1 (MVP)</option>
+      <option value="phase 2">Phase 2 (AI)</option>
+      <option value="phase 3">Phase 3 (Engagement)</option>
+      <option value="phase 4">Phase 4 (Scale)</option>
+      <option value="phase 5">Phase 5 (Ecosystem)</option>
+    </select>
+
+    <div class="filter-btns">
+      <button class="filter-btn active" onclick="filterFeatCat('all', this)">All Categories</button>
+      <button class="filter-btn" onclick="filterFeatCat('core', this)">Core Matching</button>
+      <button class="filter-btn" onclick="filterFeatCat('ai', this)">AI-Powered</button>
+      <button class="filter-btn" onclick="filterFeatCat('safety', this)">Safety & Trust</button>
+      <button class="filter-btn" onclick="filterFeatCat('payments', this)">Payments & Economics</button>
+      <button class="filter-btn" onclick="filterFeatCat('sustainability', this)">Sustainability</button>
+    </div>
+  </div>
+
+  <div class="features-container">
+
+    <!-- CATEGORY: CORE MATCHING -->
+    <div class="features-category" id="cat-core">
+      <div class="features-category-header">
+        <span>🎯</span> Core Matching & Discovery
+      </div>
+      <div class="features-grid">
+        <div class="feature-card" data-phase="phase 1">
+          <div class="feature-icon-box badge-p1">🔍</div>
+          <div class="feature-title">Smart Ride Search</div>
+          <div class="feature-desc">Flexible radius matching, time-window tolerances, and support for multi-stop commutes.</div>
+          <div class="feature-tags">
+            <span class="feature-tag-badge badge-p1">Phase 1</span>
+          </div>
+        </div>
+        <div class="feature-card" data-phase="phase 1">
+          <div class="feature-icon-box badge-p1">📍</div>
+          <div class="feature-title">Landmark-Aware Pickups</div>
+          <div class="feature-desc">Integrates user landmark descriptions (e.g. "Next to HDFC ATM Gate 1") to drop exact pins instead of raw coordinates.</div>
+          <div class="feature-tags">
+            <span class="feature-tag-badge badge-p1">Phase 1</span>
+          </div>
+        </div>
+        <div class="feature-card" data-phase="phase 1">
+          <div class="feature-icon-box badge-p1">👥</div>
+          <div class="feature-title">Multi-Seat Bookings</div>
+          <div class="feature-desc">Allows booking of 1 to 3 seats in one checkout for team members or family rides.</div>
+          <div class="feature-tags">
+            <span class="feature-tag-badge badge-p1">Phase 1</span>
+          </div>
+        </div>
+        <div class="feature-card" data-phase="phase 1">
+          <div class="feature-icon-box badge-p1">🔀</div>
+          <div class="feature-title">Detour Deviation Filter</div>
+          <div class="feature-desc">Allows drivers to cap the maximum distance they are willing to deviate to pick up riders.</div>
+          <div class="feature-tags">
+            <span class="feature-tag-badge badge-p1">Phase 1</span>
+          </div>
+        </div>
+        <div class="feature-card" data-phase="phase 1">
+          <div class="feature-icon-box badge-p1">🛣</div>
+          <div class="feature-title">Mid-Route Matching</div>
+          <div class="feature-desc">Matches riders situated along the driver's pre-existing travel vector, not just at endpoints.</div>
+          <div class="feature-tags">
+            <span class="feature-tag-badge badge-p1">Phase 1</span>
+          </div>
+        </div>
+        <div class="feature-card" data-phase="phase 2">
+          <div class="feature-icon-box badge-p2">🏢</div>
+          <div class="feature-title">Office Cluster Priority</div>
+          <div class="feature-desc">Prioritizes listing matching rides from users working within the same tech park or office radius.</div>
+          <div class="feature-tags">
+            <span class="feature-tag-badge badge-p2">Phase 2</span>
+          </div>
+        </div>
+        <div class="feature-card" data-phase="phase 3">
+          <div class="feature-icon-box badge-p3">🗓</div>
+          <div class="feature-title">Recurring Subscriptions</div>
+          <div class="feature-desc">Allows setting recurring Mon-Fri commute parameters with automatic route reservations.</div>
+          <div class="feature-tags">
+            <span class="feature-tag-badge badge-p3">Phase 3</span>
+          </div>
+        </div>
+        <div class="feature-card" data-phase="phase 1">
+          <div class="feature-icon-box badge-p1">📏</div>
+          <div class="feature-title">Drop-off Radius Tuner</div>
+          <div class="feature-desc">Lets riders specify the maximum walking distance they are comfortable with from the drop-off coordinate.</div>
+          <div class="feature-tags">
+            <span class="feature-tag-badge badge-p1">Phase 1</span>
+          </div>
+        </div>
+        <div class="feature-card" data-phase="phase 1">
+          <div class="feature-icon-box badge-p1">🔔</div>
+          <div class="feature-title">Alert & Waitlist System</div>
+          <div class="feature-desc">Notifies users immediately when a driver posts a ride matching their saved routes.</div>
+          <div class="feature-tags">
+            <span class="feature-tag-badge badge-p1">Phase 1</span>
+          </div>
+        </div>
+        <div class="feature-card" data-phase="phase 1">
+          <div class="feature-icon-box badge-p1">👩</div>
+          <div class="feature-title">Gender-Filtered Matches</div>
+          <div class="feature-desc">Ensures riders can search and filter to restrict ride booking specifically to same-gender drivers and co-passengers.</div>
+          <div class="feature-tags">
+            <span class="feature-tag-badge badge-p1">Phase 1</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- CATEGORY: AI POWERED -->
+    <div class="features-category" id="cat-ai">
+      <div class="features-category-header">
+        <span>🤖</span> AI-Powered Features
+      </div>
+      <div class="features-grid">
+        <div class="feature-card" data-phase="phase 2">
+          <div class="feature-icon-box badge-p2">📞</div>
+          <div class="feature-title">Pre-Ride Confirmation Call</div>
+          <div class="feature-desc">Pulsed AI agent telephone confirmation 60 mins prior to trip to eliminate ghosting.</div>
+          <div class="feature-tags">
+            <span class="feature-tag-badge badge-p2">Phase 2</span>
+          </div>
+        </div>
+        <div class="feature-card" data-phase="phase 2">
+          <div class="feature-icon-box badge-p2">🎙</div>
+          <div class="feature-title">Voice Ride Assistant</div>
+          <div class="feature-desc">Hindi and English speech command interface for hands-free route searches and fast booking.</div>
+          <div class="feature-tags">
+            <span class="feature-tag-badge badge-p2">Phase 2</span>
+          </div>
+        </div>
+        <div class="feature-card" data-phase="phase 2">
+          <div class="feature-icon-box badge-p2">🔀</div>
+          <div class="feature-title">AI Route Optimizer</div>
+          <div class="feature-desc">Automates route compilation and sequence ordering for multi-rider pickups.</div>
+          <div class="feature-tags">
+            <span class="feature-tag-badge badge-p2">Phase 2</span>
+          </div>
+        </div>
+        <div class="feature-card" data-phase="phase 2">
+          <div class="feature-icon-box badge-p2">📝</div>
+          <div class="feature-title">AI Feedback Collection</div>
+          <div class="feature-desc">Translates post-trip text descriptions into rating metrics using NLP sentiment extraction.</div>
+          <div class="feature-tags">
+            <span class="feature-tag-badge badge-p2">Phase 2</span>
+          </div>
+        </div>
+        <div class="feature-card" data-phase="phase 2">
+          <div class="feature-icon-box badge-p2">🧠</div>
+          <div class="feature-title">Commute Pattern Learning</div>
+          <div class="feature-desc">Preemptively populates matching rides based on learned historical calendar entries.</div>
+          <div class="feature-tags">
+            <span class="feature-tag-badge badge-p2">Phase 2</span>
+          </div>
+        </div>
+        <div class="feature-card" data-phase="phase 1">
+          <div class="feature-icon-box badge-p1">📷</div>
+          <div class="feature-title">Auto-OCR KYC Scanner</div>
+          <div class="feature-desc">Instantly extracts text fields from uploads of Aadhaar and Driver's Licenses using computer vision.</div>
+          <div class="feature-tags">
+            <span class="feature-tag-badge badge-p1">Phase 1</span>
+          </div>
+        </div>
+        <div class="feature-card" data-phase="phase 2">
+          <div class="feature-icon-box badge-p2">📈</div>
+          <div class="feature-title">AI Smart Suggestions</div>
+          <div class="feature-desc">Provides ideal fuel compensation pricing calculations based on detours, passengers, and congestion.</div>
+          <div class="feature-tags">
+            <span class="feature-tag-badge badge-p2">Phase 2</span>
+          </div>
+        </div>
+        <div class="feature-card" data-phase="phase 4">
+          <div class="feature-icon-box badge-p4">🕵️</div>
+          <div class="feature-title">Fraud Profile Detector</div>
+          <div class="feature-desc">Uses network indicators and image checking to auto-block suspicious driver profiles before KYC approval.</div>
+          <div class="feature-tags">
+            <span class="feature-tag-badge badge-p4">Phase 4</span>
+          </div>
+        </div>
+        <div class="feature-card" data-phase="phase 3">
+          <div class="feature-icon-box badge-p3">💬</div>
+          <div class="feature-title">In-Chat Translator</div>
+          <div class="feature-desc">Translates chat messages instantly between regional Indian languages.</div>
+          <div class="feature-tags">
+            <span class="feature-tag-badge badge-p3">Phase 3</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- CATEGORY: SAFETY AND TRUST -->
+    <div class="features-category" id="cat-safety">
+      <div class="features-category-header">
+        <span>🛡</span> Safety & Trust
+      </div>
+      <div class="features-grid">
+        <div class="feature-card" data-phase="phase 1">
+          <div class="feature-icon-box badge-p1">🆘</div>
+          <div class="feature-title">One-Tap SOS button</div>
+          <div class="feature-desc">Instantly updates emergency contacts and local security networks with current live tracking coordinates.</div>
+          <div class="feature-tags">
+            <span class="feature-tag-badge badge-p1">Phase 1</span>
+          </div>
+        </div>
+        <div class="feature-card" data-phase="phase 3">
+          <div class="feature-icon-box badge-p3">📍</div>
+          <div class="feature-title">Real-Time Location Tracking</div>
+          <div class="feature-desc">Broadcasts GPS coordinates of the active vehicle 15 minutes before the pickup time.</div>
+          <div class="feature-tags">
+            <span class="feature-tag-badge badge-p3">Phase 3</span>
+          </div>
+        </div>
+        <div class="feature-card" data-phase="phase 4">
+          <div class="feature-icon-box badge-p4">🆔</div>
+          <div class="feature-title">Verified Driver KYC</div>
+          <div class="feature-desc">Validates state driving licenses and vehicle registrations via integrations with government databases.</div>
+          <div class="feature-tags">
+            <span class="feature-tag-badge badge-p4">Phase 4</span>
+          </div>
+        </div>
+        <div class="feature-card" data-phase="phase 3">
+          <div class="feature-icon-box badge-p3">🏢</div>
+          <div class="feature-title">Corporate Trust Circles</div>
+          <div class="feature-desc">Ensures safety by validating work email signatures and LinkedIn links before allowing bookings.</div>
+          <div class="feature-tags">
+            <span class="feature-tag-badge badge-p3">Phase 3</span>
+          </div>
+        </div>
+        <div class="feature-card" data-phase="phase 1">
+          <div class="feature-icon-box badge-p1">📞</div>
+          <div class="feature-title">Proxy Number Masking</div>
+          <div class="feature-desc">Hides personal telephone numbers by routing voice calls and messages through anonymous proxy nodes.</div>
+          <div class="feature-tags">
+            <span class="feature-tag-badge badge-p1">Phase 1</span>
+          </div>
+        </div>
+        <div class="feature-card" data-phase="phase 1">
+          <div class="feature-icon-box badge-p1">⭐</div>
+          <div class="feature-title">Bidirectional Ratings</div>
+          <div class="feature-desc">Ensures accountability by requiring drivers and riders to submit ratings after trip completion.</div>
+          <div class="feature-tags">
+            <span class="feature-tag-badge badge-p1">Phase 1</span>
+          </div>
+        </div>
+        <div class="feature-card" data-phase="phase 1">
+          <div class="feature-icon-box badge-p1">🔕</div>
+          <div class="feature-title">Silent SOS Trigger</div>
+          <div class="feature-desc">Enables silent alerts to emergency services without displaying active alarm animations on-screen.</div>
+          <div class="feature-tags">
+            <span class="feature-tag-badge badge-p1">Phase 1</span>
+          </div>
+        </div>
+        <div class="feature-card" data-phase="phase 3">
+          <div class="feature-icon-box badge-p3">🚩</div>
+          <div class="feature-title">Geofence Deviation Alerts</div>
+          <div class="feature-desc">Triggers automatic security checks if route coordinates deviate by more than 400m from maps suggestions.</div>
+          <div class="feature-tags">
+            <span class="feature-tag-badge badge-p3">Phase 3</span>
+          </div>
+        </div>
+        <div class="feature-card" data-phase="phase 1">
+          <div class="feature-icon-box badge-p1">🔗</div>
+          <div class="feature-title">Safety Circle Auto-Share</div>
+          <div class="feature-desc">Automatically sends transit link SMS updates to configured family members when a trip starts.</div>
+          <div class="feature-tags">
+            <span class="feature-tag-badge badge-p1">Phase 1</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- CATEGORY: PAYMENTS -->
+    <div class="features-category" id="cat-payments">
+      <div class="features-category-header">
+        <span>💳</span> Payments & Economics
+      </div>
+      <div class="features-grid">
+        <div class="feature-card" data-phase="phase 1">
+          <div class="feature-icon-box badge-p1">💸</div>
+          <div class="feature-title">Razorpay Cost-Sharing</div>
+          <div class="feature-desc">Integrates UPI, card platforms, and net banking options to process splits smoothly.</div>
+          <div class="feature-tags">
+            <span class="feature-tag-badge badge-p1">Phase 1</span>
+          </div>
+        </div>
+        <div class="feature-card" data-phase="phase 1">
+          <div class="feature-icon-box badge-p1">💼</div>
+          <div class="feature-title">SafarWallet & Quick Refunds</div>
+          <div class="feature-desc">Locks fares in safe escrows, with instant refund capability if the driver cancels.</div>
+          <div class="feature-tags">
+            <span class="feature-tag-badge badge-p1">Phase 1</span>
+          </div>
+        </div>
+        <div class="feature-card" data-phase="phase 1">
+          <div class="feature-icon-box badge-p1">⚖️</div>
+          <div class="feature-title">Automated Split Engine</div>
+          <div class="feature-desc">Divides fuel compensation charges uniformly across all passengers.</div>
+          <div class="feature-tags">
+            <span class="feature-tag-badge badge-p1">Phase 1</span>
+          </div>
+        </div>
+        <div class="feature-card" data-phase="phase 1">
+          <div class="feature-icon-box badge-p1">⚡</div>
+          <div class="feature-title">Instant Payout Releases</div>
+          <div class="feature-desc">Releases collected funds to the driver's bank account via IMPS/UPI minutes after trip end.</div>
+          <div class="feature-tags">
+            <span class="feature-tag-badge badge-p1">Phase 1</span>
+          </div>
+        </div>
+        <div class="feature-card" data-phase="phase 4">
+          <div class="feature-icon-box badge-p4">🏢</div>
+          <div class="feature-title">Corporate Billing Gateway</div>
+          <div class="feature-desc">Integrates corporate payment accounts to compile monthly ride logs and send invoices to HR.</div>
+          <div class="feature-tags">
+            <span class="feature-tag-badge badge-p4">Phase 4</span>
+          </div>
+        </div>
+        <div class="feature-card" data-phase="phase 3">
+          <div class="feature-icon-box badge-p3">⛽</div>
+          <div class="feature-title">Fuel Savings Tracker</div>
+          <div class="feature-desc">Aggregates and displays total cash saved on petrol/diesel over the weeks.</div>
+          <div class="feature-tags">
+            <span class="feature-tag-badge badge-p3">Phase 3</span>
+          </div>
+        </div>
+        <div class="feature-card" data-phase="phase 1">
+          <div class="feature-icon-box badge-p1">📜</div>
+          <div class="feature-title">Cancellation Policy Escrow</div>
+          <div class="feature-desc">Provides compensation payouts to drivers if a rider cancels shortly before departure.</div>
+          <div class="feature-tags">
+            <span class="feature-tag-badge badge-p1">Phase 1</span>
+          </div>
+        </div>
+        <div class="feature-card" data-phase="phase 3">
+          <div class="feature-icon-box badge-p3">🎁</div>
+          <div class="feature-title">Referral Bonuses</div>
+          <div class="feature-desc">Credits wallets with ride discounts when users refer verified coworkers to TheCarPool.</div>
+          <div class="feature-tags">
+            <span class="feature-tag-badge badge-p3">Phase 3</span>
+          </div>
+        </div>
+        <div class="feature-card" data-phase="phase 1">
+          <div class="feature-icon-box badge-p1">🏷️</div>
+          <div class="feature-title">Group Discounts</div>
+          <div class="feature-desc">Applies dynamic discounts if a user books multiple seats for a single route.</div>
+          <div class="feature-tags">
+            <span class="feature-tag-badge badge-p1">Phase 1</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- CATEGORY: SUSTAINABILITY -->
+    <div class="features-category" id="cat-sustainability">
+      <div class="features-category-header">
+        <span>🌱</span> Sustainability & Community
+      </div>
+      <div class="features-grid">
+        <div class="feature-card" data-phase="phase 3">
+          <div class="feature-icon-box badge-p3">🌳</div>
+          <div class="feature-title">Carbon Offset Dashboard</div>
+          <div class="feature-desc">Monitors exact carbon footprint reductions achieved by sharing rides instead of driving solo.</div>
+          <div class="feature-tags">
+            <span class="feature-tag-badge badge-p3">Phase 3</span>
+          </div>
+        </div>
+        <div class="feature-card" data-phase="phase 4">
+          <div class="feature-icon-box badge-p4">📊</div>
+          <div class="feature-title">ESG Enterprise Portals</div>
+          <div class="feature-desc">Provides corporations with auditable reports of carbon emission offsets from employee carpooling.</div>
+          <div class="feature-tags">
+            <span class="feature-tag-badge badge-p4">Phase 4</span>
+          </div>
+        </div>
+        <div class="feature-card" data-phase="phase 3">
+          <div class="feature-icon-box badge-p3">🏫</div>
+          <div class="feature-title">Office Pools & Circles</div>
+          <div class="feature-desc">Restricts search matching to users in designated circles (e.g. colleagues or college classmates).</div>
+          <div class="feature-tags">
+            <span class="feature-tag-badge badge-p3">Phase 3</span>
+          </div>
+        </div>
+        <div class="feature-card" data-phase="phase 3">
+          <div class="feature-icon-box badge-p3">🏡</div>
+          <div class="feature-title">Society & Colony Pools</div>
+          <div class="feature-desc">Restricts matches to residents living within the same gated housing society.</div>
+          <div class="feature-tags">
+            <span class="feature-tag-badge badge-p3">Phase 3</span>
+          </div>
+        </div>
+        <div class="feature-card" data-phase="phase 5">
+          <div class="feature-icon-box badge-p5">🚇</div>
+          <div class="feature-title">Last-Mile Transit Links</div>
+          <div class="feature-desc">Stitches local bus and metro transit legs into single-booking carpool trips.</div>
+          <div class="feature-tags">
+            <span class="feature-tag-badge badge-p5">Phase 5</span>
+          </div>
+        </div>
+        <div class="feature-card" data-phase="phase 5">
+          <div class="feature-icon-box badge-p5">⚡</div>
+          <div class="feature-title">EV Matching Priorities</div>
+          <div class="feature-desc">Allows filtering search results to display and prioritize electric vehicles only.</div>
+          <div class="feature-tags">
+            <span class="feature-tag-badge badge-p5">Phase 5</span>
+          </div>
+        </div>
+        <div class="feature-card" data-phase="phase 3">
+          <div class="feature-icon-box badge-p3">🏆</div>
+          <div class="feature-title">Green leaderboards</div>
+          <div class="feature-desc">Tracks and displays community rankings based on carbon savings to promote competition.</div>
+          <div class="feature-tags">
+            <span class="feature-tag-badge badge-p3">Phase 3</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- SECTION 3: AI SYSTEMS DEEP DIVES -->
+<div class="section" id="tab-ai">
+  <div class="section-title">AI System Deep Dives & Simulators</div>
+  <div class="section-desc">Explore live simulators of TheCarPool's proprietary AI systems. Toggle modes in the simulator card on the right.</div>
+
+  <div class="ai-deep-grid">
+    <div class="ai-info-card">
+      <div class="ai-info-header">
+        <div class="ai-info-icon">📞</div>
+        <div class="ai-info-title-box">
+          <h3>Pre-Ride AI Call & Assistant</h3>
+          <p>Twilio + Claude API + ElevenLabs TTS</p>
+        </div>
+      </div>
+      <p class="ai-info-desc">TheCarPool bypasses easy-to-ignore push alerts with automated voice confirmation calls 1 hour before departure, dynamically logging answers to coordinate schedules.</p>
+      
+      <div class="ai-steps-list">
+        <div class="ai-step-item">
+          <div class="ai-step-num-badge">1</div>
+          <div class="ai-step-text">
+            <strong>Queued Call Triggers</strong>
+            Server checks ride list at T-60min and launches call webhook through Twilio.
+          </div>
+        </div>
+        <div class="ai-step-item">
+          <div class="ai-step-num-badge">2</div>
+          <div class="ai-step-text">
+            <strong>Claude Intent Classification</strong>
+            Processes spoken user feedback (e.g. "I need 10 extra minutes") into functional parameters.
+          </div>
+        </div>
+        <div class="ai-step-item">
+          <div class="ai-step-num-badge">3</div>
+          <div class="ai-step-text">
+            <strong>ElevenLabs TTS Response</strong>
+            Generates natural voice replies in localized Hindi-English accents.
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- INTERACTIVE SIMULATOR PANEL -->
+    <div class="simulator-panel">
+      <div class="sim-header">
+        <div class="sim-title-group">
+          <div class="sim-status-dot" id="sim-dot"></div>
+          <span class="sim-title" id="sim-title-text">Call System Idle</span>
+        </div>
+        <div class="sim-mode-select">
+          <button class="sim-mode-btn active" id="mode-call-btn" onclick="setSimMode('call')">Voice Call</button>
+          <button class="sim-mode-btn" id="mode-assist-btn" onclick="setSimMode('assist')">Voice Assistant</button>
+        </div>
+      </div>
+
+      <!-- Simulator display output -->
+      <div class="sim-display" id="sim-screen">
+        <div class="sim-bubble system" id="sim-start-msg">Select "Start Call" below to test the AI confirmation sequence.</div>
+      </div>
+
+      <!-- Waveform animation -->
+      <div class="waveform-container" id="waveform">
+        <div class="waveform-bar"></div>
+        <div class="waveform-bar"></div>
+        <div class="waveform-bar"></div>
+        <div class="waveform-bar"></div>
+        <div class="waveform-bar"></div>
+        <div class="waveform-bar"></div>
+        <div class="waveform-bar"></div>
+      </div>
+
+      <!-- Controls -->
+      <div class="sim-controls">
+        <div class="sim-input-suggestions hidden" id="sim-options">
+          <!-- Populated by JS -->
+        </div>
+        <button class="sim-action-btn" id="sim-main-btn" onclick="handleSimAction()">
+          <span id="sim-btn-icon">📞</span>
+          <span id="sim-btn-text">Start Confirmation Call</span>
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- SECTION 4: DRIVER ONBOARDING FLOW -->
+<div class="section" id="tab-onboarding">
+  <div class="section-title">Zero-Friction Onboarding Simulator</div>
+  <div class="section-desc">Test the step-by-step registration screens for riders and drivers. Click on steps below to inspect the interface rendering on the mock phone.</div>
+
+  <div class="onboarding-grid">
+    <div class="flow-selector-panel">
+      
+      <!-- Rider Onboarding Flow -->
+      <div class="ob-flow-type">
+        <div class="ob-flow-type-title">
+          <span>🧑</span> Rider Signup Flow (3 Steps)
+        </div>
+        <div class="ob-steps-list">
+          <button class="ob-step-btn active" onclick="loadOnboardingScreen('rider-1', this)">
+            <div class="ob-step-btn-info">
+              <div class="ob-step-btn-num">1</div>
+              <div class="ob-step-btn-text">
+                <strong>Phone & OTP Auth</strong>
+                <span>OTP verification screen</span>
+              </div>
+            </div>
+            <div class="ob-step-chevron">→</div>
+          </button>
+          <button class="ob-step-btn" onclick="loadOnboardingScreen('rider-2', this)">
+            <div class="ob-step-btn-info">
+              <div class="ob-step-btn-num">2</div>
+              <div class="ob-step-btn-text">
+                <strong>Commute setup</strong>
+                <span>Home & Office locations</span>
+              </div>
+            </div>
+            <div class="ob-step-chevron">→</div>
+          </button>
+          <button class="ob-step-btn" onclick="loadOnboardingScreen('rider-3', this)">
+            <div class="ob-step-btn-info">
+              <div class="ob-step-btn-num">3</div>
+              <div class="ob-step-btn-text">
+                <strong>Preferences Setup</strong>
+                <span>Music, chatter & filters</span>
+              </div>
+            </div>
+            <div class="ob-step-chevron">→</div>
+          </button>
+        </div>
+      </div>
+
+      <!-- Driver Onboarding Flow -->
+      <div class="ob-flow-type">
+        <div class="ob-flow-type-title">
+          <span>🚗</span> Driver KYC Flow (5 Steps)
+        </div>
+        <div class="ob-steps-list">
+          <button class="ob-step-btn" onclick="loadOnboardingScreen('driver-1', this)">
+            <div class="ob-step-btn-info">
+              <div class="ob-step-btn-num">1</div>
+              <div class="ob-step-btn-text">
+                <strong>Profile & Details</strong>
+                <span>Name, Work email, Profile photo</span>
+              </div>
+            </div>
+            <div class="ob-step-chevron">→</div>
+          </button>
+          <button class="ob-step-btn" onclick="loadOnboardingScreen('driver-2', this)">
+            <div class="ob-step-btn-info">
+              <div class="ob-step-btn-num">2</div>
+              <div class="ob-step-btn-text">
+                <strong>Vehicle Registration</strong>
+                <span>OCR scan of registration card</span>
+              </div>
+            </div>
+            <div class="ob-step-chevron">→</div>
+          </button>
+          <button class="ob-step-btn" onclick="loadOnboardingScreen('driver-3', this)">
+            <div class="ob-step-btn-info">
+              <div class="ob-step-btn-num">3</div>
+              <div class="ob-step-btn-text">
+                <strong>KYC License & ID</strong>
+                <span>DL Upload & facial mapping</span>
+              </div>
+            </div>
+            <div class="ob-step-chevron">→</div>
+          </button>
+          <button class="ob-step-btn" onclick="loadOnboardingScreen('driver-4', this)">
+            <div class="ob-step-btn-info">
+              <div class="ob-step-btn-num">4</div>
+              <div class="ob-step-btn-text">
+                <strong>Bank Account Payouts</strong>
+                <span>UPI Penny Drop confirmation</span>
+              </div>
+            </div>
+            <div class="ob-step-chevron">→</div>
+          </button>
+          <button class="ob-step-btn" onclick="loadOnboardingScreen('driver-5', this)">
+            <div class="ob-step-btn-info">
+              <div class="ob-step-btn-num">5</div>
+              <div class="ob-step-btn-text">
+                <strong>Commute Parameters</strong>
+                <span>Post first route setup</span>
+              </div>
+            </div>
+            <div class="ob-step-chevron">→</div>
+          </button>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- PHONE PREVIEW PANEL -->
+    <div class="phone-wrapper">
+      <div class="phone-container">
+        <div class="phone-notch"></div>
+        <div class="phone-screen" id="phone-screen-target">
+          <!-- Populated by JS -->
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- SECTION 5: UX PRINCIPLES -->
+<div class="section" id="tab-ux">
+  <div class="section-title">Non-Negotiable UX Principles</div>
+  <div class="section-desc">Eight design rules defining TheCarPool layouts. Click cards to flip them and view interactive micro-demos demonstrating the principle.</div>
+
+  <div class="ux-grid">
+
+    <!-- Card 1 -->
+    <div class="ux-card-wrapper" onclick="flipUXCard(this)">
+      <div class="ux-card-inner">
+        <div class="ux-card-front">
+          <div class="ux-card-front-emoji">⚡</div>
+          <div class="ux-card-front-title">Speed is a Feature</div>
+          <div class="ux-card-front-desc">Confirm a booking in under 30 seconds. Zero unnecessary screen stacks.</div>
+        </div>
+        <div class="ux-card-back">
+          <div class="ux-card-back-title">Speed Demo</div>
+          <div class="ux-card-back-body">
+            <button class="mock-btn" style="background:var(--primary);" onclick="testBookingSpeed(event, this)">Click to Speed Book</button>
+            <div style="font-size:11px;color:var(--text-secondary);margin-top:10px;text-align:center;" id="speed-result">Click to start stopwatch...</div>
+          </div>
+          <div class="ux-card-back-footer">Demo: Speed optimization</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Card 2 -->
+    <div class="ux-card-wrapper" onclick="flipUXCard(this)">
+      <div class="ux-card-inner">
+        <div class="ux-card-front">
+          <div class="ux-card-front-emoji">🎯</div>
+          <div class="ux-card-front-title">Zero Ambiguity</div>
+          <div class="ux-card-front-desc">Pickup, ETA, pricing - shown upfront. No hidden variables revealed post-booking.</div>
+        </div>
+        <div class="ux-card-back">
+          <div class="ux-card-back-title">Ambiguity Check</div>
+          <div class="ux-card-back-body">
+            <button class="mock-btn" style="background:#22c55e;margin-bottom:8px;" onclick="toggleAmbiguity(event, 'thecarpool')">TheCarPool Card</button>
+            <button class="mock-btn" style="background:#ef4444;" onclick="toggleAmbiguity(event, 'traditional')">Traditional App Card</button>
+            <div id="ambiguity-result" style="font-size:10px;color:var(--text-secondary);margin-top:8px;padding:6px;background:rgba(0,0,0,0.2);border-radius:4px;line-height:1.35;">Click option above...</div>
+          </div>
+          <div class="ux-card-back-footer">Demo: Details comparison</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Card 3 -->
+    <div class="ux-card-wrapper" onclick="flipUXCard(this)">
+      <div class="ux-card-inner">
+        <div class="ux-card-front">
+          <div class="ux-card-front-emoji">🇮🇳</div>
+          <div class="ux-card-front-title">Built for India</div>
+          <div class="ux-card-front-desc">Landmark-first mapping, low-connectivity support, and multi-language presets.</div>
+        </div>
+        <div class="ux-card-back">
+          <div class="ux-card-back-title">Indian Context</div>
+          <div class="ux-card-back-body">
+            <p style="font-size:11px;color:var(--text-secondary);margin-bottom:8px;">Convert coordinates to local descriptions:</p>
+            <button class="mock-btn" style="background:var(--ai-indigo);" onclick="convertCoords(event)">Map Coordinate to Landmark</button>
+            <div id="coords-result" style="font-size:11.5px;color:#fff;margin-top:8px;text-align:center;font-weight:600;">Pin Drop: 28.4721° N, 77.0864° E</div>
+          </div>
+          <div class="ux-card-back-footer">Demo: Landmark translation</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Card 4 -->
+    <div class="ux-card-wrapper" onclick="flipUXCard(this)">
+      <div class="ux-card-inner">
+        <div class="ux-card-front">
+          <div class="ux-card-front-emoji">👁</div>
+          <div class="ux-card-front-title">One-Thumb Reach</div>
+          <div class="ux-card-front-desc">Primary actions locked in bottom zones. No reaching required on larger screens.</div>
+        </div>
+        <div class="ux-card-back">
+          <div class="ux-card-back-title">Thumb Zone Grid</div>
+          <div class="ux-card-back-body">
+            <div style="display:grid;grid-template-rows:repeat(3, 1fr);gap:4px;height:90px;text-align:center;font-size:9.5px;">
+              <div style="background:var(--danger-glow);border:1px solid var(--danger);border-radius:4px;padding:3px;color:var(--danger)">Upper (Hard to reach)</div>
+              <div style="background:var(--warning-glow);border:1px solid var(--warning);border-radius:4px;padding:3px;color:var(--warning)">Mid Zone (Stretch)</div>
+              <div style="background:var(--success-glow);border:1px solid var(--success);border-radius:4px;padding:3px;color:var(--success)">Bottom Sheet Comfort Zone (TheCarPool buttons)</div>
+            </div>
+          </div>
+          <div class="ux-card-back-footer">Demo: UI reach maps</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Card 5 -->
+    <div class="ux-card-wrapper" onclick="flipUXCard(this)">
+      <div class="ux-card-inner">
+        <div class="ux-card-front">
+          <div class="ux-card-front-emoji">🤝</div>
+          <div class="ux-card-front-title">Trust is Visible</div>
+          <div class="ux-card-front-desc">Colleague badges, LinkedIn connection details, and verified symbols front and center.</div>
+        </div>
+        <div class="ux-card-back">
+          <div class="ux-card-back-title">Trust Indicators</div>
+          <div class="ux-card-back-body">
+            <div class="mock-card" style="margin-bottom:0;padding:8px;">
+              <div style="display:flex;align-items:center;gap:8px;">
+                <div style="width:28px;height:28px;border-radius:50%;background:#a5b4fc"></div>
+                <div>
+                  <div style="font-weight:700;font-size:11px;color:#fff;">Amit K. (4.9★)</div>
+                  <div style="font-size:9px;color:var(--success);font-weight:600;">✓ Verified Colleague (TCS)</div>
+                  <div style="font-size:9px;color:var(--ai-indigo);">🤝 3 mutual LinkedIn contacts</div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="ux-card-back-footer">Demo: Social proof placement</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Card 6 -->
+    <div class="ux-card-wrapper" onclick="flipUXCard(this)">
+      <div class="ux-card-inner">
+        <div class="ux-card-front">
+          <div class="ux-card-front-emoji">♿</div>
+          <div class="ux-card-front-title">Accessibility First</div>
+          <div class="ux-card-front-desc">Contrast targets exceeding WCAG guidelines, scalable type, and screen-reader anchors.</div>
+        </div>
+        <div class="ux-card-back">
+          <div class="ux-card-back-title">Contrast Settings</div>
+          <div class="ux-card-back-body">
+            <div style="display:flex;justify-content:space-around;font-size:11.5px;">
+              <div style="padding:6px;background:#fff;color:#000;font-weight:700;border-radius:4px;">Light: 9.8:1 AAA</div>
+              <div style="padding:6px;background:#0f1422;color:#fff;border:1px solid #3b82f6;font-weight:700;border-radius:4px;">Dark: 14.5:1 AAA</div>
+            </div>
+          </div>
+          <div class="ux-card-back-footer">Demo: Contrast rating</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Card 7 -->
+    <div class="ux-card-wrapper" onclick="flipUXCard(this)">
+      <div class="ux-card-inner">
+        <div class="ux-card-front">
+          <div class="ux-card-front-emoji">🌗</div>
+          <div class="ux-card-front-title">Zero Dark Patterns</div>
+          <div class="ux-card-front-desc">No fake booking countdowns, fake viewing alerts, or hidden recurring checkmarks.</div>
+        </div>
+        <div class="ux-card-back">
+          <div class="ux-card-back-title">Clean Checkout</div>
+          <div class="ux-card-back-body">
+            <div style="font-size:11px;color:var(--text-secondary);line-height:1.45;">
+              <div style="color:var(--success);font-weight:600;">✓ Opt-in alerts explicitly unchecked</div>
+              <div style="color:var(--success);font-weight:600;">✓ Subscriptions can be paused in 1 tap</div>
+              <div style="color:var(--success);font-weight:600;">✓ Easy account deletion links</div>
+            </div>
+          </div>
+          <div class="ux-card-back-footer">Demo: Consumer ethics</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Card 8 -->
+    <div class="ux-card-wrapper" onclick="flipUXCard(this)">
+      <div class="ux-card-inner">
+        <div class="ux-card-front">
+          <div class="ux-card-front-emoji">🔔</div>
+          <div class="ux-card-front-title">Notify, Don't Spam</div>
+          <div class="ux-card-front-desc">Restricted pushing channels. Only transactional updates: bookings, delays, payouts.</div>
+        </div>
+        <div class="ux-card-back">
+          <div class="ux-card-back-title">Alert Restriction</div>
+          <div class="ux-card-back-body">
+            <div style="font-size:11px;color:var(--text-secondary);line-height:1.4;">
+              <span style="color:#ef4444;font-weight:600;">✗ No promotional discount spam</span><br/>
+              <span style="color:#ef4444;font-weight:600;">✗ No fake activity reminders</span><br/>
+              <span style="color:var(--success);font-weight:600;">✓ Strictly transactional booking alerts</span>
+            </div>
+          </div>
+          <div class="ux-card-back-footer">Demo: Notification strategy</div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- SECTION 6: TECH STACK RELATION -->
+<div class="section" id="tab-tech">
+  <div class="section-title">Interactive Technology Architecture</div>
+  <div class="section-desc">Inspect how TheCarPool services integrate. Click a badge to highlight related services across layers.</div>
+
+  <div class="tech-stack-layout">
+    
+    <!-- Mobile Frontend -->
+    <div class="tech-stack-row">
+      <div class="tech-stack-row-name"><span>📱</span> Mobile Frontend</div>
+      <div class="tech-badges-grid">
+        <div class="tech-badge" id="tech-react-native" onclick="highlightTech('react-native')">
+          <div class="tech-badge-dot" style="background:#61dafb"></div>
+          <div class="tech-badge-info">
+            <strong>React Native</strong>
+            <span>Cross-platform mobile</span>
+          </div>
+        </div>
+        <div class="tech-badge" id="tech-expo" onclick="highlightTech('expo')">
+          <div class="tech-badge-dot" style="background:#ffffff"></div>
+          <div class="tech-badge-info">
+            <strong>Expo</strong>
+            <span>OTA deployment framework</span>
+          </div>
+        </div>
+        <div class="tech-badge" id="tech-zustand" onclick="highlightTech('zustand')">
+          <div class="tech-badge-dot" style="background:#ff6b35"></div>
+          <div class="tech-badge-info">
+            <strong>Zustand</strong>
+            <span>State management</span>
+          </div>
+        </div>
+        <div class="tech-badge" id="tech-react-query" onclick="highlightTech('react-query')">
+          <div class="tech-badge-dot" style="background:#ff4154"></div>
+          <div class="tech-badge-info">
+            <strong>React Query</strong>
+            <span>Server state synchronization</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Backend Services -->
+    <div class="tech-stack-row">
+      <div class="tech-stack-row-name"><span>⚙️</span> Backend Services</div>
+      <div class="tech-badges-grid">
+        <div class="tech-badge" id="tech-node-fastify" onclick="highlightTech('node-fastify')">
+          <div class="tech-badge-dot" style="background:#0284c7"></div>
+          <div class="tech-badge-info">
+            <strong>Node + Fastify</strong>
+            <span>Main routing API gateway</span>
+          </div>
+        </div>
+        <div class="tech-badge" id="tech-python-fastapi" onclick="highlightTech('python-fastapi')">
+          <div class="tech-badge-dot" style="background:#0d9488"></div>
+          <div class="tech-badge-info">
+            <strong>Python (FastAPI)</strong>
+            <span>AI microservice interface</span>
+          </div>
+        </div>
+        <div class="tech-badge" id="tech-socket" onclick="highlightTech('socket')">
+          <div class="tech-badge-dot" style="background:#ffffff"></div>
+          <div class="tech-badge-info">
+            <strong>Socket.io</strong>
+            <span>Real-time tracking chats</span>
+          </div>
+        </div>
+        <div class="tech-badge" id="tech-postgresql" onclick="highlightTech('postgresql')">
+          <div class="tech-badge-dot" style="background:#336791"></div>
+          <div class="tech-badge-info">
+            <strong>PostgreSQL (PostGIS)</strong>
+            <span>Relational database & spatial</span>
+          </div>
+        </div>
+        <div class="tech-badge" id="tech-redis" onclick="highlightTech('redis')">
+          <div class="tech-badge-dot" style="background:#ef4444"></div>
+          <div class="tech-badge-info">
+            <strong>Redis</strong>
+            <span>Cache queues & active sessions</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- AI & Voice -->
+    <div class="tech-stack-row">
+      <div class="tech-stack-row-name"><span>🤖</span> AI & Voice Layer</div>
+      <div class="tech-badges-grid">
+        <div class="tech-badge" id="tech-claude" onclick="highlightTech('claude')">
+          <div class="tech-badge-dot" style="background:#d97706"></div>
+          <div class="tech-badge-info">
+            <strong>Claude API</strong>
+            <span>NLU, Intent extraction</span>
+          </div>
+        </div>
+        <div class="tech-badge" id="tech-elevenlabs" onclick="highlightTech('elevenlabs')">
+          <div class="tech-badge-dot" style="background:#a855f7"></div>
+          <div class="tech-badge-info">
+            <strong>ElevenLabs TTS</strong>
+            <span>Accent generation</span>
+          </div>
+        </div>
+        <div class="tech-badge" id="tech-twilio" onclick="highlightTech('twilio')">
+          <div class="tech-badge-dot" style="background:#f22f46"></div>
+          <div class="tech-badge-info">
+            <strong>Twilio / Exotel</strong>
+            <span>Pre-ride voice calls routing</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Payments & Compliance -->
+    <div class="tech-stack-row">
+      <div class="tech-stack-row-name"><span>💳</span> Payments & Compliance</div>
+      <div class="tech-badges-grid">
+        <div class="tech-badge" id="tech-razorpay" onclick="highlightTech('razorpay')">
+          <div class="tech-badge-dot" style="background:#0c81ec"></div>
+          <div class="tech-badge-info">
+            <strong>Razorpay UPI</strong>
+            <span>Cost share payment gateway</span>
+          </div>
+        </div>
+        <div class="tech-badge" id="tech-setu" onclick="highlightTech('setu')">
+          <div class="tech-badge-dot" style="background:#f59e0b"></div>
+          <div class="tech-badge-info">
+            <strong>Setu KYC</strong>
+            <span>Vahan vehicle registrations</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- SECTION 7: TIMELINE Milestone SCRUBBER -->
+<div class="section" id="tab-timeline">
+  <div class="section-title">18-Month Launch Timeline</div>
+  <div class="section-desc">Drag or click scrubber nodes to inspect key month milestones and active task checklists.</div>
+
+  <div class="timeline-container">
+    
+    <!-- Timeline Scrubber track -->
+    <div class="timeline-scrubber">
+      <div class="timeline-scrubber-progress" id="tl-progress"></div>
+      <div class="scrubber-node active" onclick="selectTimelineNode(0, this)">M1</div>
+      <div class="scrubber-node" onclick="selectTimelineNode(1, this)">M2</div>
+      <div class="scrubber-node" onclick="selectTimelineNode(2, this)">M3</div>
+      <div class="scrubber-node" onclick="selectTimelineNode(3, this)">M4</div>
+      <div class="scrubber-node" onclick="selectTimelineNode(5, this)">M6</div>
+      <div class="scrubber-node" onclick="selectTimelineNode(6, this)">M7</div>
+      <div class="scrubber-node" onclick="selectTimelineNode(8, this)">M9</div>
+      <div class="scrubber-node" onclick="selectTimelineNode(10, this)">M11</div>
+      <div class="scrubber-node" onclick="selectTimelineNode(13, this)">M14</div>
+      <div class="scrubber-node" onclick="selectTimelineNode(17, this)">M18</div>
+    </div>
+
+    <!-- Details Card -->
+    <div class="timeline-details" id="timeline-detail-card">
+      <!-- Populated dynamically by JS -->
+    </div>
+
+  </div>
+</div>
+
+<!-- FOOTER -->
+<div style="background:#080c14; border-top:1px solid var(--border-color); color:var(--text-muted); text-align:center; padding:32px 24px; font-size:12.5px; margin-top:60px;">
+  TheCarPool Interactive Product Roadmap — Built for speed, trust, and zero ambiguity &nbsp;·&nbsp; <span style="color:var(--primary); font-weight:600;">thecarpool.in</span>
+</div>
+
+<script>
+  /* TAB NAVIGATION FUNCTION */
+  function showTab(id) {
+    document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    
+    document.getElementById('tab-' + id).classList.add('active');
+    event.currentTarget.classList.add('active');
+    
+    // Auto load onboarding mockup base screen
+    if (id === 'onboarding') {
+      const activeBtn = document.querySelector('.ob-step-btn.active');
+      if (activeBtn) activeBtn.click();
+    }
+  }
+
+  /* ACCORDION COLLAPSE FOR PHASES */
+  function togglePhase(id) {
+    const el = document.getElementById(id);
+    el.classList.toggle('open');
+  }
+
+  /* DELIVERABLE SEARCH & FILTERS ON ROADMAP PHASES */
+  let activePhaseFilter = 'all';
+  function filterPhaseGroup(group, btn) {
+    document.querySelectorAll('#tab-phases .filter-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    activePhaseFilter = group;
+    filterPhases();
+  }
+
+  function filterPhases() {
+    const query = document.getElementById('phase-search').value.toLowerCase();
+    
+    document.querySelectorAll('.phase-card').forEach(phase => {
+      let matchCount = 0;
+      const cards = phase.querySelectorAll('.deliv-card');
+      
+      cards.forEach(card => {
+        const title = card.querySelector('.deliv-card-title').textContent.toLowerCase();
+        const desc = card.querySelector('.deliv-card-desc').textContent.toLowerCase();
+        const group = card.getAttribute('data-group');
+        
+        const matchesSearch = title.includes(query) || desc.includes(query);
+        const matchesFilter = activePhaseFilter === 'all' || group === activePhaseFilter;
+        
+        if (matchesSearch && matchesFilter) {
+          card.classList.remove('hidden');
+          matchCount++;
+        } else {
+          card.classList.add('hidden');
+        }
+      });
+
+      // Expand phase if search has matches, otherwise collapse
+      if (query.length > 0 && matchCount > 0) {
+        phase.classList.add('open');
+      }
+    });
+  }
+
+  /* FEATURE GRID FILTERING & SEARCH */
+  let activeFeatFilter = 'all';
+  
+  function filterFeatCat(cat, btn) {
+    document.querySelectorAll('#tab-features .filter-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    activeFeatFilter = cat;
+    filterFeatures();
+  }
+
+  function filterFeatures() {
+    const query = document.getElementById('feat-search').value.toLowerCase();
+    const phaseSelect = document.getElementById('feat-phase-select').value;
+    
+    // Check categories
+    document.querySelectorAll('.features-category').forEach(catSection => {
+      const catId = catSection.id.replace('cat-', '');
+      const categoryMatches = activeFeatFilter === 'all' || catId === activeFeatFilter;
+      
+      let visibleCards = 0;
+      const cards = catSection.querySelectorAll('.feature-card');
+      
+      cards.forEach(card => {
+        const title = card.querySelector('.feature-title').textContent.toLowerCase();
+        const desc = card.querySelector('.feature-desc').textContent.toLowerCase();
+        const phase = card.getAttribute('data-phase');
+        
+        const matchesSearch = title.includes(query) || desc.includes(query);
+        const matchesPhase = phaseSelect === 'all' || phase === phaseSelect;
+        
+        if (matchesSearch && matchesPhase && categoryMatches) {
+          card.classList.remove('hidden');
+          visibleCards++;
+        } else {
+          card.classList.add('hidden');
+        }
+      });
+      
+      if (visibleCards > 0 && categoryMatches) {
+        catSection.classList.remove('hidden');
+      } else {
+        catSection.classList.add('hidden');
+      }
+    });
+  }
+
+  /* AI SIMULATOR IMPLEMENTATION */
+  let simMode = 'call';
+  let simActive = false;
+  let simStep = 0;
+  
+  const simOptionPreset = {
+    call: [
+      { text: "Confirm: Yes, I will be ready", reply: "Confirming your seat. Payout holding initialized.", next: 2 },
+      { text: "Adjust: Need 10 minutes delay", reply: "Rerouting alert: Driver notified of 10-minute shift.", next: 3 },
+      { text: "Cancel: Can't make it", reply: "Processing reservation cancellation. Funds returned to SafarWallet.", next: 4 }
+    ],
+    assist: [
+      { text: "Book me a ride to Cyber City tomorrow 9am", next: 1, command: "Book Cyber City tomorrow 9am" },
+      { text: "Search ride to Noida sector 62 for 6pm", next: 2, command: "Search Noida 62 today 6pm" },
+      { text: "What is my next ride details?", next: 3, command: "Get active booking info" }
+    ]
+  };
+
+  function setSimMode(mode) {
+    simMode = mode;
+    simActive = false;
+    simStep = 0;
+    
+    document.getElementById('mode-call-btn').classList.toggle('active', mode === 'call');
+    document.getElementById('mode-assist-btn').classList.toggle('active', mode === 'assist');
+    
+    const startMsg = document.getElementById('sim-start-msg');
+    const mainBtn = document.getElementById('sim-main-btn');
+    const mainBtnIcon = document.getElementById('sim-btn-icon');
+    const mainBtnText = document.getElementById('sim-btn-text');
+    const simScreen = document.getElementById('sim-screen');
+    const optBox = document.getElementById('sim-options');
+    const statusDot = document.getElementById('sim-dot');
+    const statusTitle = document.getElementById('sim-title-text');
+    
+    statusDot.classList.remove('active');
+    optBox.classList.add('hidden');
+    
+    if (mode === 'call') {
+      statusTitle.textContent = "Call System Idle";
+      startMsg.textContent = 'Select "Start Call" below to test the AI confirmation sequence.';
+      mainBtnText.textContent = "Start Confirmation Call";
+      mainBtnIcon.textContent = "📞";
+      mainBtn.className = "sim-action-btn";
+    } else {
+      statusTitle.textContent = "Voice Assistant Idle";
+      startMsg.textContent = 'Select preset command below or start conversation to test intent parsing.';
+      mainBtnText.textContent = "Initialize Voice Command";
+      mainBtnIcon.textContent = "🎙";
+      mainBtn.className = "sim-action-btn";
+      
+      // Populate triggers immediately for helper modes
+      populateSuggestions();
+    }
+    
+    simScreen.innerHTML = '';
+    simScreen.appendChild(startMsg);
+  }
+
+  function handleSimAction() {
+    if (simMode === 'call') {
+      if (!simActive) {
+        startCallSequence();
+      } else {
+        endCallSequence("Call Ended by User");
+      }
+    } else {
+      startVoiceAssistantSequence();
+    }
+  }
+
+  function startCallSequence() {
+    simActive = true;
+    simStep = 1;
+    
+    const screen = document.getElementById('sim-screen');
+    screen.innerHTML = '';
+    
+    const statusDot = document.getElementById('sim-dot');
+    const statusTitle = document.getElementById('sim-title-text');
+    const mainBtn = document.getElementById('sim-main-btn');
+    const mainBtnText = document.getElementById('sim-btn-text');
+    const waveform = document.getElementById('waveform');
+    
+    statusDot.classList.add('active');
+    statusTitle.textContent = "Incoming Call...";
+    mainBtnText.textContent = "End Call";
+    mainBtn.className = "sim-action-btn hangup";
+    
+    appendBubble('system', 'Incoming automated call routing...');
+    
+    setTimeout(() => {
+      if (!simActive) return;
+      statusTitle.textContent = "Call Active (00:01)";
+      waveform.style.display = 'flex';
+      appendBubble('ai', '📞 Namaste Pooja! This is TheCarPool Call System. Confirming your ride with Amit to DLF Cyber City scheduled at 8:15 AM from Sector 18 HDFC ATM. Will you be ready?');
+      populateSuggestions();
+    }, 1500);
+  }
+
+  function selectOption(index) {
+    const suggestions = simOptionPreset[simMode];
+    const item = suggestions[index];
+    const waveform = document.getElementById('waveform');
+    
+    if (simMode === 'call') {
+      appendBubble('user', item.text);
+      document.getElementById('sim-options').classList.add('hidden');
+      waveform.style.display = 'flex';
+      
+      setTimeout(() => {
+        if (!simActive) return;
+        appendBubble('ai', '🤖 ' + item.reply);
+        appendBubble('system', 'Webhooks Dispatched. Code: 200 SUCCESS.');
+        
+        setTimeout(() => {
+          endCallSequence("Call Finished. Connection closed.");
+        }, 2000);
+      }, 1200);
+    } else {
+      // Voice assistant simulator logic
+      appendBubble('user', `🗣 "${item.command}"`);
+      document.getElementById('sim-options').classList.add('hidden');
+      
+      setTimeout(() => {
+        appendBubble('system', 'Claude API NLU: INTENT=' + (index === 0 ? 'BOOK_RIDE' : index === 1 ? 'SEARCH_RIDE' : 'GET_INFO'));
+        
+        setTimeout(() => {
+          if (index === 0) {
+            appendBubble('ai', '🎙 ElevenLabs: "I found Amit K. leaving for Cyber City at 8:55 AM (Co-worker, Tata Nexon EV). Confirm booking?"');
+            populateAssistSubOption();
+          } else if (index === 1) {
+            appendBubble('ai', '🎙 ElevenLabs: "Searching... I found Rajesh (Glanza, 6:05 PM) and Neha (City, 5:50 PM). Speak one to book."');
+            populateAssistSubOption();
+          } else {
+            appendBubble('ai', '🎙 ElevenLabs: "You have an active ride with Ramesh at 8:30 AM tomorrow. Estimated ETA is on time."');
+            setTimeout(() => {
+              document.getElementById('sim-options').classList.remove('hidden');
+              populateSuggestions();
+            }, 1000);
+          }
+        }, 1000);
+      }, 800);
+    }
+  }
+
+  function populateAssistSubOption() {
+    const optBox = document.getElementById('sim-options');
+    optBox.innerHTML = '';
+    
+    const confirmChip = document.createElement('div');
+    confirmChip.className = "sim-suggestion-chip";
+    confirmChip.textContent = "Confirm Booking";
+    confirmChip.onclick = () => {
+      appendBubble('user', 'Yes, confirm.');
+      optBox.classList.add('hidden');
+      setTimeout(() => {
+        appendBubble('ai', '🎙 ElevenLabs: "Booking confirmed! Razorpay escrow created. Notification sent to driver."');
+        appendBubble('system', 'Status: OK. DB update dispatched.');
+        setTimeout(() => {
+          optBox.classList.remove('hidden');
+          populateSuggestions();
+        }, 1500);
+      }, 1000);
+    };
+    
+    const cancelChip = document.createElement('div');
+    cancelChip.className = "sim-suggestion-chip";
+    cancelChip.textContent = "Cancel";
+    cancelChip.onclick = () => {
+      appendBubble('user', 'Nevermind.');
+      optBox.classList.add('hidden');
+      setTimeout(() => {
+        appendBubble('ai', '🎙 ElevenLabs: "Booking request discarded."');
+        setTimeout(() => {
+          optBox.classList.remove('hidden');
+          populateSuggestions();
+        }, 1200);
+      }, 800);
+    };
+    
+    optBox.appendChild(confirmChip);
+    optBox.appendChild(cancelChip);
+    optBox.classList.remove('hidden');
+  }
+
+  function startVoiceAssistantSequence() {
+    const screen = document.getElementById('sim-screen');
+    screen.innerHTML = '';
+    appendBubble('system', 'Voice channel open. Speak now...');
+    populateSuggestions();
+  }
+
+  function endCallSequence(statusMsg) {
+    simActive = false;
+    const statusDot = document.getElementById('sim-dot');
+    const statusTitle = document.getElementById('sim-title-text');
+    const mainBtn = document.getElementById('sim-main-btn');
+    const mainBtnText = document.getElementById('sim-btn-text');
+    const waveform = document.getElementById('waveform');
+    
+    statusDot.classList.remove('active');
+    statusTitle.textContent = "Call System Idle";
+    mainBtnText.textContent = "Start Confirmation Call";
+    mainBtn.className = "sim-action-btn";
+    waveform.style.display = 'none';
+    
+    appendBubble('system', statusMsg);
+    document.getElementById('sim-options').classList.add('hidden');
+  }
+
+  function populateSuggestions() {
+    const optBox = document.getElementById('sim-options');
+    optBox.innerHTML = '';
+    
+    const suggestions = simOptionPreset[simMode];
+    suggestions.forEach((opt, idx) => {
+      const chip = document.createElement('div');
+      chip.className = "sim-suggestion-chip";
+      chip.textContent = opt.text;
+      chip.onclick = () => selectOption(idx);
+      optBox.appendChild(chip);
+    });
+    
+    optBox.classList.remove('hidden');
+  }
+
+  function appendBubble(sender, text) {
+    const screen = document.getElementById('sim-screen');
+    const bubble = document.createElement('div');
+    bubble.className = `sim-bubble ${sender}`;
+    bubble.textContent = text;
+    screen.appendChild(bubble);
+    screen.scrollTop = screen.scrollHeight;
+  }
+
+  /* ONBOARDING PHONE PREVIEW SWITCHER */
+  const mockScreens = {
+    'rider-1': `
+      <div class="phone-status-bar">
+        <span>09:41</span>
+        <span>📶 🔋</span>
+      </div>
+      <div class="phone-app-content">
+        <div class="mock-header">
+          <span style="color:var(--primary)">TheCarPool</span> Signup
+        </div>
+        <p style="font-size:11.5px;color:var(--text-secondary);margin-bottom:14px;">Verify your identity to search matches.</p>
+        <div class="mock-card">
+          <label style="display:block;font-size:10px;color:var(--text-muted);margin-bottom:4px;">Mobile Number</label>
+          <input type="text" class="mock-input" value="+91 98765 43210" disabled/>
+          <button class="mock-btn" onclick="simulateRiderOTP(this)">Send Verification OTP</button>
+        </div>
+        <div id="otp-input-box" class="hidden">
+          <div class="mock-card">
+            <label style="display:block;font-size:10px;color:var(--text-muted);margin-bottom:6px;">Verification Code (SMS)</label>
+            <div style="display:flex;gap:8px;margin-bottom:10px;">
+              <input type="text" class="mock-input" value="4" style="text-align:center;margin-bottom:0;" disabled/>
+              <input type="text" class="mock-input" value="8" style="text-align:center;margin-bottom:0;" disabled/>
+              <input type="text" class="mock-input" value="1" style="text-align:center;margin-bottom:0;" disabled/>
+              <input type="text" class="mock-input" value="9" style="text-align:center;margin-bottom:0;" disabled/>
+            </div>
+            <div style="font-size:11px;color:var(--success);font-weight:600;text-align:center;">✓ Verified successfully!</div>
+          </div>
+        </div>
+      </div>
+    `,
+    'rider-2': `
+      <div class="phone-status-bar">
+        <span>09:41</span>
+        <span>📶 🔋</span>
+      </div>
+      <div class="phone-app-content">
+        <div class="mock-header">Commute Path</div>
+        <div class="mini-map">
+          <svg width="100%" height="130" viewBox="0 0 300 130" xmlns="http://www.w3.org/2000/svg">
+            <path d="M 30 90 Q 130 45 230 20" fill="none" stroke="#374151" stroke-width="4"></path>
+            <path d="M 30 90 Q 130 45 230 20" fill="none" class="mini-map-path" stroke-width="4"></path>
+            <!-- Home Pin -->
+            <circle cx="30" cy="90" r="6" fill="#10b981"></circle>
+            <text x="25" y="112" fill="#10b981" font-size="9" font-weight="bold">Home</text>
+            <!-- Office Pin -->
+            <circle cx="230" cy="20" r="6" fill="#ef4444"></circle>
+            <text x="225" y="42" fill="#ef4444" font-size="9" font-weight="bold">Office</text>
+            <!-- Moving vehicle -->
+            <circle cx="0" cy="0" r="4" fill="#ff6b35" class="mini-map-car">
+              <animateMotion dur="8s" repeatCount="indefinite" path="M 30 90 Q 130 45 230 20" />
+            </circle>
+          </svg>
+        </div>
+        <div class="mock-card" style="padding:10px;">
+          <div style="margin-bottom:6px;"><strong>Origin:</strong> Sector 56, Gurgaon</div>
+          <div><strong>Office:</strong> DLF Cyber City, Phase 3</div>
+        </div>
+      </div>
+    `,
+    'rider-3': `
+      <div class="phone-status-bar">
+        <span>09:41</span>
+        <span>📶 🔋</span>
+      </div>
+      <div class="phone-app-content">
+        <div class="mock-header">Rider Filters</div>
+        <div class="mock-card">
+          <div style="display:flex;justify-content:space-between;margin-bottom:10px;">
+            <span>Colleague Matching Only</span>
+            <span style="color:var(--success);font-weight:bold;">ON</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;margin-bottom:10px;">
+            <span>Quiet Commute Preferred</span>
+            <span style="color:var(--success);font-weight:bold;">ON</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;margin-bottom:10px;">
+            <span>Gender Restrictions</span>
+            <span style="color:var(--text-secondary)">No limit</span>
+          </div>
+        </div>
+        <button class="mock-btn" style="background:var(--success)" onclick="searchRiderMatches(this)">Search Matching Rides</button>
+      </div>
+    `,
+    'driver-1': `
+      <div class="phone-status-bar">
+        <span>09:41</span>
+        <span>📶 🔋</span>
+      </div>
+      <div class="phone-app-content">
+        <div class="mock-header">Driver Profile</div>
+        <div class="mock-card">
+          <div style="display:flex;align-items:center;gap:12px;margin-bottom:10px;">
+            <div style="width:40px;height:40px;border-radius:50%;background:#d1fae5;display:flex;align-items:center;justify-content:center;font-size:16px;">🚗</div>
+            <div>
+              <div style="font-weight:700;color:#fff;">Rajesh Kumar</div>
+              <div style="font-size:10px;color:var(--text-muted)">Verified work account</div>
+            </div>
+          </div>
+          <label style="display:block;font-size:10px;color:var(--text-muted);margin-bottom:4px;">Work Email</label>
+          <input type="text" class="mock-input" value="rajesh.k@tcs.com" disabled/>
+        </div>
+      </div>
+    `,
+    'driver-2': `
+      <div class="phone-status-bar">
+        <span>09:41</span>
+        <span>📶 🔋</span>
+      </div>
+      <div class="phone-app-content">
+        <div class="mock-header">Registration RC Scan</div>
+        <div class="ocr-scan-box" id="ocr-box" onclick="runOCRScanner(this)">
+          <div style="text-align:center;">
+            <div>📸 Click to Scan Registration Card</div>
+            <div style="font-size:9.5px;color:var(--text-muted);margin-top:4px;">Uses computer vision to extract details</div>
+          </div>
+        </div>
+        <div class="mock-card">
+          <div style="margin-bottom:6px;"><strong>Car Make:</strong> <span id="ocr-make">-</span></div>
+          <div style="margin-bottom:6px;"><strong>Reg Year:</strong> <span id="ocr-year">-</span></div>
+          <div><strong>License Plate:</strong> <span id="ocr-plate">-</span></div>
+        </div>
+      </div>
+    `,
+    'driver-3': `
+      <div class="phone-status-bar">
+        <span>09:41</span>
+        <span>📶 🔋</span>
+      </div>
+      <div class="phone-app-content">
+        <div class="mock-header">Facial Matching KYC</div>
+        <div class="selfie-circle" id="selfie-box">
+          <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-size:24px;">👤</div>
+        </div>
+        <button class="mock-btn" onclick="runFacialMatch(this)">Verify Face via Aadhaar</button>
+        <div id="facial-result" style="font-size:11.5px;color:var(--text-secondary);text-align:center;margin-top:12px;font-weight:600;"></div>
+      </div>
+    `,
+    'driver-4': `
+      <div class="phone-status-bar">
+        <span>09:41</span>
+        <span>📶 🔋</span>
+      </div>
+      <div class="phone-app-content">
+        <div class="mock-header">Payout System Link</div>
+        <div class="mock-card">
+          <label style="display:block;font-size:10px;color:var(--text-muted);margin-bottom:4px;">UPI Payment ID</label>
+          <input type="text" class="mock-input" id="upi-input" value="rajeshk@okaxis"/>
+          <button class="mock-btn" onclick="verifyPennyDrop(this)">Link Account (Penny Drop)</button>
+        </div>
+        <div id="penny-drop-result" style="font-size:11px;color:var(--text-secondary);text-align:center;margin-top:8px;"></div>
+      </div>
+    `,
+    'driver-5': `
+      <div class="phone-status-bar">
+        <span>09:41</span>
+        <span>📶 🔋</span>
+      </div>
+      <div class="phone-app-content">
+        <div class="mock-header">Commute Configuration</div>
+        <div class="mock-card">
+          <div style="font-weight:700;margin-bottom:6px;font-size:11.5px;">Commute Days</div>
+          <div style="display:flex;gap:4px;margin-bottom:10px;">
+            <div style="padding:4px 6px;background:var(--primary);color:#fff;border-radius:4px;font-size:9.5px;">M</div>
+            <div style="padding:4px 6px;background:var(--primary);color:#fff;border-radius:4px;font-size:9.5px;">T</div>
+            <div style="padding:4px 6px;background:var(--primary);color:#fff;border-radius:4px;font-size:9.5px;">W</div>
+            <div style="padding:4px 6px;background:var(--primary);color:#fff;border-radius:4px;font-size:9.5px;">T</div>
+            <div style="padding:4px 6px;background:var(--primary);color:#fff;border-radius:4px;font-size:9.5px;">F</div>
+          </div>
+          <div style="margin-bottom:4px;">Departure: 08:30 AM</div>
+          <div>Seats: 3 Available</div>
+        </div>
+        <button class="mock-btn" style="background:var(--success)" onclick="confirmDriverRoute(this)">Post Route Live</button>
+      </div>
+    `
+  };
+
+  function loadOnboardingScreen(screenKey, btn) {
+    if (btn) {
+      document.querySelectorAll('.ob-step-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+    }
+    
+    const target = document.getElementById('phone-screen-target');
+    target.innerHTML = mockScreens[screenKey];
+  }
+
+  // Micro animations for mockup interactions
+  function simulateRiderOTP(btn) {
+    btn.textContent = "Sending OTP...";
+    setTimeout(() => {
+      document.getElementById('otp-input-box').classList.remove('hidden');
+      btn.textContent = "OTP Dispatched";
+      btn.style.background = "#4b5563";
+    }, 1200);
+  }
+
+  function runOCRScanner(box) {
+    box.classList.add('scanning');
+    box.querySelector('div').textContent = "Scanning vehicle registration...";
+    
+    setTimeout(() => {
+      box.classList.remove('scanning');
+      box.style.borderColor = "var(--success)";
+      box.querySelector('div').innerHTML = "✓ Scan Complete<br/><span style='font-size:9.5px;color:var(--success)'>Fields extracted</span>";
+      
+      document.getElementById('ocr-make').textContent = "Hyundai i20";
+      document.getElementById('ocr-year').textContent = "2023";
+      document.getElementById('ocr-plate').textContent = "DL 3C BC 8712";
+    }, 1800);
+  }
+
+  function runFacialMatch(btn) {
+    const box = document.getElementById('selfie-box');
+    box.classList.add('scanning');
+    btn.textContent = "Analyzing facial structure...";
+    
+    setTimeout(() => {
+      box.classList.remove('scanning');
+      box.style.borderColor = "var(--success)";
+      btn.textContent = "Face Matches Aadhaar";
+      btn.style.background = "var(--success)";
+      document.getElementById('facial-result').innerHTML = "✓ Aadhaar Verified (98.4% match)";
+      document.getElementById('facial-result').style.color = "var(--success)";
+    }, 2000);
+  }
+
+  function verifyPennyDrop(btn) {
+    btn.textContent = "Verifying UPI Payout Link...";
+    const upi = document.getElementById('upi-input').value;
+    
+    setTimeout(() => {
+      btn.textContent = "UPI Verified";
+      btn.style.background = "var(--success)";
+      const res = document.getElementById('penny-drop-result');
+      res.innerHTML = `✓ Bank verified (Re.1 deposited successfully to <strong>Rajesh Kumar</strong>)`;
+      res.style.color = "var(--success)";
+    }, 1500);
+  }
+
+  // End-to-end Ride Matching Simulators
+  function searchRiderMatches(btn) {
+    btn.textContent = "Finding matched pools...";
+    btn.disabled = true;
+    const target = document.getElementById('phone-screen-target');
+    
+    setTimeout(() => {
+      target.innerHTML = `
+        <div class="phone-status-bar">
+          <span>09:41</span>
+          <span>📶 🔋</span>
+        </div>
+        <div class="phone-app-content">
+          <div class="mock-header">Matching Pools</div>
+          <p style="font-size:10px;color:var(--text-secondary);margin-bottom:8px;">2 drivers matched on your commute vector</p>
+          
+          <div class="mock-card" style="padding:10px;margin-bottom:10px;border-color:var(--primary-border);">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+              <span style="font-weight:700;font-size:12px;color:#fff;">Amit K. (TCS Colleague)</span>
+              <span style="color:var(--success);font-size:10px;font-weight:750;">4.9 ★</span>
+            </div>
+            <div style="font-size:10px;color:var(--text-secondary);margin-bottom:6px;">
+              🚘 Nexon EV · Departs: 8:55 AM<br/>
+              📍 Pickup: Sector 18 HDFC ATM<br/>
+              💰 Split Cost: ₹125
+            </div>
+            <button class="mock-btn" style="padding:6px;font-size:11px;" onclick="confirmRiderBooking('Amit K.')">Book Co-worker Ride</button>
+          </div>
+
+          <div class="mock-card" style="padding:10px;margin-bottom:12px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+              <span style="font-weight:700;font-size:12px;color:#fff;">Neha S. (Google Circle)</span>
+              <span style="color:var(--success);font-size:10px;font-weight:750;">4.8 ★</span>
+            </div>
+            <div style="font-size:10px;color:var(--text-secondary);margin-bottom:6px;">
+              🚘 Glanza · Departs: 8:40 AM<br/>
+              📍 Pickup: Sector 56 HDFC bank<br/>
+              💰 Split Cost: ₹130
+            </div>
+            <button class="mock-btn" style="padding:6px;font-size:11px;background:rgba(255,255,255,0.05);border:1px solid var(--border-color);color:#fff;" onclick="confirmRiderBooking('Neha S.')">Book Google Match</button>
+          </div>
+        </div>
+      `;
+    }, 1000);
+  }
+
+  function confirmRiderBooking(driverName) {
+    const target = document.getElementById('phone-screen-target');
+    target.innerHTML = `
+      <div class="phone-status-bar">
+        <span>09:41</span>
+        <span>📶 🔋</span>
+      </div>
+      <div class="phone-app-content" style="align-items:center;justify-content:center;text-align:center;padding:16px;">
+        <div class="selfie-circle scanning" style="width:70px;height:70px;margin-bottom:12px;">
+          <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-size:24px;">💳</div>
+        </div>
+        <div style="font-weight:750;color:#fff;margin-bottom:6px;font-size:14px;">Razorpay Escrow Lock</div>
+        <p style="font-size:10.5px;color:var(--text-secondary);margin-bottom:14px;">Allocating fuel split... Creating payment tunnel...</p>
+      </div>
+    `;
+    
+    setTimeout(() => {
+      target.innerHTML = `
+        <div class="phone-status-bar">
+          <span>09:41</span>
+          <span>📶 🔋</span>
+        </div>
+        <div class="phone-app-content" style="align-items:center;justify-content:center;text-align:center;padding:16px;">
+          <div style="font-size:36px;margin-bottom:12px;">🎉</div>
+          <div style="font-weight:750;color:#fff;margin-bottom:6px;font-size:14px;">Ride Booked with ${driverName}!</div>
+          <p style="font-size:11px;color:var(--text-secondary);margin-bottom:16px;">UPI penny-split confirmed. The automated AI verification call will check status at 7:55 AM tomorrow.</p>
+          <button class="mock-btn" style="background:var(--success);margin-bottom:8px;" onclick="showLiveTripScreen('${driverName}')">View Live Trip Tracking</button>
+          <button class="mock-btn" style="background:rgba(255,255,255,0.05);border:1px solid var(--border-color);color:#fff;" onclick="loadOnboardingScreen('rider-3')">Back to Search</button>
+        </div>
+      `;
+    }, 1500);
+  }
+
+  function showLiveTripScreen(driverName) {
+    const target = document.getElementById('phone-screen-target');
+    target.innerHTML = `
+      <div class="phone-status-bar">
+        <span>09:41</span>
+        <span>📶 🔋</span>
+      </div>
+      <div class="phone-app-content">
+        <div class="mock-header" style="font-size:13px;justify-content:space-between;margin-bottom:8px;">
+          <span>Trip with ${driverName}</span>
+          <span style="font-size:10px;color:var(--success);font-weight:750;">● On Route</span>
+        </div>
+        
+        <div class="mini-map" style="height:110px;margin-bottom:8px;">
+          <svg width="100%" height="110" viewBox="0 0 300 110" xmlns="http://www.w3.org/2000/svg">
+            <path d="M 30 90 Q 130 55 230 20" fill="none" stroke="#2a334a" stroke-width="4"></path>
+            <path d="M 30 90 Q 130 55 230 20" fill="none" class="mini-map-path" stroke-width="4"></path>
+            <circle cx="30" cy="90" r="5" fill="#10b981"></circle>
+            <circle cx="230" cy="20" r="5" fill="#ef4444"></circle>
+            <circle cx="0" cy="0" r="5" fill="#ff6b35" class="mini-map-car">
+              <animateMotion dur="6s" repeatCount="indefinite" path="M 30 90 Q 130 55 230 20" />
+            </circle>
+          </svg>
+        </div>
+
+        <div class="mock-card" style="padding:8px;margin-bottom:8px;font-size:10.5px;">
+          <div style="display:flex;justify-content:space-between;margin-bottom:4px;">
+            <span>Geofence Status:</span>
+            <strong style="color:var(--success)">Normal (&lt;50m detour)</strong>
+          </div>
+          <div style="display:flex;justify-content:space-between;">
+            <span>Speed:</span>
+            <strong>42 km/h</strong>
+          </div>
+        </div>
+
+        <div style="display:flex;gap:8px;">
+          <button class="mock-btn" style="background:var(--danger);font-size:11px;padding:8px;" onclick="triggerSOS()">🚨 ONE-TAP SOS</button>
+          <button class="mock-btn" style="background:rgba(255,255,255,0.05);border:1px solid var(--border-color);color:#fff;font-size:11px;padding:8px;" onclick="triggerSilentSOS(this)">Silent SOS</button>
+        </div>
+      </div>
+    `;
+  }
+
+  function triggerSOS() {
+    alert("🚨 EMERGENCY NOTICE: SOS Activated! Broadcast GPS coordinates sent to 3 family contacts, office security, and local support.");
+  }
+
+  function triggerSilentSOS(btn) {
+    btn.textContent = "Silent SOS Active";
+    btn.style.background = "var(--danger)";
+    btn.disabled = true;
+    console.log("Silent SOS active: dispatching geofence coordinates to corporate security panel...");
+  }
+
+  function confirmDriverRoute(btn) {
+    btn.textContent = "Posting route details...";
+    btn.disabled = true;
+    const target = document.getElementById('phone-screen-target');
+    
+    setTimeout(() => {
+      target.innerHTML = `
+        <div class="phone-status-bar">
+          <span>09:41</span>
+          <span>📶 🔋</span>
+        </div>
+        <div class="phone-app-content">
+          <div class="mock-header">Route Published!</div>
+          <div class="mock-card" style="padding:10px;text-align:center;margin-bottom:12px;">
+            <div style="font-size:24px;margin-bottom:6px;">📡</div>
+            <strong style="color:#fff;font-size:12.5px;">Broadcasting Route to Co-workers</strong>
+            <p style="font-size:10px;color:var(--text-secondary);margin-top:4px;">Scanning matches for: TCS Office Circle</p>
+          </div>
+          <button class="mock-btn" onclick="simulateMatchedRiders()">Simulate Matches Received</button>
+        </div>
+      `;
+    }, 1000);
+  }
+
+  function simulateMatchedRiders() {
+    const target = document.getElementById('phone-screen-target');
+    target.innerHTML = `
+      <div class="phone-status-bar">
+        <span>09:41</span>
+        <span>📶 🔋</span>
+      </div>
+      <div class="phone-app-content">
+        <div class="mock-header">Pool Requests (2)</div>
+        
+        <div class="mock-card" style="padding:10px;margin-bottom:8px;" id="req-1">
+          <div style="display:flex;justify-content:space-between;margin-bottom:6px;">
+            <span style="font-weight:700;font-size:11.5px;color:#fff;">Pooja Yadav</span>
+            <span style="color:var(--success);font-size:10px;">★ 5.0 (Google)</span>
+          </div>
+          <div style="font-size:9.5px;color:var(--text-secondary);margin-bottom:8px;">
+            📍 Pickup: Sector 18 HDFC ATM (0.2km detour)<br/>
+            💼 Seat count: 1 Seat
+          </div>
+          <div style="display:flex;gap:6px;">
+            <button class="mock-btn" style="padding:4px 8px;font-size:10px;background:var(--success);" onclick="acceptRiderRequest('Pooja Yadav', 'req-1')">Accept</button>
+            <button class="mock-btn" style="padding:4px 8px;font-size:10px;background:rgba(255,255,255,0.05);color:#fff;border:1px solid var(--border-color);" onclick="declineRiderRequest('req-1')">Ignore</button>
+          </div>
+        </div>
+
+        <div class="mock-card" style="padding:10px;margin-bottom:12px;" id="req-2">
+          <div style="display:flex;justify-content:space-between;margin-bottom:6px;">
+            <span style="font-weight:700;font-size:11.5px;color:#fff;">Rohit M.</span>
+            <span style="color:var(--success);font-size:10px;">★ 4.7 (TCS)</span>
+          </div>
+          <div style="font-size:9.5px;color:var(--text-secondary);margin-bottom:8px;">
+            📍 Pickup: IFFCO Chowk Metro (0.4km detour)<br/>
+            💼 Seat count: 1 Seat
+          </div>
+          <div style="display:flex;gap:6px;">
+            <button class="mock-btn" style="padding:4px 8px;font-size:10px;background:var(--success);" onclick="acceptRiderRequest('Rohit M.', 'req-2')">Accept</button>
+            <button class="mock-btn" style="padding:4px 8px;font-size:10px;background:rgba(255,255,255,0.05);color:#fff;border:1px solid var(--border-color);" onclick="declineRiderRequest('req-2')">Ignore</button>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  let driverAcceptedRiders = [];
+  function acceptRiderRequest(riderName, elementId) {
+    driverAcceptedRiders.push(riderName);
+    const card = document.getElementById(elementId);
+    card.innerHTML = `
+      <div style="font-size:11.5px;color:var(--success);font-weight:700;text-align:center;padding:10px 0;">
+        ✓ Accepted ${riderName} (1 seat booked)
+      </div>
+    `;
+    
+    setTimeout(() => {
+      card.style.display = 'none';
+      if (driverAcceptedRiders.length === 2) {
+        showDriverDashboard();
+      }
+    }, 1200);
+  }
+
+  function declineRiderRequest(elementId) {
+    const card = document.getElementById(elementId);
+    card.style.display = 'none';
+    
+    setTimeout(() => {
+      const visibleCards = Array.from(document.querySelectorAll('.phone-app-content .mock-card')).filter(c => c.style.display !== 'none');
+      if (visibleCards.length === 0 || driverAcceptedRiders.length > 0) {
+        showDriverDashboard();
+      }
+    }, 500);
+  }
+
+  function showDriverDashboard() {
+    const target = document.getElementById('phone-screen-target');
+    target.innerHTML = `
+      <div class="phone-status-bar">
+        <span>09:41</span>
+        <span>📶 🔋</span>
+      </div>
+      <div class="phone-app-content">
+        <div class="mock-header" style="justify-content:space-between;">
+          <span>Driver Dashboard</span>
+          <span style="font-size:10px;color:var(--primary);font-weight:750;">M-T-W-T-F</span>
+        </div>
+        <div class="mock-card" style="padding:10px;margin-bottom:10px;">
+          <div style="font-size:10.5px;color:var(--text-secondary);margin-bottom:6px;">ACTIVE TRIP SHARE:</div>
+          <strong style="color:#fff;font-size:12.5px;">Gurgaon to TCS Cyber City</strong>
+          <div style="font-size:10px;color:var(--text-muted);margin-top:4px;">Departure: 8:30 AM Tomorrow</div>
+        </div>
+        
+        <div class="mock-card" style="padding:10px;margin-bottom:12px;">
+          <div style="font-weight:750;font-size:11px;color:var(--primary);margin-bottom:6px;">Confirmed Passengers (${driverAcceptedRiders.length || 1})</div>
+          <div style="font-size:10.5px;color:#fff;line-height:1.5;">
+            ${driverAcceptedRiders.map(name => `• ${name} (1 Seat - Paid via Escrow)`).join('<br/>') || '• Pooja Yadav (1 Seat - Paid)'}
+          </div>
+        </div>
+
+        <button class="mock-btn" style="background:var(--success)" onclick="loadOnboardingScreen('driver-5')">Restart Simulator</button>
+      </div>
+    `;
+    driverAcceptedRiders = [];
+  }
+
+  /* UX PRINCIPLE DEMOS */
+  function flipUXCard(wrapper) {
+    wrapper.classList.toggle('flipped');
+  }
+
+  function testBookingSpeed(event, btn) {
+    event.stopPropagation(); // prevent card flip on button click
+    btn.textContent = "Connecting...";
+    const result = document.getElementById('speed-result');
+    result.textContent = "Executing transaction...";
+    
+    const startTime = performance.now();
+    setTimeout(() => {
+      const duration = ((performance.now() - startTime) / 1000).toFixed(2);
+      btn.textContent = "Booked!";
+      btn.style.background = "var(--success)";
+      result.innerHTML = `✓ Confirmed in <strong>${duration}s</strong>.<br/>BlaBlaCar average: 180s.`;
+    }, 600);
+  }
+
+  function toggleAmbiguity(event, type) {
+    event.stopPropagation();
+    const result = document.getElementById('ambiguity-result');
+    if (type === 'thecarpool') {
+      result.innerHTML = `<strong>TheCarPool upfront details:</strong><br/>• Cost: ₹125 (cost-split computed)<br/>• Match: Rajesh (TCS colleague)<br/>• Pickup: Gate 2 Sector 18 HDFC ATM`;
+      result.style.borderColor = "var(--success)";
+    } else {
+      result.innerHTML = `<strong>Traditional app details:</strong><br/>• Cost: ₹120-180 (dynamic pricing range)<br/>• Match: Unknown Profile<br/>• Pickup: "Gurgaon" (vague pin drop)`;
+      result.style.borderColor = "var(--danger)";
+    }
+  }
+
+  function convertCoords(event) {
+    event.stopPropagation();
+    const result = document.getElementById('coords-result');
+    result.textContent = "AI Translating Address...";
+    
+    setTimeout(() => {
+      result.innerHTML = `📍 "Near exit gate 1 Sector 18 Metro, right side of HDFC ATM"`;
+    }, 800);
+  }
+
+  /* TECH STACK RELATION HIGHLIGHTING */
+  const techConnections = {
+    'react-native': ['expo', 'zustand', 'react-query', 'node-fastify'],
+    'expo': ['react-native'],
+    'zustand': ['react-native'],
+    'react-query': ['react-native', 'node-fastify'],
+    'node-fastify': ['react-native', 'react-query', 'python-fastapi', 'socket', 'postgresql', 'redis', 'razorpay'],
+    'python-fastapi': ['node-fastify', 'claude', 'elevenlabs', 'postgresql'],
+    'socket': ['react-native', 'node-fastify'],
+    'postgresql': ['node-fastify', 'python-fastapi'],
+    'redis': ['node-fastify'],
+    'claude': ['python-fastapi', 'elevenlabs', 'twilio'],
+    'elevenlabs': ['python-fastapi', 'claude', 'twilio'],
+    'twilio': ['node-fastify', 'claude', 'elevenlabs'],
+    'razorpay': ['node-fastify', 'react-native'],
+    'setu': ['node-fastify']
+  };
+
+  function highlightTech(techKey) {
+    document.querySelectorAll('.tech-badge').forEach(b => {
+      b.classList.remove('active-main', 'active-rel');
+    });
+
+    const mainBadge = document.getElementById(`tech-${techKey}`);
+    if (mainBadge) mainBadge.classList.add('active-main');
+
+    const connections = techConnections[techKey] || [];
+    connections.forEach(connKey => {
+      const relBadge = document.getElementById(`tech-${connKey}`);
+      if (relBadge) relBadge.classList.add('active-rel');
+    });
+  }
+
+  /* TIMELINE Milestone SCRUBBER */
+  const timelineData = [
+    {
+      month: "Month 1 — Kickoff",
+      milestone: "Architectural Mapping & Wireframes",
+      summary: "Compile data relationships, sketch layout guidelines, structure authentication gates, and draft contracts for integration partners.",
+      checklist: ["Figma high-fidelity drafts", "API gateway architecture design", "Staging system setups", "Vendor agreements compiled"]
+    },
+    {
+      month: "Month 2 — Alpha Test",
+      milestone: "OTP Login & Basic Search",
+      summary: "Launch OTP login and initial maps query indexes. Set up early TestFlight and Play Store channels for internal team validation.",
+      checklist: ["Mobile SMS integrations", "SQL database index structures", "Route calculations checks", "Alpha testing apps packaged"]
+    },
+    {
+      month: "Month 3 — Transaction Shield",
+      milestone: "Payments & Safety Basics",
+      summary: "Enable secure billing tunnels with Razorpay, design emergency contacts sync parameters, and establish local KYC databases.",
+      checklist: ["Razorpay escrow system validation", "Emergency contact push alert setup", "RC license data extraction logic", "Encrypted in-app chat launch"]
+    },
+    {
+      month: "Month 4 — 🚀 Soft Launch",
+      milestone: "NCR Tech Park Pilot Program",
+      summary: "Initiate pilot program with 500 invited users from 3 major technology park office clusters in Gurugram and Bengaluru.",
+      checklist: ["500 vetted participants onboarding", "Support channels synchronization", "Ops admin interface live", "User feedback logs audit"]
+    },
+    {
+      month: "Month 6 — AI Systems Integration",
+      milestone: "Pre-Ride Call & Voice Assistants",
+      summary: "Hook up automated confirmation calls 1 hour before departure. Integrate natural speech input processors for route searches.",
+      checklist: ["Twilio voice calls integration", "Claude intent parsing models", "ElevenLabs accent streaming link", "Post-ride voice logging live"]
+    },
+    {
+      month: "Month 7 — Workplace Launch",
+      milestone: "Corporate Groups & Circles",
+      summary: "Launch email verification schemas and HR management modules allowing corporate office structures to host internal pools.",
+      checklist: ["HR portal administrative links", "Workplace matching rules validation", "Multi-passenger route scheduler", "10 enterprise agreements signed"]
+    },
+    {
+      month: "Month 9 — Subscription Commutes",
+      milestone: "Commute Recurrence & Loyaltys",
+      summary: "Release commute subscriptions with automated bookings. Implement points rankings and carbon footprint trackers.",
+      checklist: ["Recurring commute scheduler check", "SafarPoints points ledger live", "LinkedIn carbon card sharing API", "Live location shareable SMS links"]
+    },
+    {
+      month: "Month 11 — 📈 Public Launch",
+      milestone: "App Store General Release",
+      summary: "Open registration to the general public across NCR, Bengaluru, and Pune. Deploy launch campaigns positioning TheCarPool.",
+      checklist: ["App Store general launch", "Play Store general release", "Marketing systems active", "10k drivers milestone targets"]
+    },
+    {
+      month: "Month 14 — Enterprise Expansion",
+      milestone: "Corporate Billing Portals",
+      summary: "Introduce white-label employer modules, consolidated invoicing channels, and automated government verification pipelines.",
+      checklist: ["Automated billing accounts system", "Setu Aadhaar KYC integration", "Vahan registration checks link", "Multi-city surge pricing checks"]
+    },
+    {
+      month: "Month 18 — 🌐 Open Transit Platform",
+      milestone: "Ecosystem Partner APIs",
+      summary: "Publish public API frameworks for calendars and municipal networks. Partner with local metro authorities to offer transit tickets.",
+      checklist: ["OAuth developer portal release", "Delhi/Bengaluru Metro integrations", "Autonomous dispatch test runs", "100k riders milestones achieved"]
+    }
+  ];
+
+  const scrubberMap = { 0: 0, 1: 1, 2: 2, 3: 3, 5: 4, 6: 5, 8: 6, 10: 7, 13: 8, 17: 9 };
+
+  function selectTimelineNode(monthIndex, node) {
+    document.querySelectorAll('.scrubber-node').forEach(n => n.classList.remove('active'));
+    node.classList.add('active');
+    
+    // Update progress bar width
+    const nodeCount = 10;
+    const arrayIndex = scrubberMap[monthIndex];
+    const percentage = (arrayIndex / (nodeCount - 1)) * 100;
+    document.getElementById('tl-progress').style.width = percentage + '%';
+    
+    // Update content card
+    const data = timelineData[arrayIndex];
+    const detailsContainer = document.getElementById('timeline-detail-card');
+    
+    detailsContainer.innerHTML = `
+      <div class="timeline-details-left">
+        <div class="tl-detail-month">${data.month}</div>
+        <div class="tl-detail-milestone">${data.milestone}</div>
+        <p class="tl-detail-summary">${data.summary}</p>
+      </div>
+      <div class="timeline-details-right">
+        <div class="tl-checklist-title">Monthly Deliverables Checklist</div>
+        <div class="tl-checklist-items">
+          ${data.checklist.map(item => `
+            <div class="tl-checklist-item">
+              <div class="tl-check-bullet">✓</div>
+              <span>${item}</span>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+    `;
+  }
+
+  // Set initial state of components on load
+  window.onload = function() {
+    // Initial timeline node select (Month 1)
+    selectTimelineNode(0, document.querySelector('.scrubber-node'));
+    // Initial onboarding screen
+    loadOnboardingScreen('rider-1');
+  }
+</script>
+</body>
+</html>
