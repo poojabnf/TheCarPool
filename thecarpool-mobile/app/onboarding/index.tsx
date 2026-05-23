@@ -16,7 +16,7 @@ import { useRouter } from 'expo-router';
 import { useAuthStore } from '../store/authStore';
 
 const { width } = Dimensions.get('window');
-const TOTAL_STEPS = 4;
+const TOTAL_STEPS = 5;
 
 // ─── Step indicators ──────────────────────────────────────────────
 function ProgressBar({ currentStep }: { currentStep: number }) {
@@ -56,14 +56,61 @@ function ProgressBar({ currentStep }: { currentStep: number }) {
   );
 }
 
-const STEP_LABELS = ['Profile', 'Aadhaar', 'PAN', 'Selfie'];
-const STEP_ICONS = ['👤', '🪪', '💳', '🤳'];
+const STEP_LABELS = ['Role', 'Profile', 'Aadhaar', 'PAN', 'Selfie'];
+const STEP_ICONS = ['🚗', '👤', '🪪', '💳', '🤳'];
 const STEP_DESCRIPTIONS = [
+  'Choose how you want to use the app',
   'Tell us about yourself',
   'Link your Aadhaar for identity',
   'Verify PAN for tax compliance',
   'Face liveness check for security',
 ];
+
+// ─── Step 0: Role ─────────────────────────────────────────────────
+function StepRole({ onNext }: { onNext: (data: any) => void }) {
+  const [selectedRole, setSelectedRole] = useState<'rider' | 'partner' | null>(null);
+
+  return (
+    <ScrollView showsVerticalScrollIndicator={false}>
+      <Text style={styles.stepTitle}>Choose Your Role</Text>
+      <Text style={styles.stepSubtitle}>
+        Are you looking for a ride, or do you want to offer rides to your co-workers?
+      </Text>
+
+      <TouchableOpacity 
+        style={[styles.roleCard, selectedRole === 'rider' && styles.roleCardActive]} 
+        onPress={() => setSelectedRole('rider')}
+        activeOpacity={0.8}
+      >
+        <Text style={styles.roleIcon}>🧍</Text>
+        <View style={styles.roleInfo}>
+          <Text style={styles.roleTitle}>Rider</Text>
+          <Text style={styles.roleDesc}>Find verified carpools on your daily route and save money.</Text>
+        </View>
+      </TouchableOpacity>
+
+      <TouchableOpacity 
+        style={[styles.roleCard, selectedRole === 'partner' && styles.roleCardActive]} 
+        onPress={() => setSelectedRole('partner')}
+        activeOpacity={0.8}
+      >
+        <Text style={styles.roleIcon}>🚘</Text>
+        <View style={styles.roleInfo}>
+          <Text style={styles.roleTitle}>Partner</Text>
+          <Text style={styles.roleDesc}>Offer empty seats in your car and split commuting costs.</Text>
+        </View>
+      </TouchableOpacity>
+
+      <TouchableOpacity
+        style={[styles.nextBtn, !selectedRole && styles.nextBtnDisabled]}
+        onPress={() => selectedRole && onNext({ role: selectedRole })}
+        activeOpacity={0.8}
+      >
+        <Text style={styles.nextBtnText}>Continue →</Text>
+      </TouchableOpacity>
+    </ScrollView>
+  );
+}
 
 // ─── Step 1: Basic Profile ────────────────────────────────────────
 function StepProfile({ onNext }: { onNext: (data: any) => void }) {
@@ -487,6 +534,7 @@ export default function OnboardingScreen() {
   };
 
   const steps = [
+    <StepRole key="role" onNext={(d) => handleNext(d)} />,
     <StepProfile key="profile" onNext={(d) => handleNext(d)} />,
     <StepAadhaar key="aadhaar" onNext={(d) => handleNext(d)} />,
     <StepPan key="pan" onNext={(d) => handleNext(d)} />,
@@ -770,5 +818,37 @@ const styles = StyleSheet.create({
     height: 20,
     borderColor: '#10b981',
     borderWidth: 2,
+  },
+  roleCard: {
+    flexDirection: 'row',
+    backgroundColor: '#0f1e35',
+    borderRadius: 16,
+    padding: 20,
+    marginBottom: 16,
+    borderWidth: 2,
+    borderColor: '#1f2d47',
+    alignItems: 'center',
+    gap: 16,
+  },
+  roleCardActive: {
+    borderColor: '#10b981',
+    backgroundColor: 'rgba(16,185,129,0.1)',
+  },
+  roleIcon: {
+    fontSize: 40,
+  },
+  roleInfo: {
+    flex: 1,
+  },
+  roleTitle: {
+    color: '#ffffff',
+    fontSize: 18,
+    fontWeight: '800',
+    marginBottom: 4,
+  },
+  roleDesc: {
+    color: '#9ca3af',
+    fontSize: 13,
+    lineHeight: 18,
   },
 });

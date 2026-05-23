@@ -9,16 +9,16 @@ import {
   Animated,
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
-import { useAuthStore } from '../store/authStore';
+import auth from '@react-native-firebase/auth';
 
 const OTP_LENGTH = 6;
 const RESEND_SECONDS = 30;
 
 export default function OtpScreen() {
   const router = useRouter();
-  const params = useLocalSearchParams<{ phone: string }>();
+  const params = useLocalSearchParams<{ phone: string; verificationId: string }>();
   const phone = params.phone ?? '';
-  const { login } = useAuthStore();
+  const verificationId = params.verificationId ?? '';
 
   const [otp, setOtp] = useState<string[]>(Array(OTP_LENGTH).fill(''));
   const [countdown, setCountdown] = useState(RESEND_SECONDS);
@@ -54,23 +54,33 @@ export default function OtpScreen() {
     }
   }, [otp]);
 
-  const handleVerify = () => {
+  const handleVerify = async () => {
     const code = otp.join('');
     if (code.length < OTP_LENGTH) return;
     setIsVerifying(true);
     setError('');
 
-    setTimeout(() => {
-      // Demo: any 6-digit code works
-      login(phone);
+    try {
+      // Create credential from verification ID and code
+      const credential = auth.PhoneAuthProvider.credential(verificationId, code);
+      // Sign in with Firebase
+      await auth().signInWithCredential(credential);
+      
       Animated.spring(successScale, {
         toValue: 1,
         useNativeDriver: true,
         tension: 100,
-      }).start(() => {
-        router.replace('/(tabs)');
-      });
-    }, 1000);
+      }).start();
+      // Notice we do NOT manually route to /(tabs) here.
+      // _layout.tsx has an auth listener that detects the login and handles routing!
+    } catch (err: any) {
+      console.error('OTP verification failed:', err);
+      setError('Invalid OTP code. Please try again.');
+      setIsVerifying(false);
+      // clear boxes
+      setOtp(Array(OTP_LENGTH).fill(''));
+      inputs.current[0]?.focus();
+    }
   };
 
   const handleChange = (value: string, index: number) => {

@@ -13,6 +13,7 @@ export interface UserProfile {
   aadhaarLast4?: string;
   panNumber?: string;
   selfieVerified?: boolean;
+  role?: 'rider' | 'partner';
 }
 
 interface AuthState {

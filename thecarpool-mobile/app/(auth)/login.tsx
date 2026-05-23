@@ -16,10 +16,8 @@ import { useRouter } from 'expo-router';
 import auth, { FirebaseAuthTypes } from '@react-native-firebase/auth';
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
 
-// Configure Google Sign-In (webClientId from google-services.json / Firebase Console)
-// Replace YOUR_WEB_CLIENT_ID with the one from Firebase Console → Project Settings → General → Web API Key
 GoogleSignin.configure({
-  webClientId: 'YOUR_WEB_CLIENT_ID_FROM_FIREBASE_CONSOLE',
+  webClientId: '953521578640-khu8idmh7f9bmqli6pps2a2bjfmn8p9g.apps.googleusercontent.com',
 });
 
 function HeroIllustration() {
