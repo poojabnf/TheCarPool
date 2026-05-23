@@ -1,17 +1,28 @@
 import React, { useState } from 'react';
-import { StyleSheet, View, Text, TouchableOpacity, Dimensions, ScrollView, Image } from 'react-native';
-import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
+import { StyleSheet, View, Text, TouchableOpacity, Dimensions, ScrollView } from 'react-native';
+import MapView, { Marker } from 'react-native-maps';
 import { useRouter } from 'expo-router';
-import { ShieldAlert, UserCheck, Zap, Navigation, PhoneOff } from 'lucide-react-native';
+import { ShieldAlert, UserCheck, Zap, Navigation, Shield } from 'lucide-react-native';
+import { useAuthStore } from '../store/authStore';
 
 const riderLocation = { latitude: 28.4610, longitude: 77.0280 };
 const trendingRoutes = ["Sector 44 → Metro", "Cyber Hub → Vasant Kunj", "Airport T3"];
 
 export default function RiderInterface() {
   const router = useRouter();
+  const { kycStatus } = useAuthStore();
+  const kycVerified = kycStatus === 'verified';
   const [searchMode, setSearchMode] = useState(false);
-  const [activeTrip, setActiveTrip] = useState(false); // Simulates an active ride
+  const [activeTrip, setActiveTrip] = useState(false);
   const [womenSafetyMode, setWomenSafetyMode] = useState(false);
+
+  const handleFindRides = () => {
+    if (!kycVerified) {
+      router.push('/onboarding');
+    } else {
+      setSearchMode(true);
+    }
+  };
 
   return (
     <View style={styles.container}>
@@ -95,8 +106,26 @@ export default function RiderInterface() {
                 ))}
               </ScrollView>
 
-              <TouchableOpacity style={styles.searchButton} onPress={() => setSearchMode(true)}>
-                <Text style={styles.searchButtonText}>Find Rides</Text>
+              {/* KYC Banner */}
+              {!kycVerified && (
+                <TouchableOpacity
+                  style={styles.kycBanner}
+                  onPress={() => router.push('/onboarding')}
+                  activeOpacity={0.85}
+                >
+                  <Shield color="#ff6b35" size={18} />
+                  <View style={{ flex: 1, marginLeft: 10 }}>
+                    <Text style={styles.kycBannerTitle}>Complete KYC to book rides</Text>
+                    <Text style={styles.kycBannerSub}>Aadhaar + PAN + Selfie required → Takes 2 mins</Text>
+                  </View>
+                  <Text style={styles.kycBannerArrow}>→</Text>
+                </TouchableOpacity>
+              )}
+
+              <TouchableOpacity style={styles.searchButton} onPress={handleFindRides}>
+                <Text style={styles.searchButtonText}>
+                  {kycVerified ? 'Find Rides' : '🔒 Verify & Find Rides'}
+                </Text>
               </TouchableOpacity>
             </View>
           ) : (
@@ -220,5 +249,9 @@ const styles = StyleSheet.create({
   callBtn: { flex: 1, backgroundColor: '#f1f5f9', padding: 12, borderRadius: 10, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 6 },
   callText: { color: '#475569', fontWeight: '600' },
   bookButton: { flex: 2, backgroundColor: '#0f766e', padding: 12, borderRadius: 10, alignItems: 'center' },
-  bookButtonText: { color: 'white', fontWeight: 'bold', fontSize: 16 }
+  bookButtonText: { color: 'white', fontWeight: 'bold', fontSize: 16 },
+  kycBanner: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255,107,53,0.08)', borderRadius: 12, borderWidth: 1, borderColor: 'rgba(255,107,53,0.25)', padding: 12, marginBottom: 12 },
+  kycBannerTitle: { color: '#ff6b35', fontWeight: '700', fontSize: 13 },
+  kycBannerSub: { color: '#9ca3af', fontSize: 11, marginTop: 2 },
+  kycBannerArrow: { color: '#ff6b35', fontSize: 18, fontWeight: '700' },
 });
