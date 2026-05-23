@@ -12,6 +12,7 @@
     },
     "production": {
       "ios": {
+        "image": "latest",
         "distribution": "store"
       }
     }
