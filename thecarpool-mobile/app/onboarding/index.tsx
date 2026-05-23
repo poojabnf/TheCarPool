@@ -507,7 +507,7 @@ function InfoCard({ icon, text }: { icon: string; text: string }) {
 // ─── Main Wizard ──────────────────────────────────────────────────
 export default function OnboardingScreen() {
   const router = useRouter();
-  const { setUser, setOnboardingStep, completeOnboarding } = useAuthStore();
+  const { setUserProfile, setOnboardingStep, completeOnboarding } = useAuthStore();
   const [currentStep, setCurrentStep] = useState(0);
   const slideAnim = useRef(new Animated.Value(0)).current;
 
@@ -522,7 +522,7 @@ export default function OnboardingScreen() {
   };
 
   const handleNext = (data?: any) => {
-    if (data) setUser(data);
+    if (data) setUserProfile(data);
     setOnboardingStep(currentStep + 1);
     if (currentStep < TOTAL_STEPS - 1) {
       goToStep(currentStep + 1);
