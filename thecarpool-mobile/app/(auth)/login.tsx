@@ -17,7 +17,8 @@ import auth, { FirebaseAuthTypes } from '@react-native-firebase/auth';
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
 
 GoogleSignin.configure({
-  webClientId: '953521578640-khu8idmh7f9bmqli6pps2a2bjfmn8p9g.apps.googleusercontent.com',
+  webClientId: '953521578640-rl68r8pde1odshskmaguaokjht4qbqic.apps.googleusercontent.com',
+  iosClientId: '953521578640-khu8idmh7f9bmqli6pps2a2bjfmn8p9g.apps.googleusercontent.com',
 });
 
 function HeroIllustration() {
