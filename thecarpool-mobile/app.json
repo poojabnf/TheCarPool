@@ -22,7 +22,14 @@
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "TheCarPool requires location access to find nearby workplace carpools and match you with active co-workers on your route.",
         "NSLocationAlwaysAndWhenInUseUsageDescription": "TheCarPool requires background location access to monitor route detour deviations and ensure real-time safety during active trips.",
-        "ITSAppUsesNonExemptEncryption": false
+        "ITSAppUsesNonExemptEncryption": false,
+        "CFBundleURLTypes": [
+          {
+            "CFBundleURLSchemes": [
+              "com.googleusercontent.apps.953521578640-khu8idmh7f9bmqli6pps2a2bjfmn8p9g"
+            ]
+          }
+        ]
       }
     },
     "android": {
@@ -58,6 +65,12 @@
           }
         }
       ]
-    ]
+    ],
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/016e5091-194f-4506-a81e-81a98e7dbc0c"
+    }
   }
 }

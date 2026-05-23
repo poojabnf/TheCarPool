@@ -12,7 +12,12 @@
           "package_name": "com.thecarpool.app"
         }
       },
-      "oauth_client": [],
+      "oauth_client": [
+        {
+          "client_id": "953521578640-rl68r8pde1odshskmaguaokjht4qbqic.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
       "api_key": [
         {
           "current_key": "AIzaSyAgdjbhzxkPTNX0TuAo8iIcglQ0q6-qmK8"
@@ -20,7 +25,19 @@
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": []
+          "other_platform_oauth_client": [
+            {
+              "client_id": "953521578640-rl68r8pde1odshskmaguaokjht4qbqic.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "953521578640-khu8idmh7f9bmqli6pps2a2bjfmn8p9g.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.thecarpool.app"
+              }
+            }
+          ]
         }
       }
     }
