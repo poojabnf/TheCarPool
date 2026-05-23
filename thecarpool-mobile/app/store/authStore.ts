@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import type { FirebaseAuthTypes } from '@react-native-firebase/auth';
 
 export type KycStatus = 'none' | 'pending' | 'verified';
 
@@ -15,50 +16,62 @@ export interface UserProfile {
 }
 
 interface AuthState {
+  // Firebase auth
+  firebaseUser: FirebaseAuthTypes.User | null;
   isLoggedIn: boolean;
+  isAuthLoading: boolean; // true while Firebase checks initial state
+
+  // KYC / onboarding
   kycStatus: KycStatus;
-  onboardingStep: number; // 0 = not started, 1–4 = current step, 5 = done
-  user: UserProfile | null;
+  onboardingStep: number;
+
+  // App-level profile (populated during onboarding)
+  userProfile: UserProfile | null;
 
   // Actions
-  login: (phone: string) => void;
-  logout: () => void;
-  setUser: (user: Partial<UserProfile>) => void;
+  setFirebaseUser: (user: FirebaseAuthTypes.User | null) => void;
+  setAuthLoading: (loading: boolean) => void;
+  setUserProfile: (updates: Partial<UserProfile>) => void;
   setKycStatus: (status: KycStatus) => void;
   setOnboardingStep: (step: number) => void;
   completeOnboarding: () => void;
+  reset: () => void;
 }
 
-export const useAuthStore = create<AuthState>((set) => ({
+const initialState = {
+  firebaseUser: null,
   isLoggedIn: false,
-  kycStatus: 'none',
+  isAuthLoading: true,
+  kycStatus: 'none' as KycStatus,
   onboardingStep: 0,
-  user: null,
+  userProfile: null,
+};
 
-  login: (phone: string) =>
+export const useAuthStore = create<AuthState>((set) => ({
+  ...initialState,
+
+  setFirebaseUser: (user) =>
     set({
-      isLoggedIn: true,
-      user: { name: '', phone },
-      kycStatus: 'none',
+      firebaseUser: user,
+      isLoggedIn: user !== null,
+      isAuthLoading: false,
     }),
 
-  logout: () =>
-    set({
-      isLoggedIn: false,
-      user: null,
-      kycStatus: 'none',
-      onboardingStep: 0,
-    }),
+  setAuthLoading: (loading) => set({ isAuthLoading: loading }),
 
-  setUser: (updates: Partial<UserProfile>) =>
+  setUserProfile: (updates) =>
     set((state) => ({
-      user: state.user ? { ...state.user, ...updates } : ({ ...updates } as UserProfile),
+      userProfile: state.userProfile
+        ? { ...state.userProfile, ...updates }
+        : ({ ...updates } as UserProfile),
     })),
 
-  setKycStatus: (status: KycStatus) => set({ kycStatus: status }),
+  setKycStatus: (status) => set({ kycStatus: status }),
 
-  setOnboardingStep: (step: number) => set({ onboardingStep: step }),
+  setOnboardingStep: (step) => set({ onboardingStep: step }),
 
   completeOnboarding: () =>
     set({ kycStatus: 'verified', onboardingStep: 5 }),
+
+  reset: () => set({ ...initialState, isAuthLoading: false }),
 }));
