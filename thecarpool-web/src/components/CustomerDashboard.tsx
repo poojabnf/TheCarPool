@@ -1,12 +1,33 @@
 "use client";
 
-import React, { useState } from "react";
-import { Leaf, MapPin, Navigation, Map as MapIcon, CreditCard, Wallet, Settings, HelpCircle, Activity } from "lucide-react";
-import { useUser, UserButton } from "@clerk/nextjs";
+import React, { useState, useEffect } from "react";
+import { Leaf, MapPin, Navigation, Map as MapIcon, CreditCard, Wallet, Settings, HelpCircle, Activity, LogOut } from "lucide-react";
+import { useAuth } from "../context/AuthContext";
+import { useRouter } from "next/navigation";
 
 export default function CustomerDashboard() {
-  const { user } = useUser();
+  const { user, loading, signOut } = useAuth();
+  const router = useRouter();
   const [activeTab, setActiveTab] = useState('dashboard');
+
+  useEffect(() => {
+    if (!loading && !user) {
+      router.push("/");
+    }
+  }, [user, loading, router]);
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-slate-50 dark:bg-slate-900 flex flex-col justify-center items-center">
+        <div className="w-16 h-16 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin"></div>
+        <p className="mt-4 text-slate-600 dark:text-slate-400 font-semibold animate-pulse text-lg">Loading your dashboard...</p>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return null;
+  }
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-900 flex">
@@ -23,9 +44,36 @@ export default function CustomerDashboard() {
           <NavItem icon={<HelpCircle />} label="Help & Support" active={activeTab === 'help'} onClick={() => setActiveTab('help')} />
         </nav>
 
-        {/* User Profile / Sign Out */}
-        <div className="pt-4 border-t border-slate-200 dark:border-slate-700 mt-auto flex items-center justify-between">
-          <UserButton showName appearance={{ elements: { userButtonBox: "flex-row-reverse" } }} />
+        {/* User Profile & Sign Out */}
+        <div className="pt-4 border-t border-slate-200 dark:border-slate-700 mt-auto flex flex-col gap-3">
+          <div className="flex items-center space-x-3 p-2 rounded-xl bg-slate-50 dark:bg-slate-800/50">
+            {user.photoURL ? (
+              <img
+                src={user.photoURL}
+                alt={user.displayName || "User"}
+                className="w-9 h-9 rounded-full object-cover border border-slate-200 dark:border-slate-700"
+              />
+            ) : (
+              <div className="w-9 h-9 rounded-full bg-emerald-100 dark:bg-emerald-900/40 text-emerald-600 dark:text-emerald-400 flex items-center justify-center font-bold text-sm">
+                {(user.displayName || user.email || "P")[0].toUpperCase()}
+              </div>
+            )}
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-bold text-slate-800 dark:text-white truncate">
+                {user.displayName || "Pooja Yadav"}
+              </p>
+              <p className="text-xs text-slate-500 truncate">
+                {user.email || "pooja.yadav@example.com"}
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={() => signOut()}
+            className="w-full flex items-center space-x-3 px-4 py-2.5 rounded-xl text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/20 transition-all font-semibold text-sm cursor-pointer"
+          >
+            <LogOut size={16} />
+            <span>Sign Out</span>
+          </button>
         </div>
       </aside>
 
@@ -134,11 +182,11 @@ export default function CustomerDashboard() {
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="block text-xs text-slate-500 uppercase font-bold mb-1">Full Name</label>
-                    <input type="text" key={user?.fullName || "name"} defaultValue={user?.fullName || "Pooja Yadav"} className="w-full p-3 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900" />
+                    <input type="text" key={user?.displayName || "name"} defaultValue={user?.displayName || "Pooja Yadav"} className="w-full p-3 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900" />
                   </div>
                   <div>
                     <label className="block text-xs text-slate-500 uppercase font-bold mb-1">Email Address</label>
-                    <input type="text" key={user?.primaryEmailAddress?.emailAddress || "email"} defaultValue={user?.primaryEmailAddress?.emailAddress || "pooja.yadav@example.com"} className="w-full p-3 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900" readOnly />
+                    <input type="text" key={user?.email || "email"} defaultValue={user?.email || "pooja.yadav@example.com"} className="w-full p-3 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900" readOnly />
                   </div>
                 </div>
               </div>

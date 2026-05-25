@@ -3,11 +3,11 @@
 import React from 'react';
 import { useRouter } from 'next/navigation';
 import { ShieldCheck, Map, Smartphone, Globe, ArrowRight, Lock, CheckCircle, Users } from 'lucide-react';
-import { useAuth, SignInButton, SignUpButton, UserButton } from "@clerk/nextjs";
+import { useAuth } from '../context/AuthContext';
 
 export default function TheCarPoolLanding() {
   const router = useRouter();
-  const { isLoaded, isSignedIn } = useAuth();
+  const { user, loading, signInWithGoogle, signOut } = useAuth();
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-900 font-sans text-slate-800 dark:text-slate-200 overflow-x-hidden">
@@ -24,21 +24,17 @@ export default function TheCarPoolLanding() {
           <a href="#coverage" className="hover:text-teal-700 transition-colors">Global Coverage</a>
         </div>
         <div className="flex space-x-4 items-center">
-          {!isLoaded ? (
+          {loading ? (
             <span className="text-sm text-slate-400">Loading...</span>
-          ) : !isSignedIn ? (
+          ) : !user ? (
             <>
-              <SignInButton mode="modal" forceRedirectUrl="/customer">
-                <button className="font-bold text-teal-700 dark:text-teal-400 hover:text-teal-800 px-4 py-2 cursor-pointer">Log In</button>
-              </SignInButton>
-              <SignInButton mode="modal" forceRedirectUrl="/customer">
-                <button className="bg-teal-700 hover:bg-teal-800 text-white font-bold px-5 py-2 rounded-full shadow-lg shadow-teal-700/30 transition-transform hover:scale-105 cursor-pointer">Get Started</button>
-              </SignInButton>
+              <button onClick={signInWithGoogle} className="font-bold text-teal-700 dark:text-teal-400 hover:text-teal-800 px-4 py-2 cursor-pointer">Log In</button>
+              <button onClick={signInWithGoogle} className="bg-teal-700 hover:bg-teal-800 text-white font-bold px-5 py-2 rounded-full shadow-lg shadow-teal-700/30 transition-transform hover:scale-105 cursor-pointer">Get Started</button>
             </>
           ) : (
             <>
               <button onClick={() => router.push('/customer')} className="font-bold text-teal-700 dark:text-teal-400 hover:text-teal-800 px-4 py-2 cursor-pointer">Dashboard</button>
-              <UserButton />
+              <button onClick={signOut} className="text-xs text-slate-500 hover:text-slate-800 px-3 py-1.5 border border-slate-300 dark:border-slate-700 rounded-full transition-colors hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer">Sign Out</button>
             </>
           )}
         </div>
@@ -57,14 +53,12 @@ export default function TheCarPoolLanding() {
             The world's most trusted carpool network. Split costs, reduce your carbon footprint, and travel securely with strict government ID-verified peers.
           </p>
           <div className="flex flex-col sm:flex-row gap-4 pt-4">
-            {!isLoaded ? (
+            {loading ? (
               <span className="text-sm text-slate-400">Loading...</span>
-            ) : !isSignedIn ? (
-              <SignUpButton mode="modal" forceRedirectUrl="/customer">
-                <button className="bg-slate-900 dark:bg-white text-white dark:text-slate-900 font-bold px-8 py-4 rounded-xl flex items-center justify-center gap-2 hover:opacity-90 transition-opacity cursor-pointer">
-                  <Smartphone size={20} /> Sign Up Now
-                </button>
-              </SignUpButton>
+            ) : !user ? (
+              <button onClick={signInWithGoogle} className="bg-slate-900 dark:bg-white text-white dark:text-slate-900 font-bold px-8 py-4 rounded-xl flex items-center justify-center gap-2 hover:opacity-90 transition-opacity cursor-pointer">
+                <Smartphone size={20} /> Sign In with Google
+              </button>
             ) : (
               <button onClick={() => router.push('/customer')} className="bg-slate-900 dark:bg-white text-white dark:text-slate-900 font-bold px-8 py-4 rounded-xl flex items-center justify-center gap-2 hover:opacity-90 transition-opacity cursor-pointer">
                 Go to Dashboard <ArrowRight size={20} />
