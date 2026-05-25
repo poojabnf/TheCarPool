@@ -11,6 +11,8 @@ import { sustainabilityRoutes } from './routes/sustainability';
 import { aiRoutes } from './routes/ai';
 import { paymentRoutes } from './routes/payments';
 import { classifiedRoutes } from './routes/classifieds';
+import { geoRoutes } from './routes/geo';
+import { seedGeographicDataIfEmpty } from './services/geoSeed';
 import { setupTelemetrySocket } from './sockets/telemetry';
 
 dotenv.config();
@@ -29,6 +31,10 @@ dbPool.connect((err, client, release) => {
   } else {
     fastify.log.info('Successfully connected to PostgreSQL database (PostGIS enabled)');
     release();
+    // Run self-healing database seeding check
+    seedGeographicDataIfEmpty(dbPool).catch((seedingError) => {
+      fastify.log.error('Automatic geographic database seeding failed:', seedingError);
+    });
   }
 });
 
@@ -62,6 +68,7 @@ fastify.register(sustainabilityRoutes, { prefix: '/api/sustainability' });
 fastify.register(aiRoutes, { prefix: '/api/ai' });
 fastify.register(paymentRoutes, { prefix: '/api/payments' });
 fastify.register(classifiedRoutes, { prefix: '/api/classifieds' });
+fastify.register(geoRoutes, { prefix: '/api/geo' });
 
 // Health check endpoint
 fastify.get('/health', async () => {

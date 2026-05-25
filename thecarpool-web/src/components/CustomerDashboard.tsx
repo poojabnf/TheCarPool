@@ -1,14 +1,102 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { Leaf, MapPin, Navigation, Map as MapIcon, CreditCard, Wallet, Settings, HelpCircle, Activity, LogOut } from "lucide-react";
+import { Leaf, MapPin, Navigation, Map as MapIcon, CreditCard, Wallet, Settings, HelpCircle, Activity, LogOut, Search } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { useRouter } from "next/navigation";
+
+const LOCAL_GEO_DATABASE = [
+  { postal_code: '122002', place_name: 'DLF Phase 3, Gurugram', state_name: 'Haryana', country_name: 'India' },
+  { postal_code: '122003', place_name: 'Sector 45, Gurugram', state_name: 'Haryana', country_name: 'India' },
+  { postal_code: '122018', place_name: 'Sector 21, Gurugram', state_name: 'Haryana', country_name: 'India' },
+  { postal_code: '560001', place_name: 'MG Road, Bengaluru', state_name: 'Karnataka', country_name: 'India' },
+  { postal_code: '560066', place_name: 'Whitefield, Bengaluru', state_name: 'Karnataka', country_name: 'India' },
+  { postal_code: '560103', place_name: 'Outer Ring Road, Bengaluru', state_name: 'Karnataka', country_name: 'India' },
+  { postal_code: '110001', place_name: 'Connaught Place, New Delhi', state_name: 'Delhi', country_name: 'India' },
+  { postal_code: '110021', place_name: 'Chanakyapuri, New Delhi', state_name: 'Delhi', country_name: 'India' },
+  { postal_code: '400001', place_name: 'Fort, Mumbai', state_name: 'Maharashtra', country_name: 'India' },
+  { postal_code: '400050', place_name: 'Bandra West, Mumbai', state_name: 'Maharashtra', country_name: 'India' },
+  { postal_code: '411057', place_name: 'Hinjawadi, Pune', state_name: 'Maharashtra', country_name: 'India' },
+  { postal_code: '95113', place_name: 'Downtown San Jose, Silicon Valley', state_name: 'California', country_name: 'United States' },
+  { postal_code: '94102', place_name: 'Union Square, San Francisco', state_name: 'California', country_name: 'United States' },
+  { postal_code: '90012', place_name: 'Downtown Los Angeles', state_name: 'California', country_name: 'United States' },
+  { postal_code: '10001', place_name: 'Chelsea, Manhattan', state_name: 'New York', country_name: 'United States' },
+  { postal_code: '11201', place_name: 'Brooklyn Heights', state_name: 'New York', country_name: 'United States' },
+  { postal_code: '98101', place_name: 'Downtown Seattle', state_name: 'Washington', country_name: 'United States' },
+  { postal_code: '98004', place_name: 'Bellevue Tech Hub', state_name: 'Washington', country_name: 'United States' },
+  { postal_code: 'EC1A', place_name: 'City of London', state_name: 'England', country_name: 'United Kingdom' },
+  { postal_code: 'SW1A', place_name: 'Westminster, London', state_name: 'England', country_name: 'United Kingdom' },
+  { postal_code: 'M1', place_name: 'Manchester Piccadilly', state_name: 'England', country_name: 'United Kingdom' },
+  { postal_code: '80331', place_name: 'Altstadt, Munich', state_name: 'Bavaria', country_name: 'Germany' },
+  { postal_code: '10115', place_name: 'Mitte, Berlin', state_name: 'Berlin', country_name: 'Germany' },
+  { postal_code: '75001', place_name: 'Louvre, Paris', state_name: 'Île-de-France', country_name: 'France' },
+  { postal_code: '92000', place_name: 'Nanterre / La Défense, Paris', state_name: 'Île-de-France', country_name: 'France' },
+  { postal_code: '160-0022', place_name: 'Shinjuku, Tokyo', state_name: 'Tokyo', country_name: 'Japan' },
+  { postal_code: 'M5V', place_name: 'Downtown Toronto', state_name: 'Ontario', country_name: 'Canada' },
+  { postal_code: '2000', place_name: 'Sydney CBD', state_name: 'New South Wales', country_name: 'Australia' },
+  { postal_code: '01000', place_name: 'Centro, São Paulo', state_name: 'São Paulo', country_name: 'Brazil' },
+  { postal_code: '00185', place_name: 'Roma Termini', state_name: 'Lazio', country_name: 'Italy' },
+  { postal_code: '28001', place_name: 'Recoletos, Madrid', state_name: 'Madrid', country_name: 'Spain' },
+  { postal_code: '06000', place_name: 'Centro Historico, CDMX', state_name: 'Distrito Federal', country_name: 'Mexico' },
+  { postal_code: '06000', place_name: 'Gangnam-gu, Seoul', state_name: 'Seoul', country_name: 'South Korea' },
+  { postal_code: '1012', place_name: 'Centrum, Amsterdam', state_name: 'North Holland', country_name: 'Netherlands' },
+  { postal_code: '11564', place_name: 'Olaya, Riyadh', state_name: 'Riyadh Province', country_name: 'Saudi Arabia' },
+  { postal_code: '34330', place_name: 'Levent, Istanbul', state_name: 'Istanbul', country_name: 'Turkey' },
+  { postal_code: '8001', place_name: 'Zurich Center', state_name: 'Zurich', country_name: 'Switzerland' },
+  { postal_code: '10110', place_name: 'Gambir, Central Jakarta', state_name: 'Jakarta', country_name: 'Indonesia' },
+  { postal_code: '018981', place_name: 'Marina Bay, Singapore', state_name: 'Singapore Circle', country_name: 'Singapore' },
+  { postal_code: '11120', place_name: 'Norrmalm, Stockholm', state_name: 'Stockholm County', country_name: 'Sweden' },
+];
 
 export default function CustomerDashboard() {
   const { user, loading, signOut } = useAuth();
   const router = useRouter();
   const [activeTab, setActiveTab] = useState('dashboard');
+
+  const [pickup, setPickup] = useState("Home (Sector 44)");
+  const [dropoff, setDropoff] = useState("Office (Cyber Hub)");
+  
+  const [pickupQuery, setPickupQuery] = useState("");
+  const [dropoffQuery, setDropoffQuery] = useState("");
+  
+  const [pickupSuggestions, setPickupSuggestions] = useState<any[]>([]);
+  const [dropoffSuggestions, setDropoffSuggestions] = useState<any[]>([]);
+  
+  const [isSearchingPickup, setIsSearchingPickup] = useState(false);
+  const [isSearchingDropoff, setIsSearchingDropoff] = useState(false);
+
+  const fetchSuggestions = async (val: string, setSuggestions: (s: any[]) => void) => {
+    if (val.trim().length < 2) {
+      setSuggestions([]);
+      return;
+    }
+    
+    try {
+      const res = await fetch(`/api/geo/search?query=${encodeURIComponent(val)}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data && data.length > 0) {
+          setSuggestions(data);
+          return;
+        }
+      }
+    } catch (e) {
+      console.warn("API Geocoding failed, falling back to client-side seed database:", e);
+    }
+    
+    const matches = LOCAL_GEO_DATABASE.filter(item => 
+      (item.postal_code && item.postal_code.toLowerCase().includes(val.toLowerCase())) ||
+      (item.place_name && item.place_name.toLowerCase().includes(val.toLowerCase())) ||
+      (item.state_name && item.state_name.toLowerCase().includes(val.toLowerCase())) ||
+      (item.country_name && item.country_name.toLowerCase().includes(val.toLowerCase()))
+    ).map(item => ({
+      postal_code: item.postal_code,
+      place_name: item.place_name,
+      state_name: item.state_name,
+      country_name: item.country_name,
+    }));
+    setSuggestions(matches);
+  };
 
   useEffect(() => {
     if (!loading) {
@@ -111,16 +199,109 @@ export default function CustomerDashboard() {
                   <Navigation size={20} className="text-blue-500" /> Quick Commute
                 </h3>
                 <div className="space-y-3">
-                  <div className="flex items-center gap-3 bg-slate-50 dark:bg-slate-800/50 p-3 rounded-xl border border-slate-100 dark:border-slate-700">
-                    <MapPin size={18} className="text-slate-400" />
-                    <span className="text-slate-600 dark:text-slate-300 font-medium">Home (Sector 44)</span>
+                  
+                  {/* Origin */}
+                  <div className="relative">
+                    <div className="flex items-center gap-3 bg-slate-50 dark:bg-slate-800/50 p-3 rounded-xl border border-slate-100 dark:border-slate-700">
+                      <MapPin size={18} className="text-slate-400" />
+                      {isSearchingPickup ? (
+                        <input
+                          type="text"
+                          placeholder="Type Pincode, City, or Country..."
+                          value={pickupQuery}
+                          onChange={(e) => {
+                            setPickupQuery(e.target.value);
+                            fetchSuggestions(e.target.value, setPickupSuggestions);
+                          }}
+                          className="w-full bg-transparent border-none outline-none font-semibold text-slate-800 dark:text-white"
+                          autoFocus
+                          onBlur={() => {
+                            setTimeout(() => setIsSearchingPickup(false), 200);
+                          }}
+                        />
+                      ) : (
+                        <span 
+                          onClick={() => {
+                            setPickupQuery("");
+                            setPickupSuggestions([]);
+                            setIsSearchingPickup(true);
+                          }}
+                          className="text-slate-600 dark:text-slate-300 font-medium cursor-pointer w-full"
+                        >
+                          {pickup}
+                        </span>
+                      )}
+                    </div>
+                    {isSearchingPickup && pickupSuggestions.length > 0 && (
+                      <div className="absolute left-0 right-0 mt-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-xl z-50 max-h-48 overflow-y-auto">
+                        {pickupSuggestions.map((s, idx) => (
+                          <div
+                            key={idx}
+                            onMouseDown={() => {
+                              setPickup(`${s.place_name} (${s.postal_code || s.state_code || s.state_name})`);
+                              setIsSearchingPickup(false);
+                            }}
+                            className="p-3 hover:bg-slate-50 dark:hover:bg-slate-700/50 cursor-pointer text-sm border-b border-slate-100 dark:border-slate-700 last:border-b-0 text-slate-700 dark:text-slate-300"
+                          >
+                            <span className="font-bold text-emerald-600">{s.postal_code}</span> - {s.place_name}, {s.state_name}, {s.country_name}
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
-                  <div className="flex items-center gap-3 bg-slate-50 dark:bg-slate-800/50 p-3 rounded-xl border border-slate-100 dark:border-slate-700">
-                    <MapIcon size={18} className="text-slate-400" />
-                    <span className="text-slate-600 dark:text-slate-300 font-medium">Office (Cyber Hub)</span>
+
+                  {/* Destination */}
+                  <div className="relative">
+                    <div className="flex items-center gap-3 bg-slate-50 dark:bg-slate-800/50 p-3 rounded-xl border border-slate-100 dark:border-slate-700">
+                      <MapIcon size={18} className="text-slate-400" />
+                      {isSearchingDropoff ? (
+                        <input
+                          type="text"
+                          placeholder="Type Pincode, City, or Country..."
+                          value={dropoffQuery}
+                          onChange={(e) => {
+                            setDropoffQuery(e.target.value);
+                            fetchSuggestions(e.target.value, setDropoffSuggestions);
+                          }}
+                          className="w-full bg-transparent border-none outline-none font-semibold text-slate-800 dark:text-white"
+                          autoFocus
+                          onBlur={() => {
+                            setTimeout(() => setIsSearchingDropoff(false), 200);
+                          }}
+                        />
+                      ) : (
+                        <span 
+                          onClick={() => {
+                            setDropoffQuery("");
+                            setDropoffSuggestions([]);
+                            setIsSearchingDropoff(true);
+                          }}
+                          className="text-slate-600 dark:text-slate-300 font-medium cursor-pointer w-full"
+                        >
+                          {dropoff}
+                        </span>
+                      )}
+                    </div>
+                    {isSearchingDropoff && dropoffSuggestions.length > 0 && (
+                      <div className="absolute left-0 right-0 mt-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-xl z-50 max-h-48 overflow-y-auto">
+                        {dropoffSuggestions.map((s, idx) => (
+                          <div
+                            key={idx}
+                            onMouseDown={() => {
+                              setDropoff(`${s.place_name} (${s.postal_code || s.state_code || s.state_name})`);
+                              setIsSearchingDropoff(false);
+                            }}
+                            className="p-3 hover:bg-slate-50 dark:hover:bg-slate-700/50 cursor-pointer text-sm border-b border-slate-100 dark:border-slate-700 last:border-b-0 text-slate-700 dark:text-slate-300"
+                          >
+                            <span className="font-bold text-emerald-600">{s.postal_code}</span> - {s.place_name}, {s.state_name}, {s.country_name}
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
+
                 </div>
-                <button className="w-full mt-2 bg-slate-800 dark:bg-white text-white dark:text-slate-900 font-bold py-3 rounded-xl hover:bg-slate-700 dark:hover:bg-slate-100 transition-colors">
+                <button className="w-full mt-2 bg-slate-800 dark:bg-white text-white dark:text-slate-900 font-bold py-3 rounded-xl hover:bg-slate-700 dark:hover:bg-slate-100 transition-colors cursor-pointer">
                   Find Ride
                 </button>
               </div>

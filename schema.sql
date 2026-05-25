@@ -100,3 +100,34 @@ CREATE TABLE IF NOT EXISTS classifieds (
     price DECIMAL(10, 2),
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
+
+-- 8. Countries Table (Top 20 GDP launch countries)
+CREATE TABLE IF NOT EXISTS countries (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(100) NOT NULL,
+    iso_code VARCHAR(3) UNIQUE NOT NULL, -- e.g. 'IND', 'USA', 'GBR'
+    phone_code VARCHAR(10) NOT NULL,    -- e.g. '+91', '+1', '+44'
+    currency VARCHAR(10) DEFAULT 'INR'
+);
+
+-- 9. States Table (Major provinces/states per country)
+CREATE TABLE IF NOT EXISTS states (
+    id SERIAL PRIMARY KEY,
+    country_id INTEGER NOT NULL REFERENCES countries(id) ON DELETE CASCADE,
+    name VARCHAR(100) NOT NULL,
+    code VARCHAR(10)                   -- e.g. 'DL', 'CA', 'NY'
+);
+
+-- 10. Postal Codes (Pincodes / Zip codes)
+CREATE TABLE IF NOT EXISTS postal_codes (
+    id SERIAL PRIMARY KEY,
+    state_id INTEGER NOT NULL REFERENCES states(id) ON DELETE CASCADE,
+    postal_code VARCHAR(20) NOT NULL,   -- e.g. '110001', '90210'
+    place_name VARCHAR(100) NOT NULL,   -- e.g. 'Connaught Place', 'Beverly Hills'
+    location GEOMETRY(Point, 4326) NOT NULL -- Centroid of the pin code
+);
+
+-- Indices for performance
+CREATE INDEX IF NOT EXISTS idx_postal_codes_location ON postal_codes USING GIST(location);
+CREATE INDEX IF NOT EXISTS idx_postal_codes_code ON postal_codes(postal_code);
+
