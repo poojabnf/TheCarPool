@@ -11,8 +11,15 @@ export default function CustomerDashboard() {
   const [activeTab, setActiveTab] = useState('dashboard');
 
   useEffect(() => {
-    if (!loading && !user) {
-      router.push("/");
+    if (!loading) {
+      if (!user) {
+        router.push("/");
+      } else {
+        const onboarded = localStorage.getItem(`thecarpool_onboarded_${user.uid}`);
+        if (onboarded !== 'true') {
+          router.push("/onboarding");
+        }
+      }
     }
   }, [user, loading, router]);
 

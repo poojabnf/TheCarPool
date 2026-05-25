@@ -1,6 +1,6 @@
 "use client";
 
-import React from 'react';
+import React, { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { ShieldCheck, Map, Smartphone, Globe, ArrowRight, Lock, CheckCircle, Users } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
@@ -8,6 +8,18 @@ import { useAuth } from '../context/AuthContext';
 export default function TheCarPoolLanding() {
   const router = useRouter();
   const { user, loading, signInWithGoogle, signOut } = useAuth();
+
+  // Auto-redirect to onboarding or customer portal once authenticated
+  useEffect(() => {
+    if (!loading && user) {
+      const onboarded = localStorage.getItem(`thecarpool_onboarded_${user.uid}`);
+      if (onboarded === 'true') {
+        router.push('/customer');
+      } else {
+        router.push('/onboarding');
+      }
+    }
+  }, [user, loading, router]);
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-900 font-sans text-slate-800 dark:text-slate-200 overflow-x-hidden">
