@@ -1,5 +1,5 @@
 import { FastifyInstance } from 'fastify';
-import { dbPool } from '../server';
+import { db } from '../server';
 import { notificationsQueue } from '../queue/processor';
 
 interface SosTriggerBody {
@@ -61,10 +61,9 @@ export async function safetyRoutes(fastify: FastifyInstance) {
         return reply.code(400).send({ status: 'FAILED', reason: 'Invalid KYC identification parameters' });
       }
 
-      await dbPool.query(
-        "UPDATE users SET kyc_status = 'VERIFIED' WHERE id = $1",
-        [user_id]
-      );
+      await db.collection('users').doc(String(user_id)).update({
+        kyc_status: 'VERIFIED'
+      });
       
       return reply.send({
         status: 'VERIFIED',
@@ -90,10 +89,9 @@ export async function safetyRoutes(fastify: FastifyInstance) {
       return reply.code(400).send({ status: 'UNAUTHORIZED', error: 'Corporate domain verification failed. Workspace not in active cluster.' });
     }
     
-    await dbPool.query(
-      "UPDATE users SET company_domain = $1 WHERE id = $2",
-      [domain, user_id]
-    );
+    await db.collection('users').doc(String(user_id)).update({
+      company_domain: domain
+    });
 
     return reply.send({
       status: 'VERIFIED',

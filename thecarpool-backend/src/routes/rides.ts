@@ -1,10 +1,10 @@
 import { FastifyInstance } from 'fastify';
-import { dbPool, redisClient } from '../server';
+import { db, redisClient } from '../server';
 import { requireAuth } from '../middleware/auth';
 
 interface CreateRideBody {
-  driver_id: number;
-  route_geojson: string; // GeoJSON LineString representing route
+  driver_id: string | number;
+  route_geojson: any; // GeoJSON LineString representing route
   seats_total: number;
   price_split: number;
   departure_time: string;
@@ -32,6 +32,54 @@ interface SearchRideBody {
   ac_available?: boolean;
 }
 
+// Helpers for robust ID resolution (handling formats like "1" and "user_1")
+async function getUserDoc(userId: string | number) {
+  const sId = String(userId);
+  let ref = db.collection('users').doc(sId);
+  let doc = await ref.get();
+  if (!doc.exists) {
+    if (sId.startsWith('user_')) {
+      ref = db.collection('users').doc(sId.substring(5));
+      doc = await ref.get();
+    } else {
+      ref = db.collection('users').doc('user_' + sId);
+      doc = await ref.get();
+    }
+  }
+  return doc;
+}
+
+async function getDriverDoc(driverId: string | number) {
+  const sId = String(driverId);
+  let ref = db.collection('drivers').doc(sId);
+  let doc = await ref.get();
+  if (!doc.exists) {
+    if (sId.startsWith('driver_')) {
+      ref = db.collection('drivers').doc(sId.substring(7));
+      doc = await ref.get();
+    } else {
+      ref = db.collection('drivers').doc('driver_' + sId);
+      doc = await ref.get();
+    }
+  }
+  return doc;
+}
+
+function haversineDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const R = 6371e3; // Earth radius in meters
+  const phi1 = (lat1 * Math.PI) / 180;
+  const phi2 = (lat2 * Math.PI) / 180;
+  const deltaPhi = ((lat2 - lat1) * Math.PI) / 180;
+  const deltaLambda = ((lon2 - lon1) * Math.PI) / 180;
+
+  const a =
+    Math.sin(deltaPhi / 2) * Math.sin(deltaPhi / 2) +
+    Math.cos(phi1) * Math.cos(phi2) * Math.sin(deltaLambda / 2) * Math.sin(deltaLambda / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+  return R * c; // in meters
+}
+
 export async function rideRoutes(fastify: FastifyInstance) {
   
   // 1. Create a ride with LineString geometry
@@ -43,34 +91,51 @@ export async function rideRoutes(fastify: FastifyInstance) {
     } = request.body as CreateRideBody;
 
     try {
-      // Verify the user is the driver
-      const driverQuery = 'SELECT user_id FROM drivers WHERE id = $1';
-      const driverRes = await dbPool.query(driverQuery, [driver_id]);
-      if (driverRes.rows.length === 0 || driverRes.rows[0].user_id !== request.user?.id) {
+      // Verify user is driver
+      const driverDoc = await getDriverDoc(driver_id);
+      if (!driverDoc.exists) {
+        return reply.code(404).send({ error: 'Driver profile not found.' });
+      }
+      const driverData = driverDoc.data()!;
+      if (String(driverData.user_id) !== String(request.user?.id) && String(driverData.user_id) !== `user_${request.user?.id}`) {
         return reply.code(403).send({ error: 'Forbidden: You do not own this driver profile.' });
       }
 
-      const query = `
-        INSERT INTO rides (
-          driver_id, route_line, seats_total, seats_available, price_split, departure_time,
-          vehicle_type, music_allowed, smoking_allowed, chattiness, ac_available
-        )
-        VALUES (
-          $1, 
-          ST_GeomFromGeoJSON($2), 
-          $3, 
-          $3, 
-          $4, 
-          $5,
-          $6, $7, $8, $9, $10
-        )
-        RETURNING id, seats_total, price_split, departure_time, vehicle_type;
-      `;
-      const result = await dbPool.query(query, [
-        driver_id, route_geojson, seats_total, price_split, departure_time,
-        vehicle_type, music_allowed, smoking_allowed, chattiness, ac_available
-      ]);
-      return reply.code(201).send(result.rows[0]);
+      let routeCoords: { lat: number; lng: number }[] = [];
+      if (route_geojson) {
+        try {
+          const geojson = typeof route_geojson === 'string' ? JSON.parse(route_geojson) : route_geojson;
+          if (geojson && geojson.type === 'LineString' && Array.isArray(geojson.coordinates)) {
+            routeCoords = geojson.coordinates.map((coord: any) => ({
+              lat: coord[1],
+              lng: coord[0]
+            }));
+          }
+        } catch (err: any) {
+          fastify.log.error(err, 'Failed to parse route_geojson');
+        }
+      }
+
+      const rideId = 'ride_' + Math.random().toString(36).substring(7);
+      const newRide = {
+        id: rideId,
+        driver_id: String(driver_id),
+        route_coords: routeCoords,
+        seats_total: Number(seats_total),
+        seats_available: Number(seats_total),
+        price_split: Number(price_split),
+        departure_time,
+        vehicle_type,
+        music_allowed,
+        smoking_allowed,
+        chattiness,
+        ac_available,
+        status: 'SCHEDULED',
+        created_at: new Date().toISOString()
+      };
+
+      await db.collection('rides').doc(rideId).set(newRide);
+      return reply.code(201).send(newRide);
     } catch (err: any) {
       fastify.log.error('Failed to create ride:', err);
       return reply.code(500).send({ error: 'Database failure to register ride route.' });
@@ -104,99 +169,128 @@ export async function rideRoutes(fastify: FastifyInstance) {
         }
       }
 
-      const queryParams: any[] = [pickup_lng, pickup_lat, drop_lng, drop_lat, max_detour_meters];
-      
-      let dynamicFilters = '';
+      // Fetch all scheduled rides
+      const snap = await db.collection('rides')
+        .where('status', '==', 'SCHEDULED')
+        .get();
 
-      if (gender_preference && gender_preference !== 'ANY') {
-        queryParams.push(gender_preference);
-        dynamicFilters += ` AND u.gender = $${queryParams.length}`;
+      const rides: any[] = [];
+      const now = new Date().toISOString();
+      snap.forEach(doc => {
+        const data = doc.data();
+        if (data.seats_available > 0 && data.departure_time > now) {
+          rides.push({ id: doc.id, ...data });
+        }
+      });
+
+      const matchedResults: any[] = [];
+
+      for (const ride of rides) {
+        const driverDoc = await getDriverDoc(ride.driver_id);
+        if (!driverDoc.exists) continue;
+        const driver = driverDoc.data()!;
+
+        const userDoc = await getUserDoc(driver.user_id);
+        if (!userDoc.exists) continue;
+        const user = userDoc.data()!;
+
+        // Apply filters:
+        if (gender_preference && gender_preference !== 'ANY' && user.gender !== gender_preference) {
+          continue;
+        }
+        if (company_domain && user.company_domain !== company_domain) {
+          continue;
+        }
+        if (society_name && user.society_name !== society_name) {
+          continue;
+        }
+        if (ev_only && !driver.is_ev) {
+          continue;
+        }
+        if (vehicle_type && vehicle_type !== 'ANY' && ride.vehicle_type !== vehicle_type) {
+          continue;
+        }
+        if (music_allowed !== undefined && ride.music_allowed !== music_allowed) {
+          continue;
+        }
+        if (smoking_allowed !== undefined && ride.smoking_allowed !== smoking_allowed) {
+          continue;
+        }
+        if (chattiness && chattiness !== 'ANY' && ride.chattiness !== chattiness) {
+          continue;
+        }
+        if (ac_available !== undefined && ride.ac_available !== ac_available) {
+          continue;
+        }
+
+        // Perform spatial matching detour calculations
+        const route_coords = ride.route_coords || [];
+        if (route_coords.length === 0) continue;
+
+        let minPickupDist = Infinity;
+        let minDropDist = Infinity;
+        let pickupIndex = -1;
+        let dropIndex = -1;
+
+        for (let i = 0; i < route_coords.length; i++) {
+          const pt = route_coords[i];
+          const distToPickup = haversineDistance(pickup_lat, pickup_lng, pt.lat, pt.lng);
+          if (distToPickup < minPickupDist) {
+            minPickupDist = distToPickup;
+            pickupIndex = i;
+          }
+        }
+
+        for (let i = 0; i < route_coords.length; i++) {
+          const pt = route_coords[i];
+          const distToDrop = haversineDistance(drop_lat, drop_lng, pt.lat, pt.lng);
+          if (distToDrop < minDropDist) {
+            minDropDist = distToDrop;
+            dropIndex = i;
+          }
+        }
+
+        // direction correctness check (pickupIndex < dropIndex) and detour constraint
+        if (
+          pickupIndex !== -1 && 
+          dropIndex !== -1 && 
+          pickupIndex < dropIndex && 
+          minPickupDist <= max_detour_meters && 
+          minDropDist <= max_detour_meters
+        ) {
+          matchedResults.push({
+            id: ride.id,
+            seats_available: ride.seats_available,
+            price_split: ride.price_split,
+            departure_time: ride.departure_time,
+            vehicle_type: ride.vehicle_type,
+            music_allowed: ride.music_allowed,
+            smoking_allowed: ride.smoking_allowed,
+            chattiness: ride.chattiness,
+            ac_available: ride.ac_available,
+            driver_name: user.name || 'Anonymous',
+            driver_company: user.company_domain || null,
+            driver_society: user.society_name || null,
+            linkedin_profile_url: user.linkedin_profile_url || null,
+            linkedin_connections: user.linkedin_connections || 0,
+            is_ev: driver.is_ev || false,
+            pickup_deviation: parseFloat(minPickupDist.toFixed(2)),
+            drop_deviation: parseFloat(minDropDist.toFixed(2))
+          });
+        }
       }
 
-      if (company_domain) {
-        queryParams.push(company_domain);
-        dynamicFilters += ` AND u.company_domain = $${queryParams.length}`;
-      }
+      // Sort matches by combined detour distance deviation ascending
+      matchedResults.sort((a, b) => (a.pickup_deviation + a.drop_deviation) - (b.pickup_deviation + b.drop_deviation));
 
-      if (society_name) {
-        queryParams.push(society_name);
-        dynamicFilters += ` AND u.society_name = $${queryParams.length}`;
-      }
-
-      if (ev_only) {
-        dynamicFilters += ` AND d.is_ev = true`;
-      }
-
-      if (vehicle_type && vehicle_type !== 'ANY') {
-        queryParams.push(vehicle_type);
-        dynamicFilters += ` AND r.vehicle_type = $${queryParams.length}`;
-      }
-
-      if (music_allowed !== undefined) {
-        queryParams.push(music_allowed);
-        dynamicFilters += ` AND r.music_allowed = $${queryParams.length}`;
-      }
-
-      if (smoking_allowed !== undefined) {
-        queryParams.push(smoking_allowed);
-        dynamicFilters += ` AND r.smoking_allowed = $${queryParams.length}`;
-      }
-
-      if (chattiness && chattiness !== 'ANY') {
-        queryParams.push(chattiness);
-        dynamicFilters += ` AND r.chattiness = $${queryParams.length}`;
-      }
-
-      if (ac_available !== undefined) {
-        queryParams.push(ac_available);
-        dynamicFilters += ` AND r.ac_available = $${queryParams.length}`;
-      }
-
-      const query = `
-        SELECT 
-          r.id,
-          r.seats_available,
-          r.price_split,
-          r.departure_time,
-          r.vehicle_type,
-          r.music_allowed,
-          r.smoking_allowed,
-          r.chattiness,
-          r.ac_available,
-          u.name as driver_name,
-          u.company_domain as driver_company,
-          u.society_name as driver_society,
-          u.linkedin_profile_url,
-          u.linkedin_connections,
-          d.is_ev,
-          ST_Distance(r.route_line::geography, ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography) as pickup_deviation,
-          ST_Distance(r.route_line::geography, ST_SetSRID(ST_MakePoint($3, $4), 4326)::geography) as drop_deviation
-        FROM rides r
-        JOIN drivers d ON r.driver_id = d.id
-        JOIN users u ON d.user_id = u.id
-        WHERE 
-          r.status = 'SCHEDULED'
-          AND r.seats_available > 0
-          -- Check pickup is within detour buffer zone
-          AND ST_DWithin(r.route_line::geography, ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography, $5)
-          -- Check drop is within detour buffer zone
-          AND ST_DWithin(r.route_line::geography, ST_SetSRID(ST_MakePoint($3, $4), 4326)::geography, $5)
-          -- Ensure direction correctness: pickup point occurs before drop point along driver path
-          AND ST_LineLocatePoint(r.route_line, ST_SetSRID(ST_MakePoint($1, $2), 4326)) < ST_LineLocatePoint(r.route_line, ST_SetSRID(ST_MakePoint($3, $4), 4326))
-          ${dynamicFilters}
-        ORDER BY (pickup_deviation + drop_deviation) ASC;
-      `;
-
-      const result = await dbPool.query(query, queryParams);
-      
       // 2. Set Cache asynchronously (Expire in 60 seconds)
       if (redisClient.isOpen) {
-        redisClient.setEx(cacheKey, 60, JSON.stringify(result.rows)).catch(err => {
+        redisClient.setEx(cacheKey, 60, JSON.stringify(matchedResults)).catch(err => {
           fastify.log.error('Redis cache write failed:', err);
         });
       }
 
-      return reply.send(result.rows);
+      return reply.send(matchedResults);
     } catch (err: any) {
       fastify.log.error('Spatial matching query failed:', err);
       return reply.code(500).send({ error: 'Failed to perform spatial routing match calculation.' });
@@ -232,8 +326,8 @@ export async function rideRoutes(fastify: FastifyInstance) {
       driver_id, route_geojson, seats_total, price_split, 
       departure_time_of_day, days_of_week, vehicle_type = 'CAR'
     } = request.body as {
-      driver_id: number;
-      route_geojson: string;
+      driver_id: string | number;
+      route_geojson: any;
       seats_total: number;
       price_split: number;
       departure_time_of_day: string;
@@ -243,27 +337,45 @@ export async function rideRoutes(fastify: FastifyInstance) {
 
     try {
       // Verify user is driver
-      const driverQuery = 'SELECT user_id FROM drivers WHERE id = $1';
-      const driverRes = await dbPool.query(driverQuery, [driver_id]);
-      if (driverRes.rows.length === 0 || driverRes.rows[0].user_id !== request.user?.id) {
+      const driverDoc = await getDriverDoc(driver_id);
+      if (!driverDoc.exists) {
+        return reply.code(404).send({ error: 'Driver profile not found.' });
+      }
+      const driverData = driverDoc.data()!;
+      if (String(driverData.user_id) !== String(request.user?.id) && String(driverData.user_id) !== `user_${request.user?.id}`) {
         return reply.code(403).send({ error: 'Forbidden: You do not own this driver profile.' });
       }
 
-      const query = `
-        INSERT INTO recurring_rides (
-          driver_id, route_line, seats_total, price_split, 
-          departure_time_of_day, days_of_week, vehicle_type
-        )
-        VALUES (
-          $1, ST_GeomFromGeoJSON($2), $3, $4, $5, $6, $7
-        )
-        RETURNING id, seats_total, price_split, departure_time_of_day, days_of_week, vehicle_type;
-      `;
-      const result = await dbPool.query(query, [
-        driver_id, route_geojson, seats_total, price_split, 
-        departure_time_of_day, days_of_week, vehicle_type
-      ]);
-      return reply.code(201).send(result.rows[0]);
+      let routeCoords: { lat: number; lng: number }[] = [];
+      if (route_geojson) {
+        try {
+          const geojson = typeof route_geojson === 'string' ? JSON.parse(route_geojson) : route_geojson;
+          if (geojson && geojson.type === 'LineString' && Array.isArray(geojson.coordinates)) {
+            routeCoords = geojson.coordinates.map((coord: any) => ({
+              lat: coord[1],
+              lng: coord[0]
+            }));
+          }
+        } catch (err: any) {
+          fastify.log.error(err, 'Failed to parse route_geojson');
+        }
+      }
+
+      const id = 'recurring_' + Math.random().toString(36).substring(7);
+      const newRecurringRide = {
+        id,
+        driver_id: String(driver_id),
+        route_coords: routeCoords,
+        seats_total: Number(seats_total),
+        price_split: Number(price_split),
+        departure_time_of_day,
+        days_of_week,
+        vehicle_type,
+        created_at: new Date().toISOString()
+      };
+
+      await db.collection('recurring_rides').doc(id).set(newRecurringRide);
+      return reply.code(201).send(newRecurringRide);
     } catch (err: any) {
       fastify.log.error('Failed to create recurring ride:', err);
       return reply.code(500).send({ error: 'Database failure to register recurring ride.' });
@@ -275,16 +387,21 @@ export async function rideRoutes(fastify: FastifyInstance) {
     const { driver_id } = request.query as { driver_id?: string };
 
     try {
-      let query = 'SELECT id, driver_id, seats_total, price_split, departure_time_of_day, days_of_week, vehicle_type FROM recurring_rides';
-      const params: any[] = [];
+      let queryRef: any = db.collection('recurring_rides');
 
       if (driver_id) {
-        query += ' WHERE driver_id = $1';
-        params.push(parseInt(driver_id, 10));
+        queryRef = queryRef.where('driver_id', '==', String(driver_id));
       }
 
-      const result = await dbPool.query(query, params);
-      return reply.send(result.rows);
+      const snap = await queryRef.get();
+      const results: any[] = [];
+      snap.forEach((doc: any) => {
+        results.push({
+          id: doc.id,
+          ...doc.data()
+        });
+      });
+      return reply.send(results);
     } catch (err: any) {
       fastify.log.error('Failed to fetch recurring rides:', err);
       return reply.code(500).send({ error: 'Failed to fetch recurring rides.' });

@@ -1,5 +1,5 @@
 import { Server as SocketIOServer, Socket } from 'socket.io';
-import { dbPool } from '../server';
+import { db } from '../server';
 import * as jwt from 'jsonwebtoken';
 
 interface TelemetryPayload {
@@ -9,6 +9,21 @@ interface TelemetryPayload {
   speed: number;
   bearing: number;
   rideId?: number; // active ride
+}
+
+function haversineDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const R = 6371e3; // Earth radius in meters
+  const phi1 = (lat1 * Math.PI) / 180;
+  const phi2 = (lat2 * Math.PI) / 180;
+  const deltaPhi = ((lat2 - lat1) * Math.PI) / 180;
+  const deltaLambda = ((lon2 - lon1) * Math.PI) / 180;
+
+  const a =
+    Math.sin(deltaPhi / 2) * Math.sin(deltaPhi / 2) +
+    Math.cos(phi1) * Math.cos(phi2) * Math.sin(deltaLambda / 2) * Math.sin(deltaLambda / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+  return R * c; // in meters
 }
 
 export function setupTelemetrySocket(io: SocketIOServer) {
@@ -46,23 +61,14 @@ export function setupTelemetrySocket(io: SocketIOServer) {
       }
 
       try {
-        // Upsert coordinates to database
-        const query = `
-          INSERT INTO device_coordinates (user_id, current_location, speed, bearing, last_updated)
-          VALUES (
-            $1, 
-            ST_SetSRID(ST_MakePoint($2, $3), 4326), 
-            $4, 
-            $5, 
-            NOW()
-          )
-          ON CONFLICT (user_id) DO UPDATE SET
-            current_location = EXCLUDED.current_location,
-            speed = EXCLUDED.speed,
-            bearing = EXCLUDED.bearing,
-            last_updated = NOW();
-        `;
-        await dbPool.query(query, [userId, lng, lat, speed, bearing]);
+        // Upsert coordinates to Firestore
+        await db.collection('device_coordinates').doc(String(userId)).set({
+          user_id: String(userId),
+          current_location: { lat, lng },
+          speed,
+          bearing,
+          last_updated: new Date().toISOString()
+        }, { merge: true });
 
         // Broadcast to matched passengers listening on the channel
         if (rideId) {
@@ -76,26 +82,31 @@ export function setupTelemetrySocket(io: SocketIOServer) {
           });
 
           // Perform automated geofence verification
-          // Verify if driver's current position is within 100 meters of the scheduled route
-          const geofenceQuery = `
-            SELECT 
-              ST_DWithin(
-                r.route_line::geography,
-                ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography,
-                100
-              ) as within_limits
-            FROM rides r
-            WHERE r.id = $3;
-          `;
-          const geofenceRes = await dbPool.query(geofenceQuery, [lng, lat, rideId]);
-          
-          if (geofenceRes.rows.length > 0 && !geofenceRes.rows[0].within_limits) {
-            // Dispatch geofence breach warning to riders and dashboard alert listeners
-            io.to(`ride_${rideId}`).emit('safety:alert', {
-              type: 'GEOFENCE_BREACH',
-              message: 'Warning: Driver has deviated from the planned route path by > 100 meters.',
-              coordinates: { lng, lat }
-            });
+          // Fetch ride
+          const rideRef = db.collection('rides').doc(String(rideId));
+          const rideDoc = await rideRef.get();
+          if (rideDoc.exists) {
+            const ride = rideDoc.data()!;
+            const route_coords = ride.route_coords || [];
+
+            // Check if any point along the route is within 100 meters
+            let withinLimits = false;
+            for (const pt of route_coords) {
+              const distance = haversineDistance(lat, lng, pt.lat, pt.lng);
+              if (distance <= 100) {
+                withinLimits = true;
+                break;
+              }
+            }
+
+            if (!withinLimits && route_coords.length > 0) {
+              // Dispatch geofence breach warning to riders and dashboard alert listeners
+              io.to(`ride_${rideId}`).emit('safety:alert', {
+                type: 'GEOFENCE_BREACH',
+                message: 'Warning: Driver has deviated from the planned route path by > 100 meters.',
+                coordinates: { lng, lat }
+              });
+            }
           }
         }
       } catch (err) {

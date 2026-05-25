@@ -1,5 +1,4 @@
 import Fastify from 'fastify';
-import { Pool } from 'pg';
 import { createClient } from 'redis';
 import { createServer } from 'http';
 import { Server as SocketIOServer } from 'socket.io';
@@ -12,30 +11,21 @@ import { aiRoutes } from './routes/ai';
 import { paymentRoutes } from './routes/payments';
 import { classifiedRoutes } from './routes/classifieds';
 import { geoRoutes } from './routes/geo';
-import { seedGeographicDataIfEmpty } from './services/geoSeed';
 import { setupTelemetrySocket } from './sockets/telemetry';
 
 dotenv.config();
 
 const fastify = Fastify({ logger: true });
 
-// Setup PostgreSQL Client Pool
-export const dbPool = new Pool({
-  connectionString: process.env.DATABASE_URL || 'postgresql://postgres:thecarpoolsecretpassword@localhost:5432/thecarpool',
-});
+// Setup Firestore database client and re-export for routes
+export { db } from './lib/firestore';
 
-// Verify connection
-dbPool.connect((err, client, release) => {
-  if (err) {
-    fastify.log.error(err, 'PostgreSQL database connection failed:');
-  } else {
-    fastify.log.info('Successfully connected to PostgreSQL database (PostGIS enabled)');
-    release();
-    // Run self-healing database seeding check
-    seedGeographicDataIfEmpty(dbPool).catch((seedingError) => {
-      fastify.log.error('Automatic geographic database seeding failed:', seedingError);
-    });
-  }
+// Run self-healing Firestore database seeding check in background on boot
+import { seedFirestoreIfEmpty } from './services/firestoreSeed';
+seedFirestoreIfEmpty().then(() => {
+  fastify.log.info('Firestore database collections verified and seeded successfully.');
+}).catch((err) => {
+  fastify.log.error('Firestore database auto-seeding failed:', err);
 });
 
 // Setup Sockets integrated with HTTP server

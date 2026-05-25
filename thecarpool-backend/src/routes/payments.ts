@@ -1,5 +1,5 @@
 import { FastifyInstance } from 'fastify';
-import { dbPool } from '../server';
+import { db } from '../server';
 
 export async function paymentRoutes(fastify: FastifyInstance) {
 

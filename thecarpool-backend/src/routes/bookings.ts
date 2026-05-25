@@ -1,10 +1,10 @@
 import { FastifyInstance } from 'fastify';
-import { dbPool } from '../server';
+import { db } from '../server';
 import { requireAuth } from '../middleware/auth';
 
 interface CreateBookingBody {
-  ride_id: number;
-  rider_id: number;
+  ride_id: string;
+  rider_id: string;
   seats_booked: number;
   pickup_lng: number;
   pickup_lat: number;
@@ -14,110 +14,120 @@ interface CreateBookingBody {
 
 export async function bookingRoutes(fastify: FastifyInstance) {
 
-  // 1. Create booking & Lock funds in Escrow
+  // 1. Create booking & Lock funds in Escrow using Firestore Transactions
   fastify.post('/', { preHandler: [requireAuth] }, async (request, reply) => {
     const { ride_id, rider_id, seats_booked, pickup_lng, pickup_lat, drop_lng, drop_lat } = request.body as CreateBookingBody;
 
-    if (request.user?.id !== rider_id) {
+    if (String(request.user?.id) !== String(rider_id)) {
       return reply.code(403).send({ error: 'Forbidden: Rider ID mismatch.' });
     }
 
-    const client = await dbPool.connect();
-    try {
-      await client.query('BEGIN');
+    const bookingId = 'booking_' + Math.random().toString(36).substring(7);
 
-      // Check seat availability
-      const rideQuery = 'SELECT seats_available, price_split, status FROM rides WHERE id = $1 FOR UPDATE';
-      const rideRes = await client.query(rideQuery, [ride_id]);
-      
-      if (rideRes.rows.length === 0) {
-        await client.query('ROLLBACK');
+    try {
+      const result = await db.runTransaction(async (transaction) => {
+        const rideRef = db.collection('rides').doc(String(ride_id));
+        const rideDoc = await transaction.get(rideRef);
+
+        if (!rideDoc.exists) {
+          throw new Error('NOT_FOUND');
+        }
+
+        const ride = rideDoc.data()!;
+        if (ride.status !== 'SCHEDULED') {
+          throw new Error('NOT_OPEN');
+        }
+
+        if (ride.seats_available < seats_booked) {
+          throw new Error('NO_SEATS');
+        }
+
+        // Decrement seats in Firestore
+        transaction.update(rideRef, {
+          seats_available: ride.seats_available - seats_booked
+        });
+
+        // Create Booking doc
+        const bookingRef = db.collection('bookings').doc(bookingId);
+        const bookingData = {
+          id: bookingId,
+          ride_id: String(ride_id),
+          rider_id: String(rider_id),
+          seats_booked,
+          pickup_point: { lat: pickup_lat, lng: pickup_lng },
+          drop_point: { lat: drop_lat, lng: drop_lng },
+          payment_status: 'ESCROW_LOCKED',
+          escrow_status: 'HELD',
+          created_at: new Date().toISOString()
+        };
+        transaction.set(bookingRef, bookingData);
+
+        return { id: bookingId, payment_status: 'ESCROW_LOCKED', escrow_status: 'HELD' };
+      });
+
+      return reply.code(201).send(result);
+    } catch (err: any) {
+      if (err.message === 'NOT_FOUND') {
         return reply.code(404).send({ error: 'Commute ride pool not found.' });
       }
-
-      const ride = rideRes.rows[0];
-      if (ride.status !== 'SCHEDULED') {
-        await client.query('ROLLBACK');
+      if (err.message === 'NOT_OPEN') {
         return reply.code(400).send({ error: 'This ride pool is no longer open for booking.' });
       }
-
-      if (ride.seats_available < seats_booked) {
-        await client.query('ROLLBACK');
+      if (err.message === 'NO_SEATS') {
         return reply.code(400).send({ error: 'Insufficient seats available.' });
       }
-
-      // Decrement seats
-      const updateSeats = 'UPDATE rides SET seats_available = seats_available - $1 WHERE id = $2';
-      await client.query(updateSeats, [seats_booked, ride_id]);
-
-      // Create Booking with Locked Escrow state
-      const createBooking = `
-        INSERT INTO bookings (ride_id, rider_id, seats_booked, pickup_point, drop_point, payment_status, escrow_status)
-        VALUES (
-          $1, 
-          $2, 
-          $3, 
-          ST_SetSRID(ST_MakePoint($4, $5), 4326), 
-          ST_SetSRID(ST_MakePoint($6, $7), 4326), 
-          'ESCROW_LOCKED', 
-          'HELD'
-        )
-        RETURNING id, payment_status, escrow_status;
-      `;
-      const bookingRes = await client.query(createBooking, [
-        ride_id, 
-        rider_id, 
-        seats_booked, 
-        pickup_lng, 
-        pickup_lat, 
-        drop_lng, 
-        drop_lat
-      ]);
-
-      await client.query('COMMIT');
-      return reply.code(201).send(bookingRes.rows[0]);
-    } catch (err: any) {
-      await client.query('ROLLBACK');
       fastify.log.error('Booking transaction aborted:', err);
       return reply.code(500).send({ error: 'Failed to complete escrow booking.' });
-    } finally {
-      client.release();
     }
   });
 
-  // 2. Settle escrow (Triggered when ride completes)
+  // 2. Settle escrow in Firestore (Triggered when ride completes)
   fastify.post('/:id/escrow-settle', { preHandler: [requireAuth] }, async (request, reply) => {
     const { id } = request.params as { id: string };
 
     try {
-      // Authorization Check
-      const checkAuthQuery = `
-        SELECT r.driver_id, b.rider_id 
-        FROM bookings b 
-        JOIN rides r ON b.ride_id = r.id 
-        WHERE b.id = $1
-      `;
-      const authRes = await dbPool.query(checkAuthQuery, [id]);
-      if (authRes.rows.length === 0) return reply.code(404).send({ error: 'Booking not found.' });
+      const bookingRef = db.collection('bookings').doc(id);
+      const bookingDoc = await bookingRef.get();
+      if (!bookingDoc.exists) {
+        return reply.code(404).send({ error: 'Booking not found.' });
+      }
+
+      const booking = bookingDoc.data()!;
+      const rideRef = db.collection('rides').doc(String(booking.ride_id));
+      const rideDoc = await rideRef.get();
+      if (!rideDoc.exists) {
+        return reply.code(404).send({ error: 'Ride associated with booking not found.' });
+      }
+
+      const ride = rideDoc.data()!;
       
-      const { driver_id, rider_id } = authRes.rows[0];
-      if (request.user?.id !== driver_id && request.user?.id !== rider_id) {
+      // Look up driver's user_id in Firestore
+      const driverDoc = await db.collection('drivers').doc(String(ride.driver_id)).get();
+      const driver_id = driverDoc.exists ? driverDoc.data()?.user_id : null;
+      const rider_id = booking.rider_id;
+
+      const requesterId = String(request.user?.id);
+      if (requesterId !== String(driver_id) && requesterId !== String(rider_id)) {
         return reply.code(403).send({ error: 'Forbidden: Only the rider or driver can settle the escrow.' });
       }
 
-      const query = `
-        UPDATE bookings 
-        SET payment_status = 'RELEASED', escrow_status = 'SETTLED'
-        WHERE id = $1 AND escrow_status = 'HELD'
-        RETURNING id, payment_status, escrow_status;
-      `;
-      const result = await dbPool.query(query, [id]);
-
-      if (result.rows.length === 0) {
-        return reply.code(404).send({ error: 'No active locked booking found for ID.' });
+      if (booking.escrow_status !== 'HELD') {
+        return reply.code(400).send({ error: 'No active locked booking found for ID.' });
       }
 
-      return reply.send({ message: 'Escrow settlement completed. Funds released to driver UPI ID.', booking: result.rows[0] });
+      await bookingRef.update({
+        payment_status: 'RELEASED',
+        escrow_status: 'SETTLED'
+      });
+
+      return reply.send({
+        message: 'Escrow settlement completed. Funds released to driver UPI ID.',
+        booking: {
+          id,
+          payment_status: 'RELEASED',
+          escrow_status: 'SETTLED'
+        }
+      });
     } catch (err: any) {
       fastify.log.error('Escrow release failed:', err);
       return reply.code(500).send({ error: 'Failed to process escrow settlement.' });
@@ -128,31 +138,32 @@ export async function bookingRoutes(fastify: FastifyInstance) {
   fastify.get('/carbon-savings/:user_id', { preHandler: [requireAuth] }, async (request, reply) => {
     const { user_id } = request.params as { user_id: string };
 
-    if (request.user?.id !== parseInt(user_id, 10)) {
+    if (String(request.user?.id) !== String(user_id)) {
       return reply.code(403).send({ error: "Forbidden: Cannot access another user's data." });
     }
 
     try {
-      // Calculate carbon savings dynamically based on settled rides
+      // Calculate carbon savings dynamically based on settled bookings in Firestore
       // CO2 prevented: 0.22kg per km shared
-      const query = `
-        SELECT 
-          COUNT(b.id) as total_rides_shared,
-          SUM(b.seats_booked) as total_seats_booked,
-          COALESCE(SUM(b.seats_booked * 8.4), 0.0) as estimated_kms_commuted
-        FROM bookings b
-        WHERE b.rider_id = $1 AND b.escrow_status = 'SETTLED';
-      `;
-      const result = await dbPool.query(query, [user_id]);
-      const metrics = result.rows[0];
+      const snap = await db.collection('bookings')
+        .where('rider_id', '==', String(user_id))
+        .where('escrow_status', '==', 'SETTLED')
+        .get();
 
-      const kms = parseFloat(metrics.estimated_kms_commuted);
+      let total_rides_shared = snap.size;
+      let total_seats_booked = 0;
+      snap.forEach(doc => {
+        const data = doc.data();
+        total_seats_booked += data.seats_booked || 1;
+      });
+
+      const kms = total_seats_booked * 8.4;
       const co2_saved_kg = kms * 0.22;
       const safarpoints = Math.floor(kms * 10); // 10 points per km shared
 
       return reply.send({
         user_id,
-        total_commutes: parseInt(metrics.total_rides_shared, 10),
+        total_commutes: total_rides_shared,
         kms_shared: kms,
         co2_saved_kg: parseFloat(co2_saved_kg.toFixed(2)),
         safarpoints_balance: safarpoints,

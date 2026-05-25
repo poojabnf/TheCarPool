@@ -1,5 +1,5 @@
 import { FastifyInstance } from 'fastify';
-import { dbPool } from '../server';
+import { db } from '../server';
 
 export async function sustainabilityRoutes(fastify: FastifyInstance) {
 
@@ -41,9 +41,9 @@ export async function sustainabilityRoutes(fastify: FastifyInstance) {
 
     try {
       if (restriction_type === 'CORPORATE') {
-        await dbPool.query("UPDATE users SET company_domain = $1 WHERE id = $2", [target_name, user_id]);
+        await db.collection('users').doc(String(user_id)).update({ company_domain: target_name });
       } else if (restriction_type === 'SOCIETY') {
-        await dbPool.query("UPDATE users SET society_name = $1 WHERE id = $2", [target_name, user_id]);
+        await db.collection('users').doc(String(user_id)).update({ society_name: target_name });
       }
 
       return reply.send({
@@ -63,7 +63,7 @@ export async function sustainabilityRoutes(fastify: FastifyInstance) {
     const { driver_id, is_ev } = request.body as { driver_id: number; is_ev: boolean };
 
     try {
-      await dbPool.query("UPDATE drivers SET is_ev = $1 WHERE id = $2", [is_ev, driver_id]);
+      await db.collection('drivers').doc(String(driver_id)).update({ is_ev });
       return reply.send({
         driver_id,
         is_ev,
