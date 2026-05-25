@@ -10,6 +10,7 @@ import { safetyRoutes } from './routes/safety';
 import { sustainabilityRoutes } from './routes/sustainability';
 import { aiRoutes } from './routes/ai';
 import { paymentRoutes } from './routes/payments';
+import { classifiedRoutes } from './routes/classifieds';
 import { setupTelemetrySocket } from './sockets/telemetry';
 
 dotenv.config();
@@ -60,6 +61,7 @@ fastify.register(safetyRoutes, { prefix: '/api/safety' });
 fastify.register(sustainabilityRoutes, { prefix: '/api/sustainability' });
 fastify.register(aiRoutes, { prefix: '/api/ai' });
 fastify.register(paymentRoutes, { prefix: '/api/payments' });
+fastify.register(classifiedRoutes, { prefix: '/api/classifieds' });
 
 // Health check endpoint
 fastify.get('/health', async () => {

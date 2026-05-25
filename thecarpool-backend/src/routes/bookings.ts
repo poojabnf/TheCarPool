@@ -1,5 +1,6 @@
 import { FastifyInstance } from 'fastify';
 import { dbPool } from '../server';
+import { requireAuth } from '../middleware/auth';
 
 interface CreateBookingBody {
   ride_id: number;
@@ -14,8 +15,12 @@ interface CreateBookingBody {
 export async function bookingRoutes(fastify: FastifyInstance) {
 
   // 1. Create booking & Lock funds in Escrow
-  fastify.post('/', async (request, reply) => {
+  fastify.post('/', { preHandler: [requireAuth] }, async (request, reply) => {
     const { ride_id, rider_id, seats_booked, pickup_lng, pickup_lat, drop_lng, drop_lat } = request.body as CreateBookingBody;
+
+    if (request.user?.id !== rider_id) {
+      return reply.code(403).send({ error: 'Forbidden: Rider ID mismatch.' });
+    }
 
     const client = await dbPool.connect();
     try {
@@ -81,10 +86,25 @@ export async function bookingRoutes(fastify: FastifyInstance) {
   });
 
   // 2. Settle escrow (Triggered when ride completes)
-  fastify.post('/:id/escrow-settle', async (request, reply) => {
+  fastify.post('/:id/escrow-settle', { preHandler: [requireAuth] }, async (request, reply) => {
     const { id } = request.params as { id: string };
 
     try {
+      // Authorization Check
+      const checkAuthQuery = `
+        SELECT r.driver_id, b.rider_id 
+        FROM bookings b 
+        JOIN rides r ON b.ride_id = r.id 
+        WHERE b.id = $1
+      `;
+      const authRes = await dbPool.query(checkAuthQuery, [id]);
+      if (authRes.rows.length === 0) return reply.code(404).send({ error: 'Booking not found.' });
+      
+      const { driver_id, rider_id } = authRes.rows[0];
+      if (request.user?.id !== driver_id && request.user?.id !== rider_id) {
+        return reply.code(403).send({ error: 'Forbidden: Only the rider or driver can settle the escrow.' });
+      }
+
       const query = `
         UPDATE bookings 
         SET payment_status = 'RELEASED', escrow_status = 'SETTLED'
@@ -105,8 +125,12 @@ export async function bookingRoutes(fastify: FastifyInstance) {
   });
 
   // 3. Carbon Offset & SafarPoints Tracker Dashboard (Sustainability & B2B ESG reporting)
-  fastify.get('/carbon-savings/:user_id', async (request, reply) => {
+  fastify.get('/carbon-savings/:user_id', { preHandler: [requireAuth] }, async (request, reply) => {
     const { user_id } = request.params as { user_id: string };
+
+    if (request.user?.id !== parseInt(user_id, 10)) {
+      return reply.code(403).send({ error: "Forbidden: Cannot access another user's data." });
+    }
 
     try {
       // Calculate carbon savings dynamically based on settled rides

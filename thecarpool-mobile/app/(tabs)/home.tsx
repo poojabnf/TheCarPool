@@ -2,6 +2,12 @@ import React, { useState } from 'react';
 import { View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView, Alert } from 'react-native';
 import { useRouter } from 'expo-router';
 import axios from 'axios';
+import { colors } from '../../theme/colors';
+import { create } from 'zustand';
+
+const useAuthStore = create<{ userId: number | null }>((set) => ({
+  userId: 42, // Mocked global auth state
+}));
 
 const API_URL = 'http://localhost:5000/api'; // Target Node Gateway API
 
@@ -16,6 +22,7 @@ interface Ride {
 
 export default function HomeScreen() {
   const router = useRouter();
+  const userId = useAuthStore(state => state.userId);
   const [origin, setOrigin] = useState('Sector 56, Gurgaon');
   const [destination, setDestination] = useState('DLF Cyber City, Phase 3');
   const [rides, setRides] = useState<Ride[]>([]);
@@ -60,7 +67,7 @@ export default function HomeScreen() {
     try {
       const payload = {
         ride_id: ride.id,
-        rider_id: 42, // Mock logged-in user
+        rider_id: userId,
         seats_booked: 1,
         pickup_lng: 77.0872,
         pickup_lat: 28.4231,
@@ -116,7 +123,14 @@ export default function HomeScreen() {
           placeholderTextColor="#6b7280"
         />
 
-        <TouchableOpacity style={styles.btn} onPress={searchMatchingRides} disabled={searching}>
+        <TouchableOpacity 
+          style={styles.btn} 
+          onPress={searchMatchingRides} 
+          disabled={searching}
+          accessible={true}
+          accessibilityRole="button"
+          accessibilityLabel="Search for Matching Rides"
+        >
           <Text style={styles.btnText}>{searching ? 'Scanning Routes...' : 'Search Matching Rides'}</Text>
         </TouchableOpacity>
       </View>
@@ -136,7 +150,13 @@ export default function HomeScreen() {
             <Text style={styles.detailText}>📍 Detour: {ride.pickup_deviation}m from your point</Text>
           </View>
 
-          <TouchableOpacity style={styles.bookBtn} onPress={() => bookRide(ride)}>
+          <TouchableOpacity 
+            style={styles.bookBtn} 
+            onPress={() => bookRide(ride)}
+            accessible={true}
+            accessibilityRole="button"
+            accessibilityLabel={`Book and Lock Escrow with ${ride.driver_name}`}
+          >
             <Text style={styles.bookBtnText}>Book & Lock Escrow</Text>
           </TouchableOpacity>
         </View>
@@ -148,7 +168,7 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#080c14',
+    backgroundColor: colors.background,
     padding: 16,
   },
   header: {
@@ -158,37 +178,37 @@ const styles = StyleSheet.create({
   logo: {
     fontSize: 28,
     fontWeight: '900',
-    color: '#ff6b35',
+    color: colors.primary,
   },
   tagline: {
     fontSize: 12,
-    color: '#9ca3af',
+    color: colors.textMuted,
     marginTop: 4,
   },
   card: {
-    backgroundColor: '#121b2d',
+    backgroundColor: colors.card,
     borderRadius: 12,
     padding: 16,
     borderWidth: 1,
-    borderColor: '#1f2d47',
+    borderColor: colors.cardBorder,
     marginBottom: 20,
   },
   label: {
     fontSize: 14,
     fontWeight: '700',
-    color: '#fff',
+    color: colors.text,
     marginBottom: 12,
   },
   input: {
-    backgroundColor: '#1f2d47',
+    backgroundColor: colors.inputBackground,
     borderRadius: 8,
     height: 44,
     paddingHorizontal: 12,
-    color: '#fff',
+    color: colors.text,
     marginBottom: 12,
   },
   btn: {
-    backgroundColor: '#ff6b35',
+    backgroundColor: colors.primary,
     borderRadius: 8,
     height: 46,
     justifyContent: 'center',
@@ -196,22 +216,22 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   btnText: {
-    color: '#fff',
+    color: colors.text,
     fontWeight: '700',
     fontSize: 15,
   },
   sectionTitle: {
     fontSize: 16,
     fontWeight: '700',
-    color: '#fff',
+    color: colors.text,
     marginBottom: 12,
   },
   rideCard: {
-    backgroundColor: '#121b2d',
+    backgroundColor: colors.card,
     borderRadius: 10,
     padding: 14,
     borderWidth: 1,
-    borderColor: '#1f2d47',
+    borderColor: colors.cardBorder,
     marginBottom: 12,
   },
   rideHeader: {
@@ -220,12 +240,12 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   driverName: {
-    color: '#fff',
+    color: colors.text,
     fontWeight: '700',
     fontSize: 14,
   },
   price: {
-    color: '#10b981',
+    color: colors.success,
     fontWeight: '800',
     fontSize: 16,
   },
@@ -233,19 +253,19 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   detailText: {
-    color: '#9ca3af',
+    color: colors.textMuted,
     fontSize: 11,
     marginBottom: 3,
   },
   bookBtn: {
-    backgroundColor: '#10b981',
+    backgroundColor: colors.success,
     borderRadius: 6,
     height: 38,
     justifyContent: 'center',
     alignItems: 'center',
   },
   bookBtnText: {
-    color: '#fff',
+    color: colors.text,
     fontWeight: '700',
     fontSize: 13,
   }

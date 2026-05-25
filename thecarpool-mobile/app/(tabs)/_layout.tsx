@@ -1,6 +1,6 @@
 import { Tabs, useRouter } from 'expo-router';
 import { Platform, View, Text, StyleSheet } from 'react-native';
-import { Search, Car, User } from 'lucide-react-native';
+import { Search, Car, User, Newspaper } from 'lucide-react-native';
 import { useAuthStore } from '../store/authStore';
 
 function KycBadge() {
@@ -44,6 +44,13 @@ export default function TabLayout() {
         options={{
           title: 'Offer a Ride',
           tabBarIcon: ({ color }) => <Car color={color} size={22} />,
+        }}
+      />
+      <Tabs.Screen
+        name="classifieds"
+        options={{
+          title: 'Classifieds',
+          tabBarIcon: ({ color }) => <Newspaper color={color} size={22} />,
         }}
       />
       <Tabs.Screen

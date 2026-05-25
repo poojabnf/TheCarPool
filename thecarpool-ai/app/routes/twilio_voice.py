@@ -1,9 +1,24 @@
-from fastapi import APIRouter, Request, Form, Response
+from fastapi import APIRouter, Request, Form, Response, HTTPException
 from twilio.twiml.voice_response import VoiceResponse, Gather
+from twilio.request_validator import RequestValidator
 from app.services.claude_parser import parse_user_intent
 import urllib.parse
+import os
 
 router = APIRouter()
+
+async def validate_twilio_request(request: Request):
+    validator = RequestValidator(os.environ.get('TWILIO_AUTH_TOKEN', 'dev_token'))
+    
+    # Extract the POST body parameters
+    body = await request.body()
+    form_data = dict(urllib.parse.parse_qsl(body.decode('utf-8'))) if body else {}
+    
+    signature = request.headers.get('X-Twilio-Signature', '')
+    url = str(request.url)
+    
+    if not validator.validate(url, form_data, signature):
+        raise HTTPException(status_code=403, detail="Invalid Twilio signature")
 
 @router.post("/incoming")
 async def voice_incoming(request: Request):
@@ -11,6 +26,7 @@ async def voice_incoming(request: Request):
     Twilio voice call initiation webhook.
     Greets the rider and gathers speech input.
     """
+    await validate_twilio_request(request)
     response = VoiceResponse()
     
     # 1. ElevenLabs TTS Voice configuration (Hindi-English accent)
@@ -38,10 +54,11 @@ async def voice_incoming(request: Request):
     return Response(content=str(response), media_type="application/xml")
 
 @router.post("/gather")
-async def voice_gather(SpeechResult: str = Form(None)):
+async def voice_gather(request: Request, SpeechResult: str = Form(None)):
     """
     Webhook target executing Claude NLU logic to determine rider response slots.
     """
+    await validate_twilio_request(request)
     response = VoiceResponse()
     
     if not SpeechResult:

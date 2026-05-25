@@ -41,6 +41,34 @@ export async function paymentRoutes(fastify: FastifyInstance) {
     });
   });
 
+  // Suggest pricing logic (Feature 17 / BlaBlaCar Smart Pricing Gap)
+  fastify.post('/split/suggest-pricing', async (request, reply) => {
+    const { route_length_km, vehicle_type = 'CAR', ac_available = true } = request.body as {
+      route_length_km: number;
+      vehicle_type?: 'CAR' | 'BIKE';
+      ac_available?: boolean;
+    };
+
+    if (!route_length_km || route_length_km <= 0) {
+      return reply.code(400).send({ error: 'Route length is required and must be greater than zero.' });
+    }
+
+    const baseRatePerKm = vehicle_type === 'BIKE' ? 6.00 : 12.00;
+    const acMultiplier = (vehicle_type === 'CAR' && ac_available) ? 2.00 : 0.00;
+    const finalRatePerKm = baseRatePerKm + acMultiplier;
+    
+    const suggestedTotal = route_length_km * finalRatePerKm;
+
+    return reply.send({
+      route_length_km,
+      vehicle_type,
+      ac_available,
+      rate_per_km: finalRatePerKm,
+      suggested_total_compensation: parseFloat(suggestedTotal.toFixed(2)),
+      suggested_passenger_split: parseFloat(suggestedTotal.toFixed(2))
+    });
+  });
+
   // 3. Instant Payout Releases to drivers via UPI (Feature 32)
   fastify.post('/payout/release', async (request, reply) => {
     const { booking_id, upi_payout_id, amount } = request.body as {

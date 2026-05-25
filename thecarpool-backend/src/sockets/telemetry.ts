@@ -1,5 +1,6 @@
 import { Server as SocketIOServer, Socket } from 'socket.io';
 import { dbPool } from '../server';
+import * as jwt from 'jsonwebtoken';
 
 interface TelemetryPayload {
   userId: number;
@@ -11,8 +12,23 @@ interface TelemetryPayload {
 }
 
 export function setupTelemetrySocket(io: SocketIOServer) {
+  io.use((socket, next) => {
+    const token = socket.handshake.auth?.token;
+    if (!token) {
+      return next(new Error("Authentication error: Token missing"));
+    }
+    try {
+      const secret = process.env.JWT_SECRET || 'thecarpool_jwt_secret_dev_only';
+      const decoded = jwt.verify(token, secret) as any;
+      (socket as any).userId = parseInt(decoded.sub || decoded.uid || decoded.user_id, 10);
+      next();
+    } catch (err) {
+      return next(new Error("Authentication error: Invalid token"));
+    }
+  });
+
   io.on('connection', (socket: Socket) => {
-    console.log(`Socket client connected: ${socket.id}`);
+    console.log(`Socket client connected: ${socket.id}, User ID: ${(socket as any).userId}`);
 
     // Join ride-specific room for broadcasts
     socket.on('ride:join', (rideId: number) => {
@@ -23,6 +39,11 @@ export function setupTelemetrySocket(io: SocketIOServer) {
     // Ingest telemetry update from mobile device
     socket.on('telemetry:update', async (data: TelemetryPayload) => {
       const { userId, lng, lat, speed, bearing, rideId } = data;
+
+      if ((socket as any).userId !== userId) {
+        console.error(`User ${(socket as any).userId} attempted to spoof telemetry for user ${userId}`);
+        return;
+      }
 
       try {
         // Upsert coordinates to database

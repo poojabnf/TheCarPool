@@ -170,7 +170,7 @@ const styles = StyleSheet.create({
   actionBtnText: {
     color: '#fff',
     fontSize: 11,
-    fontWeight: '750',
+    fontWeight: '700',
   },
   verifiedBox: {
     backgroundColor: 'rgba(16, 185, 129, 0.1)',
