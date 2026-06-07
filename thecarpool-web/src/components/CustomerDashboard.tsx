@@ -407,6 +407,26 @@ export default function CustomerDashboard() {
                   <div className="w-12 h-6 bg-emerald-500 rounded-full relative"><div className="w-4 h-4 bg-white rounded-full absolute right-1 top-1"></div></div>
                 </div>
               </div>
+
+              {/* Danger Zone */}
+              <div className="space-y-4 pt-2">
+                <h3 className="font-bold text-red-600 dark:text-red-400 border-b border-red-100 dark:border-red-900/30 pb-2 flex items-center gap-2">
+                  <AlertTriangle size={16} /> Danger Zone
+                </h3>
+                <div className="flex items-center justify-between p-4 rounded-xl bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-900/40">
+                  <div>
+                    <p className="font-semibold text-red-800 dark:text-red-300">Delete My Account</p>
+                    <p className="text-sm text-red-600 dark:text-red-400 mt-0.5">Permanently erase all your data, rides, bookings and profile. This cannot be undone.</p>
+                  </div>
+                  <button
+                    id="btn-delete-profile"
+                    onClick={() => { setShowDeleteModal(true); setDeleteConfirmText(''); setDeleteError(''); }}
+                    className="ml-6 flex-shrink-0 flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white font-bold py-2.5 px-5 rounded-xl transition-all shadow-sm cursor-pointer"
+                  >
+                    <Trash2 size={15} /> Delete Account
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
         )}
