@@ -70,7 +70,7 @@ const PORT = parseInt(process.env.PORT || '5000', 10);
 const start = async () => {
   try {
     // We bind to fastify's internal server instance through our HTTP server wrapper
-    server.listen(PORT, '0:0:0:0', () => {
+    server.listen(PORT, '0.0.0.0', () => {
       fastify.log.info(`TheCarPool API Gateway and Socket server running on port ${PORT}`);
     });
   } catch (err) {
