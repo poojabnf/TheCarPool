@@ -36,16 +36,30 @@ const io = new SocketIOServer(server, {
   }
 });
 
-// Setup Redis Cache Client
+// Setup Redis Cache Client (optional — app works without it, caching is bypassed)
 export const redisClient = createClient({
-  url: process.env.REDIS_URL || 'redis://localhost:6379'
+  url: process.env.REDIS_URL || 'redis://localhost:6379',
+  socket: {
+    // Only attempt once — no exponential backoff spam in logs when Redis is not running locally
+    reconnectStrategy: (retries) => {
+      if (retries >= 1) {
+        fastify.log.warn('Redis not available — caching disabled. Start Redis or set REDIS_URL to enable.');
+        return false; // Stop retrying
+      }
+      return 500; // wait 500ms before first retry
+    }
+  }
 });
 
-redisClient.on('error', (err) => fastify.log.error('Redis Client Error', err));
-redisClient.on('connect', () => fastify.log.info('Successfully connected to Redis Cache'));
+let redisAvailable = false;
+redisClient.on('error', () => { /* suppressed after reconnectStrategy logs once */ });
+redisClient.on('connect', () => {
+  redisAvailable = true;
+  fastify.log.info('Successfully connected to Redis Cache');
+});
 
-// Connect Redis before booting
-redisClient.connect().catch(console.error);
+// Attempt connection — failure is silent after the first warning
+redisClient.connect().catch(() => {});
 
 // Register real-time telemetry events
 setupTelemetrySocket(io);
