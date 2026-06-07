@@ -29,3 +29,5 @@ if (admin.apps.length === 0) {
 
 export const db = admin.firestore();
 db.settings({ ignoreUndefinedProperties: true }); // Avoid errors when uploading objects with undefined values
+
+export const storage = admin.storage();

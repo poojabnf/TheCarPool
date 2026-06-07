@@ -11,6 +11,23 @@ const firebaseConfig = {
 };
 
 const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
-const auth = getAuth(app);
+export const auth = getAuth(app);
 
-export { app, auth };
+// Initialize Analytics and Performance only on the client side
+export let analytics: any = null;
+export let performance: any = null;
+
+if (typeof window !== 'undefined') {
+  import('firebase/analytics').then(({ getAnalytics, isSupported }) => {
+    isSupported().then((supported) => {
+      if (supported) {
+        analytics = getAnalytics(app);
+      }
+    });
+  });
+  import('firebase/performance').then(({ getPerformance }) => {
+    performance = getPerformance(app);
+  });
+}
+
+export { app };

@@ -1,5 +1,5 @@
 import { FastifyInstance } from 'fastify';
-import { db } from '../server';
+import { db, storage } from '../server';
 import { notificationsQueue } from '../queue/processor';
 
 interface SosTriggerBody {
@@ -160,18 +160,81 @@ export async function safetyRoutes(fastify: FastifyInstance) {
     });
   });
 
-  // 8. Secure Document Upload to S3/MinIO for OCR Scanning (Feature 16 component)
+  // 9. Delete Profile / Account (GDPR & Privacy Compliance)
+  fastify.delete('/account', async (request, reply) => {
+    const { user_id } = request.body as { user_id: string };
+
+    if (!user_id) {
+      return reply.code(400).send({ error: 'user_id is required.' });
+    }
+
+    try {
+      // 1. Delete all user data from Firestore subcollections and the main user doc
+      const userDocRef = db.collection('users').doc(String(user_id));
+
+      // Delete user's rides as a driver
+      const driverRides = await db.collection('rides').where('driver_id', '==', String(user_id)).get();
+      const driverRideDeletes = driverRides.docs.map((doc: any) => doc.ref.delete());
+
+      // Delete user's bookings
+      const bookings = await db.collection('bookings').where('rider_id', '==', String(user_id)).get();
+      const bookingDeletes = bookings.docs.map((doc: any) => doc.ref.delete());
+
+      // Delete user's classifieds
+      const classifieds = await db.collection('classifieds').where('author_id', '==', String(user_id)).get();
+      const classifiedDeletes = classifieds.docs.map((doc: any) => doc.ref.delete());
+
+      // Execute all Firestore deletes in parallel
+      await Promise.all([
+        userDocRef.delete(),
+        ...driverRideDeletes,
+        ...bookingDeletes,
+        ...classifiedDeletes,
+      ]);
+
+      // 2. Delete the Firebase Auth account (Admin SDK)
+      const admin = require('firebase-admin');
+      try {
+        await admin.auth().deleteUser(String(user_id));
+      } catch (authErr: any) {
+        // Log but don't fail — Firestore data is already removed
+        fastify.log.warn(authErr, `Firebase Auth user ${user_id} not found or already deleted.`);
+      }
+
+      fastify.log.info(`Account deletion complete for user: ${user_id}`);
+      return reply.send({ status: 'ACCOUNT_DELETED', user_id });
+    } catch (err: any) {
+      fastify.log.error(err, 'Account deletion failed');
+      return reply.code(500).send({ error: 'Failed to delete account. Please try again.' });
+    }
+  });
+
+  // 8. Secure Document Upload to Firebase Storage for OCR Scanning (Feature 16 component)
   fastify.post('/kyc/upload', async (request, reply) => {
-    // In production, this expects a multipart/form-data payload and uses the AWS SDK to push to MinIO
-    // e.g. s3Client.putObject({ Bucket: 'thecarpool-kyc', Key: filename, Body: fileBuffer })
-    const mockFileId = 'doc_' + Math.random().toString(36).substring(7) + '.jpg';
+    // Generate a signed URL for the client to securely upload their KYC documents to Firebase Storage
+    const { filename, content_type } = request.body as any || { filename: `doc_${Date.now()}.jpg`, content_type: 'image/jpeg' };
     
-    return reply.code(201).send({
-      status: 'UPLOADED_TO_S3',
-      bucket: 'thecarpool-kyc-documents',
-      file_key: mockFileId,
-      s3_url: `http://localhost:9000/thecarpool-kyc-documents/${mockFileId}`,
-      ready_for_ai_ocr: true
-    });
+    try {
+      const bucket = storage.bucket(); // Default firebase bucket
+      const file = bucket.file(`kyc/${Date.now()}_${filename}`);
+      
+      const [uploadUrl] = await file.getSignedUrl({
+        version: 'v4',
+        action: 'write',
+        expires: Date.now() + 15 * 60 * 1000, // 15 minutes
+        contentType: content_type,
+      });
+
+      return reply.code(201).send({
+        status: 'SIGNED_UPLOAD_URL_GENERATED',
+        bucket: bucket.name,
+        file_key: file.name,
+        upload_url: uploadUrl,
+        ready_for_ai_ocr: true
+      });
+    } catch (err: any) {
+      fastify.log.error(err, 'Failed to generate Firebase Storage signed URL');
+      return reply.code(500).send({ error: 'Failed to initialize Firebase Storage bucket.' });
+    }
   });
 }

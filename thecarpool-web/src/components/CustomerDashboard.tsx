@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { Leaf, MapPin, Navigation, Map as MapIcon, CreditCard, Wallet, Settings, HelpCircle, Activity, LogOut, Search } from "lucide-react";
+import { Leaf, MapPin, Navigation, Map as MapIcon, CreditCard, Wallet, Settings, HelpCircle, Activity, LogOut, Search, Trash2, AlertTriangle } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { useRouter } from "next/navigation";
 
@@ -49,9 +49,13 @@ const LOCAL_GEO_DATABASE = [
 ];
 
 export default function CustomerDashboard() {
-  const { user, loading, signOut } = useAuth();
+  const { user, loading, signOut, deleteAccount } = useAuth();
   const router = useRouter();
   const [activeTab, setActiveTab] = useState('dashboard');
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [deleteConfirmText, setDeleteConfirmText] = useState('');
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState('');
 
   const [pickup, setPickup] = useState("Home (Sector 44)");
   const [dropoff, setDropoff] = useState("Office (Cyber Hub)");
@@ -124,7 +128,21 @@ export default function CustomerDashboard() {
     return null;
   }
 
+  const handleDeleteAccount = async () => {
+    if (deleteConfirmText !== 'DELETE') return;
+    setIsDeleting(true);
+    setDeleteError('');
+    try {
+      await deleteAccount();
+      router.push('/');
+    } catch (err: any) {
+      setDeleteError(err.message || 'Something went wrong. Please try again.');
+      setIsDeleting(false);
+    }
+  };
+
   return (
+    <>
     <div className="min-h-screen bg-slate-50 dark:bg-slate-900 flex">
       
       {/* Sidebar Navigation */}
@@ -414,6 +432,75 @@ export default function CustomerDashboard() {
 
       </main>
     </div>
+
+    {/* Delete Account Confirmation Modal */}
+    {showDeleteModal && (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+        <div className="bg-white dark:bg-slate-800 rounded-3xl shadow-2xl p-8 w-full max-w-md mx-4 border border-red-200 dark:border-red-900/40">
+          <div className="flex items-center gap-3 mb-6">
+            <div className="w-12 h-12 rounded-full bg-red-100 dark:bg-red-900/40 flex items-center justify-center">
+              <AlertTriangle className="text-red-600 dark:text-red-400" size={22} />
+            </div>
+            <div>
+              <h2 className="text-xl font-extrabold text-slate-800 dark:text-white">Delete Account</h2>
+              <p className="text-sm text-slate-500 dark:text-slate-400">This action is permanent and irreversible.</p>
+            </div>
+          </div>
+
+          <div className="mb-6 space-y-4">
+            <p className="text-slate-600 dark:text-slate-300 text-sm leading-relaxed">
+              Deleting your account will permanently remove:
+            </p>
+            <ul className="text-sm space-y-1.5 text-red-700 dark:text-red-300">
+              <li className="flex items-center gap-2"><span className="text-red-500">✕</span> Your profile and personal data</li>
+              <li className="flex items-center gap-2"><span className="text-red-500">✕</span> All your rides and bookings history</li>
+              <li className="flex items-center gap-2"><span className="text-red-500">✕</span> Your community classifieds</li>
+              <li className="flex items-center gap-2"><span className="text-red-500">✕</span> Your wallet balance (non-recoverable)</li>
+            </ul>
+            <div className="mt-4">
+              <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">
+                Type <span className="text-red-600 font-mono bg-red-50 dark:bg-red-950/30 px-1.5 py-0.5 rounded">DELETE</span> to confirm:
+              </label>
+              <input
+                id="delete-confirm-input"
+                type="text"
+                value={deleteConfirmText}
+                onChange={(e) => setDeleteConfirmText(e.target.value)}
+                placeholder="Type DELETE here..."
+                className="w-full p-3 rounded-xl border-2 border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-white font-mono focus:outline-none focus:border-red-400 dark:focus:border-red-500 transition-colors"
+              />
+            </div>
+            {deleteError && (
+              <p className="text-sm text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/30 p-3 rounded-lg">{deleteError}</p>
+            )}
+          </div>
+
+          <div className="flex gap-3">
+            <button
+              id="btn-cancel-delete"
+              onClick={() => setShowDeleteModal(false)}
+              disabled={isDeleting}
+              className="flex-1 py-3 px-4 rounded-xl border-2 border-slate-200 dark:border-slate-700 font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors cursor-pointer disabled:opacity-50"
+            >
+              Cancel
+            </button>
+            <button
+              id="btn-confirm-delete"
+              onClick={handleDeleteAccount}
+              disabled={deleteConfirmText !== 'DELETE' || isDeleting}
+              className="flex-1 py-3 px-4 rounded-xl bg-red-600 hover:bg-red-700 disabled:bg-red-300 dark:disabled:bg-red-900/40 text-white font-bold transition-all cursor-pointer disabled:cursor-not-allowed flex items-center justify-center gap-2"
+            >
+              {isDeleting ? (
+                <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> Deleting...</>
+              ) : (
+                <><Trash2 size={15} /> Confirm Delete</>
+              )}
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
+  </>
   );
 }
 

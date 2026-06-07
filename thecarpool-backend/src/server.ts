@@ -17,8 +17,8 @@ dotenv.config();
 
 const fastify = Fastify({ logger: true });
 
-// Setup Firestore database client and re-export for routes
-export { db } from './lib/firestore';
+// Setup Firestore database and storage client and re-export for routes
+export { db, storage } from './lib/firestore';
 
 // Run self-healing Firestore database seeding check in background on boot
 import { seedFirestoreIfEmpty } from './services/firestoreSeed';

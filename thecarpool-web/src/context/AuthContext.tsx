@@ -7,6 +7,7 @@ import {
   signInWithPopup, 
   GoogleAuthProvider, 
   signOut as firebaseSignOut,
+  deleteUser as firebaseDeleteUser,
   RecaptchaVerifier,
   signInWithPhoneNumber as firebaseSignInWithPhoneNumber,
   ConfirmationResult
@@ -18,6 +19,7 @@ interface AuthContextType {
   loading: boolean;
   signInWithGoogle: () => Promise<void>;
   signOut: () => Promise<void>;
+  deleteAccount: () => Promise<void>;
   setupRecaptcha: (containerId: string) => RecaptchaVerifier;
   sendOtpCode: (phoneNumber: string, recaptchaVerifier: RecaptchaVerifier) => Promise<ConfirmationResult>;
 }
@@ -52,6 +54,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     await firebaseSignOut(auth);
   };
 
+  const deleteAccount = async () => {
+    if (!auth.currentUser) throw new Error('No authenticated user.');
+    const uid = auth.currentUser.uid;
+
+    // 1. Call the backend to delete all Firestore data associated with this user
+    await fetch('/api/safety/account', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user_id: uid }),
+    });
+
+    // 2. Delete Firebase Auth account on the client side
+    await firebaseDeleteUser(auth.currentUser);
+
+    // 3. Clear any local onboarding state
+    localStorage.removeItem(`thecarpool_onboarded_${uid}`);
+  };
+
   const setupRecaptcha = (containerId: string) => {
     return new RecaptchaVerifier(auth, containerId, {
       size: 'invisible',
@@ -63,7 +83,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, signInWithGoogle, signOut, setupRecaptcha, sendOtpCode }}>
+    <AuthContext.Provider value={{ user, loading, signInWithGoogle, signOut, deleteAccount, setupRecaptcha, sendOtpCode }}>
       {children}
     </AuthContext.Provider>
   );
