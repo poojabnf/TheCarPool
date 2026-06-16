@@ -1,0 +1,20 @@
+{
+  "name": "thecarpool-functions",
+  "description": "Cloud Functions for TheCarPool (scheduled jobs)",
+  "engines": {
+    "node": "20"
+  },
+  "main": "lib/index.js",
+  "scripts": {
+    "build": "tsc",
+    "deploy": "firebase deploy --only functions"
+  },
+  "dependencies": {
+    "firebase-admin": "^13.10.0",
+    "firebase-functions": "^6.0.1"
+  },
+  "devDependencies": {
+    "typescript": "^5.2.2"
+  },
+  "private": true
+}

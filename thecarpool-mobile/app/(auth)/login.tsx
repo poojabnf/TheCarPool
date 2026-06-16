@@ -97,7 +97,12 @@ export default function LoginScreen() {
     try {
       // Get the users ID token
       await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
-      const { idToken } = await GoogleSignin.signIn();
+      // google-signin v13+ returns { type, data: { idToken, user, ... } }
+      const response = await GoogleSignin.signIn();
+      const idToken = response.data?.idToken;
+      if (!idToken) {
+        throw new Error('Google Sign-In was cancelled or returned no token.');
+      }
 
       // Create a Google credential with the token
       const googleCredential = auth.GoogleAuthProvider.credential(idToken);

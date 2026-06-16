@@ -1,6 +1,37 @@
 import { FastifyInstance } from 'fastify';
+import { z } from 'zod';
 import { db } from '../server';
 import { requireAuth } from '../middleware/auth';
+import { parseOrReply } from '../lib/validate';
+
+const CreateBookingSchema = z.object({
+  ride_id: z.string().min(1),
+  rider_id: z.string().min(1),
+  seats_booked: z.number().int().positive(),
+  pickup_lng: z.number(),
+  pickup_lat: z.number(),
+  drop_lng: z.number(),
+  drop_lat: z.number(),
+});
+
+// Avoided-emission factors per shared passenger-km, by the pooled vehicle's
+// type (kg CO2 / km), per IPCC-aligned figures. A diesel/petrol (ICE) pool
+// prevents far more than an EV pool relative to everyone driving solo.
+const EMISSION_FACTORS_KG_PER_KM: Record<string, number> = {
+  ICE: 0.120,
+  PETROL: 0.120,
+  DIESEL: 0.120,
+  CAR: 0.120,   // assume ICE car unless flagged EV/hybrid
+  HYBRID: 0.070,
+  BIKE: 0.060,
+  EV: 0.0,
+};
+
+function emissionFactorFor(vehicleType?: string, isEv?: boolean): number {
+  if (isEv) return EMISSION_FACTORS_KG_PER_KM.EV;
+  const key = (vehicleType || 'ICE').toUpperCase();
+  return EMISSION_FACTORS_KG_PER_KM[key] ?? EMISSION_FACTORS_KG_PER_KM.ICE;
+}
 
 interface CreateBookingBody {
   ride_id: string;
@@ -16,7 +47,9 @@ export async function bookingRoutes(fastify: FastifyInstance) {
 
   // 1. Create booking & Lock funds in Escrow using Firestore Transactions
   fastify.post('/', { preHandler: [requireAuth] }, async (request, reply) => {
-    const { ride_id, rider_id, seats_booked, pickup_lng, pickup_lat, drop_lng, drop_lat } = request.body as CreateBookingBody;
+    const parsed = parseOrReply(CreateBookingSchema, request.body, reply);
+    if (!parsed) return;
+    const { ride_id, rider_id, seats_booked, pickup_lng, pickup_lat, drop_lng, drop_lat } = parsed;
 
     if (String(request.user?.id) !== String(rider_id)) {
       return reply.code(403).send({ error: 'Forbidden: Rider ID mismatch.' });
@@ -115,20 +148,43 @@ export async function bookingRoutes(fastify: FastifyInstance) {
         return reply.code(400).send({ error: 'No active locked booking found for ID.' });
       }
 
-      await bookingRef.update({
-        payment_status: 'RELEASED',
-        escrow_status: 'SETTLED'
+      // Settle: move the fare from escrow to the driver's wallet, atomically
+      // with the booking status flip so we can't double-release.
+      const fareAmount = Number(ride.price_split || 0) * Number(booking.seats_booked || 1);
+      const driverWalletId = driver_id ? String(driver_id) : null;
+
+      await db.runTransaction(async (tx) => {
+        const freshBooking = await tx.get(bookingRef);
+        if (freshBooking.data()?.escrow_status !== 'HELD') {
+          throw new Error('ALREADY_SETTLED');
+        }
+        tx.update(bookingRef, {
+          payment_status: 'RELEASED',
+          escrow_status: 'SETTLED',
+          settled_amount: fareAmount,
+          settled_at: new Date().toISOString(),
+        });
+        if (driverWalletId) {
+          const walletRef = db.collection('wallets').doc(driverWalletId);
+          const walletDoc = await tx.get(walletRef);
+          const cur = walletDoc.exists ? walletDoc.data()! : { available_wallet_balance: 0, escrow_locked_balance: 0, currency: 'INR' };
+          tx.set(walletRef, { ...cur, available_wallet_balance: (cur.available_wallet_balance || 0) + fareAmount }, { merge: true });
+        }
       });
 
       return reply.send({
-        message: 'Escrow settlement completed. Funds released to driver UPI ID.',
+        message: 'Escrow settlement completed. Funds released to driver wallet.',
         booking: {
           id,
           payment_status: 'RELEASED',
-          escrow_status: 'SETTLED'
+          escrow_status: 'SETTLED',
+          settled_amount: fareAmount,
         }
       });
     } catch (err: any) {
+      if (err.message === 'ALREADY_SETTLED') {
+        return reply.code(400).send({ error: 'This booking has already been settled.' });
+      }
       fastify.log.error('Escrow release failed:', err);
       return reply.code(500).send({ error: 'Failed to process escrow settlement.' });
     }
@@ -143,22 +199,46 @@ export async function bookingRoutes(fastify: FastifyInstance) {
     }
 
     try {
-      // Calculate carbon savings dynamically based on settled bookings in Firestore
-      // CO2 prevented: 0.22kg per km shared
+      // Calculate carbon savings dynamically based on settled bookings in
+      // Firestore, applying the correct emission factor for each ride's vehicle.
       const snap = await db.collection('bookings')
         .where('rider_id', '==', String(user_id))
         .where('escrow_status', '==', 'SETTLED')
         .get();
 
-      let total_rides_shared = snap.size;
-      let total_seats_booked = 0;
-      snap.forEach(doc => {
-        const data = doc.data();
-        total_seats_booked += data.seats_booked || 1;
-      });
+      const total_rides_shared = snap.size;
+      const AVG_COMMUTE_KM_PER_SEAT = 8.4;
 
-      const kms = total_seats_booked * 8.4;
-      const co2_saved_kg = kms * 0.22;
+      // Cache ride→vehicle and driver→ev lookups to avoid duplicate reads.
+      const rideCache = new Map<string, { vehicle_type?: string; is_ev?: boolean }>();
+
+      let total_seats_booked = 0;
+      let co2_saved_kg = 0;
+
+      for (const doc of snap.docs) {
+        const data = doc.data();
+        const seats = data.seats_booked || 1;
+        total_seats_booked += seats;
+
+        const rideId = String(data.ride_id);
+        let veh = rideCache.get(rideId);
+        if (!veh) {
+          const rideDoc = await db.collection('rides').doc(rideId).get();
+          const ride = rideDoc.exists ? rideDoc.data()! : {};
+          let isEv = ride.is_ev;
+          if (isEv === undefined && ride.driver_id) {
+            const drvDoc = await db.collection('drivers').doc(String(ride.driver_id)).get();
+            isEv = drvDoc.exists ? drvDoc.data()?.is_ev : undefined;
+          }
+          veh = { vehicle_type: ride.vehicle_type, is_ev: isEv };
+          rideCache.set(rideId, veh);
+        }
+
+        const factor = emissionFactorFor(veh.vehicle_type, veh.is_ev);
+        co2_saved_kg += seats * AVG_COMMUTE_KM_PER_SEAT * factor;
+      }
+
+      const kms = total_seats_booked * AVG_COMMUTE_KM_PER_SEAT;
       const safarpoints = Math.floor(kms * 10); // 10 points per km shared
 
       return reply.send({

@@ -1,6 +1,5 @@
 import Fastify from 'fastify';
 import { createClient } from 'redis';
-import { createServer } from 'http';
 import { Server as SocketIOServer } from 'socket.io';
 import * as dotenv from 'dotenv';
 import { rideRoutes } from './routes/rides';
@@ -11,11 +10,33 @@ import { aiRoutes } from './routes/ai';
 import { paymentRoutes } from './routes/payments';
 import { classifiedRoutes } from './routes/classifieds';
 import { geoRoutes } from './routes/geo';
+import { userRoutes } from './routes/users';
 import { setupTelemetrySocket } from './sockets/telemetry';
+import { initSentry, captureError } from './lib/sentry';
 
 dotenv.config();
 
+// Initialise error monitoring before anything else (no-op without SENTRY_DSN).
+initSentry();
+
 const fastify = Fastify({ logger: true });
+
+// Forward unhandled route errors to Sentry, then fall through to the default
+// Fastify error response.
+fastify.addHook('onError', async (_request, _reply, error) => {
+  captureError(error);
+});
+
+// Capture the raw request body alongside the parsed JSON so payment webhooks
+// can verify HMAC signatures against the exact bytes Razorpay sent.
+fastify.addContentTypeParser('application/json', { parseAs: 'buffer' }, (req, body, done) => {
+  (req as any).rawBody = body;
+  try {
+    done(null, body.length ? JSON.parse(body.toString('utf8')) : {});
+  } catch (err) {
+    done(err as Error, undefined);
+  }
+});
 
 // Setup Firestore database and storage client and re-export for routes
 export { db, storage } from './lib/firestore';
@@ -28,9 +49,9 @@ seedFirestoreIfEmpty().then(() => {
   fastify.log.error('Firestore database auto-seeding failed:', err);
 });
 
-// Setup Sockets integrated with HTTP server
-const server = createServer(fastify.server);
-const io = new SocketIOServer(server, {
+// Attach Socket.IO to Fastify's underlying HTTP server so both the REST API
+// (handled by Fastify) and websockets share one port.
+const io = new SocketIOServer(fastify.server, {
   cors: {
     origin: '*',
   }
@@ -73,6 +94,7 @@ fastify.register(aiRoutes, { prefix: '/api/ai' });
 fastify.register(paymentRoutes, { prefix: '/api/payments' });
 fastify.register(classifiedRoutes, { prefix: '/api/classifieds' });
 fastify.register(geoRoutes, { prefix: '/api/geo' });
+fastify.register(userRoutes, { prefix: '/api/users' });
 
 // Health check endpoint
 fastify.get('/health', async () => {
@@ -83,11 +105,12 @@ const PORT = parseInt(process.env.PORT || '5000', 10);
 
 const start = async () => {
   try {
-    // We bind to fastify's internal server instance through our HTTP server wrapper
-    server.listen(PORT, '0.0.0.0', () => {
-      fastify.log.info(`TheCarPool API Gateway and Socket server running on port ${PORT}`);
-    });
+    // fastify.listen makes Fastify ready (routes registered) and binds the
+    // HTTP server that Socket.IO is attached to.
+    await fastify.listen({ port: PORT, host: '0.0.0.0' });
+    fastify.log.info(`TheCarPool API Gateway and Socket server running on port ${PORT}`);
   } catch (err) {
+    captureError(err);
     fastify.log.error(err);
     process.exit(1);
   }

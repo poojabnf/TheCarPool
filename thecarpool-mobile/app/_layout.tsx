@@ -3,6 +3,7 @@ import { Stack, useRouter, useSegments } from 'expo-router';
 import { StatusBar, View, ActivityIndicator } from 'react-native';
 import { useAuthStore } from './store/authStore';
 import { auth } from './services/firebase';
+import { registerForPushNotifications } from './services/notifications';
 
 function AuthGuard({ children }: { children: React.ReactNode }) {
   const { isLoggedIn, isAuthLoading, setFirebaseUser, kycStatus } = useAuthStore();
@@ -13,6 +14,10 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const unsubscribe = auth().onAuthStateChanged((user) => {
       setFirebaseUser(user);
+      // Register this device for push notifications once signed in.
+      if (user) {
+        registerForPushNotifications().catch(() => { /* non-fatal */ });
+      }
     });
     return unsubscribe;
   }, []);

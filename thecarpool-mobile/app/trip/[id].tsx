@@ -2,8 +2,11 @@ import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Alert } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import io from 'socket.io-client';
+import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
+import { auth } from '../services/firebase';
+import { API_URL, apiFetch } from '../services/api';
 
-const SOCKET_URL = 'http://localhost:5000'; // Node socket telemetry server
+const SOCKET_URL = API_URL; // Node socket telemetry server (env-driven)
 
 export default function TripScreen() {
   const { id } = useLocalSearchParams();
@@ -13,30 +16,39 @@ export default function TripScreen() {
   const [geofenceAlert, setGeofenceAlert] = useState<string | null>(null);
 
   useEffect(() => {
-    // 1. Establish real-time socket connection
-    const socket = io(SOCKET_URL);
+    let socket: ReturnType<typeof io> | undefined;
+    let cancelled = false;
 
-    socket.on('connect', () => {
-      console.log('Telemetry channel connected.');
-      // Join active ride telemetry room
-      socket.emit('ride:join', id);
-    });
+    // 1. Establish authenticated real-time socket connection.
+    // The backend verifies the Firebase ID token on handshake.
+    (async () => {
+      const token = await auth().currentUser?.getIdToken();
+      if (cancelled) return;
 
-    // 2. Listen to live GPS broadcasts from driver device
-    socket.on('telemetry:broadcast', (data) => {
-      setDriverLocation({ lat: data.lat, lng: data.lng });
-      setSpeed(data.speed || 42);
-    });
+      socket = io(SOCKET_URL, { auth: { token } });
 
-    // 3. Listen to geofencing breach alerts from gateway matching server
-    socket.on('safety:alert', (alertData) => {
-      if (alertData.type === 'GEOFENCE_BREACH') {
-        setGeofenceAlert('Breached: > 100m off scheduled detour path.');
-      }
-    });
+      socket.on('connect', () => {
+        // Join active ride telemetry room
+        socket?.emit('ride:join', id);
+      });
+
+      // 2. Listen to live GPS broadcasts from driver device
+      socket.on('telemetry:broadcast', (data) => {
+        setDriverLocation({ lat: data.lat, lng: data.lng });
+        setSpeed(data.speed || 42);
+      });
+
+      // 3. Listen to geofencing breach alerts from gateway matching server
+      socket.on('safety:alert', (alertData) => {
+        if (alertData.type === 'GEOFENCE_BREACH') {
+          setGeofenceAlert('Breached: > 100m off scheduled detour path.');
+        }
+      });
+    })();
 
     return () => {
-      socket.disconnect();
+      cancelled = true;
+      socket?.disconnect();
     };
   }, [id]);
 
@@ -46,9 +58,33 @@ export default function TripScreen() {
       'Broadcasting real-time coordinates to corporate security circles, emergency contacts, and TheCarPool support team.',
       [
         { text: 'Cancel Alert', style: 'cancel' },
-        { text: 'Confirm SOS', style: 'destructive', onPress: () => console.log('SOS Active') }
+        { text: 'Confirm SOS', style: 'destructive', onPress: dispatchSOS }
       ]
     );
+  };
+
+  const dispatchSOS = async () => {
+    try {
+      const res = await apiFetch('/api/safety/sos/trigger', {
+        method: 'POST',
+        body: JSON.stringify({
+          ride_id: id,
+          latitude: driverLocation.lat,
+          longitude: driverLocation.lng,
+          is_silent: false,
+        }),
+      });
+
+      if (res.ok) {
+        Alert.alert('SOS Dispatched', 'Your emergency alert has been sent. Help is on the way.');
+      } else if (res.status === 429) {
+        Alert.alert('Already Sent', 'An SOS was dispatched moments ago. Please wait before triggering again.');
+      } else {
+        Alert.alert('SOS Failed', 'Could not dispatch the alert. Please call emergency services directly.');
+      }
+    } catch (e) {
+      Alert.alert('SOS Failed', 'Network error. Please call emergency services directly.');
+    }
   };
 
   return (
@@ -61,10 +97,24 @@ export default function TripScreen() {
         </View>
       </View>
 
-      {/* Mock Map Panel */}
-      <View style={styles.mapMock}>
-        <Text style={styles.mapText}>🗺️ Live Map Tracking Vector</Text>
-        <Text style={styles.mapCoords}>Lat: {driverLocation.lat.toFixed(5)}  Lng: {driverLocation.lng.toFixed(5)}</Text>
+      {/* Live Map Panel */}
+      <View style={styles.mapContainer}>
+        <MapView
+          provider={PROVIDER_GOOGLE}
+          style={styles.map}
+          region={{
+            latitude: driverLocation.lat,
+            longitude: driverLocation.lng,
+            latitudeDelta: 0.02,
+            longitudeDelta: 0.02,
+          }}
+        >
+          <Marker
+            coordinate={{ latitude: driverLocation.lat, longitude: driverLocation.lng }}
+            title="Driver"
+            description={`${speed} km/h`}
+          />
+        </MapView>
         <Text style={styles.speedLabel}>{speed} km/h</Text>
       </View>
 
@@ -130,26 +180,21 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '700',
   },
-  mapMock: {
-    backgroundColor: '#121b2d',
+  mapContainer: {
     borderRadius: 12,
-    height: 180,
-    justifyContent: 'center',
-    alignItems: 'center',
+    height: 220,
+    overflow: 'hidden',
     borderWidth: 1,
     borderColor: '#1f2d47',
     marginBottom: 16,
     position: 'relative',
   },
-  mapText: {
-    color: '#fff',
-    fontWeight: '700',
-    fontSize: 13,
-  },
-  mapCoords: {
-    color: '#9ca3af',
-    fontSize: 11,
-    marginTop: 6,
+  map: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
   },
   speedLabel: {
     position: 'absolute',

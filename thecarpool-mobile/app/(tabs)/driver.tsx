@@ -478,7 +478,7 @@ const styles = StyleSheet.create({
   pricingSuggested: { fontSize: 24, fontWeight: '900', color: colors.text, marginBottom: 12 },
   priceInputGroup: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   priceInputLabel: { color: colors.text, fontSize: 13, fontWeight: '600' },
-  priceInput: { backgroundColor: colors.card, borderHeight: 36, borderWidth: 1, borderColor: colors.cardBorder, color: colors.text, borderRadius: 6, width: 80, paddingHorizontal: 8, textAlign: 'center', height: 36 },
+  priceInput: { backgroundColor: colors.card, borderWidth: 1, borderColor: colors.cardBorder, color: colors.text, borderRadius: 6, width: 80, paddingHorizontal: 8, textAlign: 'center', height: 36 },
 
   formSwitchRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
   daysContainer: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 18 },

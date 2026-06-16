@@ -80,6 +80,38 @@ function haversineDistance(lat1: number, lon1: number, lat2: number, lon2: numbe
   return R * c; // in meters
 }
 
+// Max candidate rides scanned per search — caps memory/CPU so a large
+// rides collection can't OOM the process during in-memory matching.
+const MAX_RIDE_SCAN = 500;
+const DEFAULT_RESULT_LIMIT = 50;
+
+// Cheap bounding-box test: does the ride's route pass within `detourMeters`
+// of BOTH the pickup and drop points? Used to skip the expensive per-point
+// haversine pass for rides that are obviously far away.
+function routeBboxIntersects(
+  routeCoords: { lat: number; lng: number }[],
+  pickupLat: number, pickupLng: number,
+  dropLat: number, dropLng: number,
+  detourMeters: number
+): boolean {
+  if (routeCoords.length === 0) return false;
+  let minLat = Infinity, maxLat = -Infinity, minLng = Infinity, maxLng = -Infinity;
+  for (const pt of routeCoords) {
+    if (pt.lat < minLat) minLat = pt.lat;
+    if (pt.lat > maxLat) maxLat = pt.lat;
+    if (pt.lng < minLng) minLng = pt.lng;
+    if (pt.lng > maxLng) maxLng = pt.lng;
+  }
+  // Expand the bbox by the detour tolerance (degrees). 111320 m ≈ 1° lat.
+  const latPad = detourMeters / 111320;
+  const midLat = (minLat + maxLat) / 2;
+  const lngPad = detourMeters / (111320 * Math.max(Math.cos((midLat * Math.PI) / 180), 0.01));
+  const inBox = (lat: number, lng: number) =>
+    lat >= minLat - latPad && lat <= maxLat + latPad &&
+    lng >= minLng - lngPad && lng <= maxLng + lngPad;
+  return inBox(pickupLat, pickupLng) && inBox(dropLat, dropLng);
+}
+
 export async function rideRoutes(fastify: FastifyInstance) {
   
   // 1. Create a ride with LineString geometry
@@ -169,17 +201,25 @@ export async function rideRoutes(fastify: FastifyInstance) {
         }
       }
 
-      // Fetch all scheduled rides
+      // Fetch scheduled rides that haven't departed yet, ordered by departure
+      // and capped so a huge collection can't be pulled fully into memory.
+      const now = new Date().toISOString();
       const snap = await db.collection('rides')
         .where('status', '==', 'SCHEDULED')
+        .where('departure_time', '>', now)
+        .orderBy('departure_time', 'asc')
+        .limit(MAX_RIDE_SCAN)
         .get();
 
       const rides: any[] = [];
-      const now = new Date().toISOString();
       snap.forEach(doc => {
         const data = doc.data();
-        if (data.seats_available > 0 && data.departure_time > now) {
-          rides.push({ id: doc.id, ...data });
+        if (data.seats_available > 0) {
+          // Coarse bbox prefilter — skip rides clearly out of range before
+          // the expensive per-coordinate haversine pass below.
+          if (routeBboxIntersects(data.route_coords || [], pickup_lat, pickup_lng, drop_lat, drop_lng, max_detour_meters)) {
+            rides.push({ id: doc.id, ...data });
+          }
         }
       });
 
@@ -280,25 +320,59 @@ export async function rideRoutes(fastify: FastifyInstance) {
         }
       }
 
-      // Sort matches by combined detour distance deviation ascending
+      // Sort matches by combined detour distance deviation ascending, then cap.
       matchedResults.sort((a, b) => (a.pickup_deviation + a.drop_deviation) - (b.pickup_deviation + b.drop_deviation));
+      const resultLimit = Number((body as any).limit) > 0 ? Number((body as any).limit) : DEFAULT_RESULT_LIMIT;
+      const limitedResults = matchedResults.slice(0, resultLimit);
 
       // 2. Set Cache asynchronously (Expire in 60 seconds)
       if (redisClient.isOpen) {
-        redisClient.setEx(cacheKey, 60, JSON.stringify(matchedResults)).catch(err => {
+        redisClient.setEx(cacheKey, 60, JSON.stringify(limitedResults)).catch(err => {
           fastify.log.error('Redis cache write failed:', err);
         });
       }
 
-      return reply.send(matchedResults);
+      return reply.send(limitedResults);
     } catch (err: any) {
       fastify.log.error('Spatial matching query failed:', err);
       return reply.code(500).send({ error: 'Failed to perform spatial routing match calculation.' });
     }
   });
 
+  // 2b. List the authenticated driver's own rides (Partner/Fleet dashboard)
+  fastify.get('/mine', { preHandler: [requireAuth] }, async (request, reply) => {
+    const uid = request.user!.id;
+    try {
+      // Find driver profiles owned by this user (id may be stored as the raw
+      // uid or prefixed forms), then collect their rides.
+      const driverSnap = await db.collection('drivers').where('user_id', '==', String(uid)).get();
+      const driverIds = driverSnap.docs.map(d => d.id);
+      // Also match drivers stored with a user_ prefix variant.
+      const altSnap = await db.collection('drivers').where('user_id', '==', `user_${uid}`).get();
+      altSnap.docs.forEach(d => { if (!driverIds.includes(d.id)) driverIds.push(d.id); });
+
+      if (driverIds.length === 0) {
+        return reply.send([]);
+      }
+
+      const rides: any[] = [];
+      // Firestore 'in' supports up to 30 values; chunk to be safe.
+      for (let i = 0; i < driverIds.length; i += 30) {
+        const chunk = driverIds.slice(i, i + 30);
+        const snap = await db.collection('rides').where('driver_id', 'in', chunk).get();
+        snap.forEach(doc => rides.push({ id: doc.id, ...doc.data() }));
+      }
+
+      rides.sort((a, b) => String(b.departure_time).localeCompare(String(a.departure_time)));
+      return reply.send(rides);
+    } catch (err: any) {
+      fastify.log.error(err, 'Failed to fetch driver rides');
+      return reply.code(500).send({ error: 'Failed to fetch your rides.' });
+    }
+  });
+
   // 3. Multi-modal / Transit Stitching Engine stub
-  fastify.post('/search/stitch', async (request, reply) => {
+  fastify.post('/search/stitch', { preHandler: [requireAuth] }, async (request, reply) => {
     const { pickup_lng, pickup_lat, drop_lng, drop_lat } = request.body as any;
     
     // Fallback: If no pure carpools match directly, stitch carpool to nearest metro station

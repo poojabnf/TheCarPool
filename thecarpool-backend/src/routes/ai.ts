@@ -1,5 +1,7 @@
 import { FastifyInstance } from 'fastify';
 import { aiQueue } from '../queue/processor';
+import { requireAuth } from '../middleware/auth';
+import { optimizeRoute } from '../lib/maps';
 
 interface RouteOptimizeBody {
   driver_origin: [number, number];
@@ -14,7 +16,7 @@ interface RouteOptimizeBody {
 export async function aiRoutes(fastify: FastifyInstance) {
 
   // 1. Pre-Ride Confirmation Call Dispatcher (Feature 11)
-  fastify.post('/voice/trigger-confirmation', async (request, reply) => {
+  fastify.post('/voice/trigger-confirmation', { preHandler: [requireAuth] }, async (request, reply) => {
     const { booking_id, phone_number } = request.body as { booking_id: number; phone_number: string };
     
     fastify.log.info(`Dispatching AI Confirmation Call Job for booking ${booking_id}`);
@@ -35,7 +37,7 @@ export async function aiRoutes(fastify: FastifyInstance) {
   });
 
   // 2. Voice Ride Assistant Parsing Stub (Feature 12)
-  fastify.post('/voice/assistant-command', async (request, reply) => {
+  fastify.post('/voice/assistant-command', { preHandler: [requireAuth] }, async (request, reply) => {
     const { user_id, raw_speech } = request.body as { user_id: number; raw_speech: string };
     
     // Forwards the transcribed query to Claude NLU service (or local regex parser fallback)
@@ -65,28 +67,40 @@ export async function aiRoutes(fastify: FastifyInstance) {
     }
   });
 
-  // 3. AI Route Optimizer sequencing (Feature 13)
-  fastify.post('/optimize-route', async (request, reply) => {
+  // 3. AI Route Optimizer sequencing (Feature 13) — Google Routes API with
+  //    a nearest-neighbour fallback when GOOGLE_MAPS_API_KEY is not set.
+  fastify.post('/optimize-route', { preHandler: [requireAuth] }, async (request, reply) => {
     const { driver_origin, driver_destination, riders } = request.body as RouteOptimizeBody;
-    
-    // Sort riders by closest distance to driver origin to construct optimized waypoint sequence
-    const optimizedSequence = riders.map((rider, idx) => ({
-      sequence_order: idx + 1,
-      rider_id: rider.id,
-      waypoint_lat: rider.pickup[0],
-      waypoint_lng: rider.pickup[1],
-      action: 'PICKUP'
+
+    if (!Array.isArray(driver_origin) || !Array.isArray(driver_destination) || !Array.isArray(riders)) {
+      return reply.code(400).send({ error: 'driver_origin, driver_destination and riders are required.' });
+    }
+
+    // Inputs are [lat, lng] tuples.
+    const origin = { lat: driver_origin[0], lng: driver_origin[1] };
+    const destination = { lat: driver_destination[0], lng: driver_destination[1] };
+    const waypoints = riders.map((r) => ({ lat: r.pickup[0], lng: r.pickup[1] }));
+
+    const result = await optimizeRoute(origin, destination, waypoints);
+
+    const optimizedSequence = result.order.map((riderIdx, seq) => ({
+      sequence_order: seq + 1,
+      rider_id: riders[riderIdx].id,
+      waypoint_lat: waypoints[riderIdx].lat,
+      waypoint_lng: waypoints[riderIdx].lng,
+      action: 'PICKUP',
     }));
 
     return reply.send({
       optimized_waypoints: optimizedSequence,
-      detour_time_added_mins: 8,
-      estimated_fuel_efficiency_gain: '34%'
+      optimization_source: result.source, // 'google' | 'heuristic'
+      total_distance_meters: result.total_distance_meters ?? null,
+      total_duration_seconds: result.total_duration_seconds ?? null,
     });
   });
 
   // 4. AI Feedback Comment NLP Analyzer (Feature 14)
-  fastify.post('/feedback/nlp-sentiment', async (request, reply) => {
+  fastify.post('/feedback/nlp-sentiment', { preHandler: [requireAuth] }, async (request, reply) => {
     const { ride_id, comment } = request.body as { ride_id: number; comment: string };
     
     // Analyzes rider text feedback using sentiment logs (mocking high-level parser)
@@ -101,7 +115,7 @@ export async function aiRoutes(fastify: FastifyInstance) {
   });
 
   // 5. Calendar commute pattern learning triggers (Feature 15)
-  fastify.get('/commute-patterns/:user_id', async (request, reply) => {
+  fastify.get('/commute-patterns/:user_id', { preHandler: [requireAuth] }, async (request, reply) => {
     const { user_id } = request.params as { user_id: string };
     
     return reply.send({
@@ -113,7 +127,7 @@ export async function aiRoutes(fastify: FastifyInstance) {
   });
 
   // 6. Suggest pricing logic (Feature 17)
-  fastify.post('/suggest-pricing', async (request, reply) => {
+  fastify.post('/suggest-pricing', { preHandler: [requireAuth] }, async (request, reply) => {
     const { route_length_km, passenger_count } = request.body as any;
     
     // Calculates fair fuel split: standard rate ₹12 per km divided by passengers
@@ -129,7 +143,7 @@ export async function aiRoutes(fastify: FastifyInstance) {
   });
 
   // 7. Fraud profile checks (Feature 18)
-  fastify.post('/fraud/scan-profile', async (request, reply) => {
+  fastify.post('/fraud/scan-profile', { preHandler: [requireAuth] }, async (request, reply) => {
     const { user_id, document_url } = request.body as any;
     
     // Checks for duplicate Vahan records or template images
@@ -142,7 +156,7 @@ export async function aiRoutes(fastify: FastifyInstance) {
   });
 
   // 8. In-chat translation (Feature 19)
-  fastify.post('/chat/translate', async (request, reply) => {
+  fastify.post('/chat/translate', { preHandler: [requireAuth] }, async (request, reply) => {
     const { message, target_language } = request.body as { message: string; target_language: string };
     
     // Mock translation mapping Indian languages (Hindi / English / Tamil / Telugu)

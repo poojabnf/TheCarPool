@@ -1,0 +1,30 @@
+rules_version = '2';
+
+// TheCarPool Firebase Storage security rules.
+//
+// KYC documents live under users/{uid}/kyc/** and must be readable/writable
+// only by their owner. Uploads from the app use a signed URL minted by the
+// backend, but these rules add defence-in-depth for any direct client access.
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    function isOwner(userId) {
+      return request.auth != null && request.auth.uid == userId;
+    }
+
+    // Per-user KYC documents — owner only.
+    match /users/{userId}/kyc/{allPaths=**} {
+      allow read, write: if isOwner(userId);
+    }
+
+    // Any other per-user assets — owner only.
+    match /users/{userId}/{allPaths=**} {
+      allow read, write: if isOwner(userId);
+    }
+
+    // Deny everything else by default.
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

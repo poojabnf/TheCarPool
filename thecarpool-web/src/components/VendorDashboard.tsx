@@ -1,7 +1,8 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { UploadCloud, CheckCircle, CarFront, ShieldCheck, Globe, Activity, Wallet, CreditCard, Settings, HelpCircle } from "lucide-react";
+import { apiFetch } from "../lib/api";
 
 const TOP_20_COUNTRIES = [
   "United States", "China", "Germany", "Japan", "India", "United Kingdom", "France", "Italy", "Brazil", "Canada",
@@ -13,6 +14,25 @@ export default function VendorDashboard() {
   const [rcStatus, setRcStatus] = useState("PENDING");
   const [insStatus, setInsStatus] = useState("PENDING");
   const [permitStatus, setPermitStatus] = useState("PENDING");
+
+  // The driver's own rides, fetched from the backend (F09).
+  const [myRides, setMyRides] = useState<any[] | null>(null);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await apiFetch("/api/rides/mine");
+        if (res.ok) {
+          const data = await res.json();
+          setMyRides(Array.isArray(data) ? data : []);
+        } else {
+          setMyRides([]);
+        }
+      } catch {
+        setMyRides([]);
+      }
+    })();
+  }, []);
 
   const simulateUpload = (setter: React.Dispatch<React.SetStateAction<string>>) => {
     setter("UPLOADING");
@@ -45,6 +65,30 @@ export default function VendorDashboard() {
               <h1 className="text-3xl font-bold text-slate-800 dark:text-white">Global Fleet Partner Portal</h1>
               <p className="text-slate-500 dark:text-slate-400 mt-2">Onboard vehicles globally and submit mandatory compliance documents for approval.</p>
             </header>
+
+            {/* Your active rides (live from backend) */}
+            <div className="glass-panel p-6 rounded-3xl">
+              <h2 className="text-lg font-bold text-slate-800 dark:text-white mb-4 flex items-center gap-2">
+                <CarFront className="text-orange-500" size={20} /> Your Rides
+              </h2>
+              {myRides === null ? (
+                <p className="text-sm text-slate-500">Loading your rides…</p>
+              ) : myRides.length === 0 ? (
+                <p className="text-sm text-slate-500">No rides published yet. Onboard a vehicle and create a ride to get started.</p>
+              ) : (
+                <div className="space-y-2">
+                  {myRides.map((r) => (
+                    <div key={r.id} className="flex justify-between items-center p-3 rounded-xl border border-slate-100 dark:border-slate-700 bg-white/40 dark:bg-slate-800/40">
+                      <div>
+                        <p className="font-bold text-slate-800 dark:text-white text-sm">{r.vehicle_make || r.vehicle_type || 'Ride'} · {r.status}</p>
+                        <p className="text-xs text-slate-500">{r.departure_time ? new Date(r.departure_time).toLocaleString() : '—'} · {r.seats_available}/{r.seats_total} seats</p>
+                      </div>
+                      <p className="font-bold text-orange-600">₹{r.price_split}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
               {/* Car Onboarding Form */}

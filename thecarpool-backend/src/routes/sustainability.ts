@@ -1,5 +1,6 @@
 import { FastifyInstance } from 'fastify';
 import { db } from '../server';
+import { requireAuth } from '../middleware/auth';
 
 export async function sustainabilityRoutes(fastify: FastifyInstance) {
 
@@ -14,7 +15,7 @@ export async function sustainabilityRoutes(fastify: FastifyInstance) {
   });
 
   // 2. ESG Enterprise Portals (Feature 39)
-  fastify.get('/esg-report/:company_domain', async (request, reply) => {
+  fastify.get('/esg-report/:company_domain', { preHandler: [requireAuth] }, async (request, reply) => {
     const { company_domain } = request.params as { company_domain: string };
     
     // Aggregate company-wide carpooling stats for corporate ESG audit sheets
@@ -32,12 +33,12 @@ export async function sustainabilityRoutes(fastify: FastifyInstance) {
   });
 
   // 3. Office & Society pool configurations (Features 40 & 41)
-  fastify.post('/pools/configure', async (request, reply) => {
-    const { user_id, restriction_type, target_name } = request.body as {
-      user_id: number;
+  fastify.post('/pools/configure', { preHandler: [requireAuth] }, async (request, reply) => {
+    const { restriction_type, target_name } = request.body as {
       restriction_type: 'CORPORATE' | 'SOCIETY' | 'NONE';
       target_name: string;
     };
+    const user_id = request.user!.id;
 
     try {
       if (restriction_type === 'CORPORATE') {
@@ -59,7 +60,7 @@ export async function sustainabilityRoutes(fastify: FastifyInstance) {
   });
 
   // 4. EV Matching priority filter (Feature 43)
-  fastify.post('/ev/prioritize', async (request, reply) => {
+  fastify.post('/ev/prioritize', { preHandler: [requireAuth] }, async (request, reply) => {
     const { driver_id, is_ev } = request.body as { driver_id: number; is_ev: boolean };
 
     try {

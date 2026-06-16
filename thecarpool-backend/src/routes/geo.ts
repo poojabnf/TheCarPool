@@ -1,5 +1,6 @@
 import { FastifyInstance } from 'fastify';
-import { db } from '../server';
+import { db, redisClient } from '../server';
+import { requireAuth } from '../middleware/auth';
 
 interface SearchQuery {
   query?: string;
@@ -8,17 +9,27 @@ interface SearchQuery {
 export async function geoRoutes(fastify: FastifyInstance) {
 
   // 1. Search for a postal code or place name in Firestore
-  fastify.get('/search', async (request, reply) => {
+  fastify.get('/search', { preHandler: [requireAuth] }, async (request, reply) => {
     const { query = '' } = request.query as SearchQuery;
 
     if (query.trim().length < 2) {
       return reply.send([]);
     }
 
+    const lowerQuery = query.toLowerCase().trim();
+    const cacheKey = `geo:search:${lowerQuery}`;
+
     try {
+      // Cache-aside: geocoding results are highly repetitive, so cache them.
+      if (redisClient.isOpen) {
+        const cached = await redisClient.get(cacheKey);
+        if (cached) {
+          return reply.send(JSON.parse(cached));
+        }
+      }
+
       const snap = await db.collection('postal_codes').get();
       const results: any[] = [];
-      const lowerQuery = query.toLowerCase();
 
       snap.forEach(doc => {
         const data = doc.data();
@@ -44,6 +55,13 @@ export async function geoRoutes(fastify: FastifyInstance) {
         .sort((a, b) => a.postal_code.localeCompare(b.postal_code))
         .slice(0, 10);
 
+      // Cache for 5 minutes — postal code data is effectively static.
+      if (redisClient.isOpen) {
+        redisClient.setEx(cacheKey, 300, JSON.stringify(sortedResults)).catch(err => {
+          fastify.log.error('Redis geo cache write failed:', err);
+        });
+      }
+
       return reply.send(sortedResults);
     } catch (err: any) {
       fastify.log.error('Geographic search query failed:', err);
@@ -52,7 +70,7 @@ export async function geoRoutes(fastify: FastifyInstance) {
   });
 
   // 2. Get list of active launch countries in Firestore
-  fastify.get('/countries', async (request, reply) => {
+  fastify.get('/countries', { preHandler: [requireAuth] }, async (request, reply) => {
     try {
       const snap = await db.collection('countries').get();
       const results: any[] = [];
