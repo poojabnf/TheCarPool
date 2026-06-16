@@ -1,0 +1,15 @@
+# Secrets — never commit
+.env
+google-play-service-account.json
+*.keystore
+*.jks
+
+# Expo / build artifacts
+.expo/
+dist/
+.expo-export-test/
+web-build/
+
+# native (managed workflow regenerates these)
+/ios
+/android

@@ -2,7 +2,7 @@
   "expo": {
     "name": "TheCarPool",
     "slug": "thecarpool-mobile",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -18,7 +18,7 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.thecarpool.app",
       "googleServicesFile": "./GoogleService-Info.plist",
-      "buildNumber": "1.0.2",
+      "buildNumber": "1.1.0",
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "TheCarPool requires location access to find nearby workplace carpools and match you with active co-workers on your route.",
         "NSLocationAlwaysAndWhenInUseUsageDescription": "TheCarPool requires background location access to monitor route detour deviations and ensure real-time safety during active trips.",
@@ -43,7 +43,8 @@
         "backgroundColor": "#ffffff"
       },
       "package": "com.thecarpool.app",
-      "googleServicesFile": "./google-services.json"
+      "googleServicesFile": "./google-services.json",
+      "versionCode": 2
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -59,7 +60,6 @@
     },
     "owner": "poojaya2k19",
     "plugins": [
-      "./plugins/withFixGradle8.js",
       "@react-native-firebase/app",
       "@react-native-firebase/auth",
       "@react-native-google-signin/google-signin",
@@ -71,11 +71,10 @@
             "deploymentTarget": "16.4"
           },
           "android": {
-            "compileSdkVersion": 35,
-            "targetSdkVersion": 35,
+            "compileSdkVersion": 36,
+            "targetSdkVersion": 36,
             "minSdkVersion": 26,
-            "buildToolsVersion": "35.0.0",
-            "kotlinVersion": "1.9.24"
+            "buildToolsVersion": "36.0.0"
           }
         }
       ]
