@@ -3,13 +3,18 @@ import { View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView, Alert 
 import { useRouter } from 'expo-router';
 import axios from 'axios';
 import { colors } from '../../theme/colors';
-import { create } from 'zustand';
+import { auth } from '../services/firebase';
+import { API_URL as API_BASE } from '../services/api';
 
-const useAuthStore = create<{ userId: number | null }>((set) => ({
-  userId: 42, // Mocked global auth state
-}));
+// Backend gateway API (env-driven base + /api prefix).
+const API_URL = `${API_BASE}/api`;
 
-const API_URL = 'http://localhost:5000/api'; // Target Node Gateway API
+// Returns axios config with the current user's Firebase ID token attached,
+// so the backend's requireAuth middleware can authenticate the request.
+async function authConfig() {
+  const token = await auth().currentUser?.getIdToken();
+  return token ? { headers: { Authorization: `Bearer ${token}` } } : {};
+}
 
 interface Ride {
   id: number;
@@ -22,7 +27,7 @@ interface Ride {
 
 export default function HomeScreen() {
   const router = useRouter();
-  const userId = useAuthStore(state => state.userId);
+  const userId = auth().currentUser?.uid ?? null;
   const [origin, setOrigin] = useState('Sector 56, Gurgaon');
   const [destination, setDestination] = useState('DLF Cyber City, Phase 3');
   const [rides, setRides] = useState<Ride[]>([]);
@@ -40,7 +45,7 @@ export default function HomeScreen() {
         max_detour_meters: 1500
       };
 
-      const res = await axios.post(`${API_URL}/rides/search`, payload);
+      const res = await axios.post(`${API_URL}/rides/search`, payload, await authConfig());
       setRides(res.data);
       
       if (res.data.length === 0) {
@@ -75,7 +80,7 @@ export default function HomeScreen() {
         drop_lat: 28.4952
       };
 
-      await axios.post(`${API_URL}/bookings`, payload);
+      await axios.post(`${API_URL}/bookings`, payload, await authConfig());
       Alert.alert(
         'Ride Booked! 🎉',
         `Successfully locked price seat split via Razorpay Escrow. Co-worker ride confirmed with ${ride.driver_name}.`,

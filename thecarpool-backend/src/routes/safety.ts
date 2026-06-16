@@ -1,6 +1,29 @@
 import { FastifyInstance } from 'fastify';
+import { z } from 'zod';
 import { db, storage } from '../server';
 import { notificationsQueue } from '../queue/processor';
+import { requireAuth } from '../middleware/auth';
+import { parseOrReply } from '../lib/validate';
+
+const SosSchema = z.object({
+  ride_id: z.union([z.string(), z.number()]).optional(),
+  latitude: z.number().min(-90).max(90),
+  longitude: z.number().min(-180).max(180),
+  is_silent: z.boolean().optional().default(false),
+});
+
+const KycVerifySchema = z.object({
+  aadhaar_number: z.string().optional(),
+  dl_number: z.string().optional(),
+  vehicle_rc: z.string().optional(),
+});
+
+// In-memory SOS cooldown: at most one SOS per user per 60s. Prevents a
+// compromised/abusive client from spamming emergency alerts. For a multi-
+// instance deployment this should move to Redis, but in-memory dedup is a
+// safe minimum that closes the spam vector.
+const SOS_COOLDOWN_MS = 60 * 1000;
+const lastSosByUser = new Map<string, number>();
 
 interface SosTriggerBody {
   user_id: number;
@@ -28,11 +51,26 @@ interface RatingBody {
 export async function safetyRoutes(fastify: FastifyInstance) {
 
   // 1. One-Tap SOS & Silent SOS Trigger (Features 20 & 26)
-  fastify.post('/sos/trigger', async (request, reply) => {
-    const { user_id, ride_id, latitude, longitude, is_silent } = request.body as SosTriggerBody;
-    
+  fastify.post('/sos/trigger', { preHandler: [requireAuth] }, async (request, reply) => {
+    const parsed = parseOrReply(SosSchema, request.body, reply);
+    if (!parsed) return;
+    const { ride_id, latitude, longitude, is_silent } = parsed;
+    // Trust the authenticated identity, not a client-supplied user_id.
+    const user_id = request.user!.id;
+
+    // Rate limit / dedupe: one SOS per user per cooldown window.
+    const now = Date.now();
+    const last = lastSosByUser.get(user_id) || 0;
+    if (now - last < SOS_COOLDOWN_MS) {
+      return reply.code(429).send({
+        error: 'An SOS was already dispatched recently. Please wait before triggering again.',
+        retry_after_seconds: Math.ceil((SOS_COOLDOWN_MS - (now - last)) / 1000),
+      });
+    }
+    lastSosByUser.set(user_id, now);
+
     fastify.log.warn(`🚨 EMERGENCY SOS TRIGGERED by user ${user_id} on ride ${ride_id}. Silent Mode: ${is_silent}`);
-    
+
     // Async push to queue to dispatch SMS and notifications reliably in the background
     await notificationsQueue.addJob('dispatch_emergency_alerts', {
       type: 'EMERGENCY_SOS',
@@ -49,9 +87,12 @@ export async function safetyRoutes(fastify: FastifyInstance) {
   });
 
   // 2. Verified Driver KYC / OCR validations (Feature 22)
-  fastify.post('/kyc/verify', async (request, reply) => {
-    const { user_id, aadhaar_number, dl_number, vehicle_rc } = request.body as KycVerifyBody;
-    
+  fastify.post('/kyc/verify', { preHandler: [requireAuth] }, async (request, reply) => {
+    const parsed = parseOrReply(KycVerifySchema, request.body, reply);
+    if (!parsed) return;
+    const { aadhaar_number, dl_number, vehicle_rc } = parsed;
+    const user_id = request.user!.id;
+
     try {
       // Simulate government database check (UIDAI / VAHAN)
       const isAadhaarValid = aadhaar_number && aadhaar_number.length === 12;
@@ -79,8 +120,9 @@ export async function safetyRoutes(fastify: FastifyInstance) {
   });
 
   // 3. Corporate Trust Circles & domains (Feature 23)
-  fastify.post('/trust/verify-email', async (request, reply) => {
-    const { user_id, corporate_email } = request.body as { user_id: number; corporate_email: string };
+  fastify.post('/trust/verify-email', { preHandler: [requireAuth] }, async (request, reply) => {
+    const { corporate_email } = request.body as { corporate_email: string };
+    const user_id = request.user!.id;
     
     const domain = corporate_email.split('@')[1];
     const allowedDomains = ['google.com', 'tcs.com', 'infosys.com', 'microsoft.com', 'wipro.com'];
@@ -102,7 +144,7 @@ export async function safetyRoutes(fastify: FastifyInstance) {
   });
 
   // 4. Proxy Number Masking (Feature 24)
-  fastify.post('/proxy/mask-call', async (request, reply) => {
+  fastify.post('/proxy/mask-call', { preHandler: [requireAuth] }, async (request, reply) => {
     const { rider_id, driver_id } = request.body as { rider_id: number; driver_id: number };
     
     // Generates a temporary Twilio proxy phone number to route calls anonymously
@@ -114,7 +156,7 @@ export async function safetyRoutes(fastify: FastifyInstance) {
   });
 
   // 5. Bidirectional Ratings (Feature 25)
-  fastify.post('/ratings/submit', async (request, reply) => {
+  fastify.post('/ratings/submit', { preHandler: [requireAuth] }, async (request, reply) => {
     const { ride_id, rater_id, ratee_id, rating_score, feedback } = request.body as RatingBody;
     
     // In production, rating scores adjust users/drivers trust indexes
@@ -128,7 +170,7 @@ export async function safetyRoutes(fastify: FastifyInstance) {
   });
 
   // 6. Geofence Deviation Alerts (Feature 27)
-  fastify.post('/geofence/check', async (request, reply) => {
+  fastify.post('/geofence/check', { preHandler: [requireAuth] }, async (request, reply) => {
     const { ride_id, driver_lat, driver_lng, route_id } = request.body as any;
     
     // Detour deviation trigger checks: if distance to route line > 400m
@@ -150,7 +192,7 @@ export async function safetyRoutes(fastify: FastifyInstance) {
   });
 
   // 7. Safety Circle Auto-Share contacts (Feature 28)
-  fastify.post('/safety/contacts', async (request, reply) => {
+  fastify.post('/safety/contacts', { preHandler: [requireAuth] }, async (request, reply) => {
     const { user_id, contact_name, contact_phone } = request.body as any;
     return reply.send({
       status: 'CONTACT_ADDED',
@@ -161,11 +203,16 @@ export async function safetyRoutes(fastify: FastifyInstance) {
   });
 
   // 9. Delete Profile / Account (GDPR & Privacy Compliance)
-  fastify.delete('/account', async (request, reply) => {
+  fastify.delete('/account', { preHandler: [requireAuth] }, async (request, reply) => {
     const { user_id } = request.body as { user_id: string };
 
     if (!user_id) {
       return reply.code(400).send({ error: 'user_id is required.' });
+    }
+
+    // A user may only delete their own account.
+    if (String(request.user!.id) !== String(user_id)) {
+      return reply.code(403).send({ error: 'Forbidden: you can only delete your own account.' });
     }
 
     try {
@@ -210,13 +257,19 @@ export async function safetyRoutes(fastify: FastifyInstance) {
   });
 
   // 8. Secure Document Upload to Firebase Storage for OCR Scanning (Feature 16 component)
-  fastify.post('/kyc/upload', async (request, reply) => {
+  fastify.post('/kyc/upload', { preHandler: [requireAuth] }, async (request, reply) => {
     // Generate a signed URL for the client to securely upload their KYC documents to Firebase Storage
-    const { filename, content_type } = request.body as any || { filename: `doc_${Date.now()}.jpg`, content_type: 'image/jpeg' };
-    
+    const body = (request.body as any) || {};
+    const filename = body.filename || `doc_${Date.now()}.jpg`;
+    const content_type = body.content_type || 'image/jpeg';
+    const document_type = (body.document_type || 'general').replace(/[^a-zA-Z0-9_-]/g, '');
+    const uid = request.user!.id;
+
     try {
       const bucket = storage.bucket(); // Default firebase bucket
-      const file = bucket.file(`kyc/${Date.now()}_${filename}`);
+      // Bind the upload path to the authenticated user so one user can never
+      // write into another user's KYC folder.
+      const file = bucket.file(`users/${uid}/kyc/${document_type}/${Date.now()}_${filename}`);
       
       const [uploadUrl] = await file.getSignedUrl({
         version: 'v4',

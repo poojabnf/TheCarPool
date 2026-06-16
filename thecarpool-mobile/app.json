@@ -28,6 +28,11 @@
             "CFBundleURLSchemes": [
               "com.googleusercontent.apps.953521578640-khu8idmh7f9bmqli6pps2a2bjfmn8p9g"
             ]
+          },
+          {
+            "CFBundleURLSchemes": [
+              "com.googleusercontent.apps.953521578640-khu8idmh7f9bmqli6pps2a2bjfmn8p9g"
+            ]
           }
         ]
       }
@@ -49,12 +54,13 @@
     },
     "extra": {
       "eas": {
-        "projectId": "016e5091-194f-4506-a81e-81a98e7dbc0c"
+        "projectId": "e5fe9be8-04c9-4010-9c97-7bc66579b052"
       }
     },
-    "owner": "poojabnf",
+    "owner": "poojaya2k19",
     "plugins": [
-      "./plugins/withFirebaseAppDelegate.js",
+      "./plugins/withFixGradle8.js",
+      "@react-native-firebase/app",
       "@react-native-firebase/auth",
       "@react-native-google-signin/google-signin",
       [
@@ -63,6 +69,13 @@
           "ios": {
             "useFrameworks": "static",
             "deploymentTarget": "15.1"
+          },
+          "android": {
+            "compileSdkVersion": 35,
+            "targetSdkVersion": 35,
+            "minSdkVersion": 26,
+            "buildToolsVersion": "35.0.0",
+            "kotlinVersion": "1.9.24"
           }
         }
       ]
@@ -71,7 +84,7 @@
       "policy": "appVersion"
     },
     "updates": {
-      "url": "https://u.expo.dev/016e5091-194f-4506-a81e-81a98e7dbc0c"
+      "url": "https://u.expo.dev/e5fe9be8-04c9-4010-9c97-7bc66579b052"
     }
   }
 }

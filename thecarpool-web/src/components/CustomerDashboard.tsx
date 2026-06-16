@@ -3,50 +3,8 @@
 import React, { useState, useEffect } from "react";
 import { Leaf, MapPin, Navigation, Map as MapIcon, CreditCard, Wallet, Settings, HelpCircle, Activity, LogOut, Search, Trash2, AlertTriangle } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
+import { apiFetch } from "../lib/api";
 import { useRouter } from "next/navigation";
-
-const LOCAL_GEO_DATABASE = [
-  { postal_code: '122002', place_name: 'DLF Phase 3, Gurugram', state_name: 'Haryana', country_name: 'India' },
-  { postal_code: '122003', place_name: 'Sector 45, Gurugram', state_name: 'Haryana', country_name: 'India' },
-  { postal_code: '122018', place_name: 'Sector 21, Gurugram', state_name: 'Haryana', country_name: 'India' },
-  { postal_code: '560001', place_name: 'MG Road, Bengaluru', state_name: 'Karnataka', country_name: 'India' },
-  { postal_code: '560066', place_name: 'Whitefield, Bengaluru', state_name: 'Karnataka', country_name: 'India' },
-  { postal_code: '560103', place_name: 'Outer Ring Road, Bengaluru', state_name: 'Karnataka', country_name: 'India' },
-  { postal_code: '110001', place_name: 'Connaught Place, New Delhi', state_name: 'Delhi', country_name: 'India' },
-  { postal_code: '110021', place_name: 'Chanakyapuri, New Delhi', state_name: 'Delhi', country_name: 'India' },
-  { postal_code: '400001', place_name: 'Fort, Mumbai', state_name: 'Maharashtra', country_name: 'India' },
-  { postal_code: '400050', place_name: 'Bandra West, Mumbai', state_name: 'Maharashtra', country_name: 'India' },
-  { postal_code: '411057', place_name: 'Hinjawadi, Pune', state_name: 'Maharashtra', country_name: 'India' },
-  { postal_code: '95113', place_name: 'Downtown San Jose, Silicon Valley', state_name: 'California', country_name: 'United States' },
-  { postal_code: '94102', place_name: 'Union Square, San Francisco', state_name: 'California', country_name: 'United States' },
-  { postal_code: '90012', place_name: 'Downtown Los Angeles', state_name: 'California', country_name: 'United States' },
-  { postal_code: '10001', place_name: 'Chelsea, Manhattan', state_name: 'New York', country_name: 'United States' },
-  { postal_code: '11201', place_name: 'Brooklyn Heights', state_name: 'New York', country_name: 'United States' },
-  { postal_code: '98101', place_name: 'Downtown Seattle', state_name: 'Washington', country_name: 'United States' },
-  { postal_code: '98004', place_name: 'Bellevue Tech Hub', state_name: 'Washington', country_name: 'United States' },
-  { postal_code: 'EC1A', place_name: 'City of London', state_name: 'England', country_name: 'United Kingdom' },
-  { postal_code: 'SW1A', place_name: 'Westminster, London', state_name: 'England', country_name: 'United Kingdom' },
-  { postal_code: 'M1', place_name: 'Manchester Piccadilly', state_name: 'England', country_name: 'United Kingdom' },
-  { postal_code: '80331', place_name: 'Altstadt, Munich', state_name: 'Bavaria', country_name: 'Germany' },
-  { postal_code: '10115', place_name: 'Mitte, Berlin', state_name: 'Berlin', country_name: 'Germany' },
-  { postal_code: '75001', place_name: 'Louvre, Paris', state_name: 'Île-de-France', country_name: 'France' },
-  { postal_code: '92000', place_name: 'Nanterre / La Défense, Paris', state_name: 'Île-de-France', country_name: 'France' },
-  { postal_code: '160-0022', place_name: 'Shinjuku, Tokyo', state_name: 'Tokyo', country_name: 'Japan' },
-  { postal_code: 'M5V', place_name: 'Downtown Toronto', state_name: 'Ontario', country_name: 'Canada' },
-  { postal_code: '2000', place_name: 'Sydney CBD', state_name: 'New South Wales', country_name: 'Australia' },
-  { postal_code: '01000', place_name: 'Centro, São Paulo', state_name: 'São Paulo', country_name: 'Brazil' },
-  { postal_code: '00185', place_name: 'Roma Termini', state_name: 'Lazio', country_name: 'Italy' },
-  { postal_code: '28001', place_name: 'Recoletos, Madrid', state_name: 'Madrid', country_name: 'Spain' },
-  { postal_code: '06000', place_name: 'Centro Historico, CDMX', state_name: 'Distrito Federal', country_name: 'Mexico' },
-  { postal_code: '06000', place_name: 'Gangnam-gu, Seoul', state_name: 'Seoul', country_name: 'South Korea' },
-  { postal_code: '1012', place_name: 'Centrum, Amsterdam', state_name: 'North Holland', country_name: 'Netherlands' },
-  { postal_code: '11564', place_name: 'Olaya, Riyadh', state_name: 'Riyadh Province', country_name: 'Saudi Arabia' },
-  { postal_code: '34330', place_name: 'Levent, Istanbul', state_name: 'Istanbul', country_name: 'Turkey' },
-  { postal_code: '8001', place_name: 'Zurich Center', state_name: 'Zurich', country_name: 'Switzerland' },
-  { postal_code: '10110', place_name: 'Gambir, Central Jakarta', state_name: 'Jakarta', country_name: 'Indonesia' },
-  { postal_code: '018981', place_name: 'Marina Bay, Singapore', state_name: 'Singapore Circle', country_name: 'Singapore' },
-  { postal_code: '11120', place_name: 'Norrmalm, Stockholm', state_name: 'Stockholm County', country_name: 'Sweden' },
-];
 
 export default function CustomerDashboard() {
   const { user, loading, signOut, deleteAccount } = useAuth();
@@ -69,50 +27,128 @@ export default function CustomerDashboard() {
   const [isSearchingPickup, setIsSearchingPickup] = useState(false);
   const [isSearchingDropoff, setIsSearchingDropoff] = useState(false);
 
+  // Selected coordinates for the ride search (F07).
+  const [pickupCoords, setPickupCoords] = useState<{ lat: number; lng: number } | null>(null);
+  const [dropoffCoords, setDropoffCoords] = useState<{ lat: number; lng: number } | null>(null);
+  const [rideResults, setRideResults] = useState<any[] | null>(null);
+  const [isFindingRides, setIsFindingRides] = useState(false);
+
+  // Real wallet data (F04).
+  const [wallet, setWallet] = useState<{ available: number; escrow: number; currency: string } | null>(null);
+
+  // Settings form (F08).
+  const [settingsName, setSettingsName] = useState("");
+  const [notificationsEnabled, setNotificationsEnabled] = useState(true);
+  const [settingsSaving, setSettingsSaving] = useState(false);
+  const [settingsSaved, setSettingsSaved] = useState(false);
+
+  // Load the real wallet balance once the user is known.
+  useEffect(() => {
+    if (!user) return;
+    (async () => {
+      try {
+        const res = await apiFetch(`/api/payments/wallet/${user.uid}`);
+        if (res.ok) {
+          const d = await res.json();
+          setWallet({
+            available: d.available_wallet_balance ?? 0,
+            escrow: d.escrow_locked_balance ?? 0,
+            currency: d.currency || 'INR',
+          });
+        }
+      } catch {
+        /* leave wallet null — UI shows a loading/unavailable state */
+      }
+    })();
+    setSettingsName(user.displayName || "");
+  }, [user]);
+
+  const handleFindRide = async () => {
+    if (!pickupCoords || !dropoffCoords) {
+      alert("Please select both a pickup and drop-off location from the suggestions.");
+      return;
+    }
+    setIsFindingRides(true);
+    setRideResults(null);
+    try {
+      const res = await apiFetch('/api/rides/search', {
+        method: 'POST',
+        body: JSON.stringify({
+          pickup_lat: pickupCoords.lat,
+          pickup_lng: pickupCoords.lng,
+          drop_lat: dropoffCoords.lat,
+          drop_lng: dropoffCoords.lng,
+        }),
+      });
+      const data = res.ok ? await res.json() : [];
+      setRideResults(Array.isArray(data) ? data : []);
+    } catch {
+      setRideResults([]);
+    } finally {
+      setIsFindingRides(false);
+    }
+  };
+
+  const handleSaveSettings = async () => {
+    setSettingsSaving(true);
+    setSettingsSaved(false);
+    try {
+      await apiFetch('/api/users/profile', {
+        method: 'POST',
+        body: JSON.stringify({
+          displayName: settingsName,
+          notifications_enabled: notificationsEnabled,
+        }),
+      });
+      setSettingsSaved(true);
+    } catch {
+      /* swallow — could surface a toast */
+    } finally {
+      setSettingsSaving(false);
+    }
+  };
+
+  // Geo data comes solely from the backend (single source of truth). On
+  // failure we show an empty state rather than diverging local seed data.
   const fetchSuggestions = async (val: string, setSuggestions: (s: any[]) => void) => {
     if (val.trim().length < 2) {
       setSuggestions([]);
       return;
     }
-    
+
     try {
-      const res = await fetch(`/api/geo/search?query=${encodeURIComponent(val)}`);
+      const res = await apiFetch(`/api/geo/search?query=${encodeURIComponent(val)}`);
       if (res.ok) {
         const data = await res.json();
-        if (data && data.length > 0) {
-          setSuggestions(data);
-          return;
-        }
+        setSuggestions(Array.isArray(data) ? data : []);
+        return;
       }
     } catch (e) {
-      console.warn("API Geocoding failed, falling back to client-side seed database:", e);
+      console.warn("Geocoding lookup failed:", e);
     }
-    
-    const matches = LOCAL_GEO_DATABASE.filter(item => 
-      (item.postal_code && item.postal_code.toLowerCase().includes(val.toLowerCase())) ||
-      (item.place_name && item.place_name.toLowerCase().includes(val.toLowerCase())) ||
-      (item.state_name && item.state_name.toLowerCase().includes(val.toLowerCase())) ||
-      (item.country_name && item.country_name.toLowerCase().includes(val.toLowerCase()))
-    ).map(item => ({
-      postal_code: item.postal_code,
-      place_name: item.place_name,
-      state_name: item.state_name,
-      country_name: item.country_name,
-    }));
-    setSuggestions(matches);
+    setSuggestions([]);
   };
 
   useEffect(() => {
-    if (!loading) {
-      if (!user) {
-        router.push("/");
-      } else {
-        const onboarded = localStorage.getItem(`thecarpool_onboarded_${user.uid}`);
-        if (onboarded !== 'true') {
-          router.push("/onboarding");
-        }
-      }
+    if (loading) return;
+    if (!user) {
+      router.push("/");
+      return;
     }
+    // Gate on the authoritative server-side onboarded flag (not localStorage).
+    (async () => {
+      try {
+        const res = await apiFetch("/api/users/me");
+        if (res.ok) {
+          const data = await res.json();
+          if (data.onboarded !== true) {
+            router.push("/onboarding");
+          }
+        }
+      } catch {
+        /* On API failure, don't hard-redirect — let the user stay. */
+      }
+    })();
   }, [user, loading, router]);
 
   if (loading) {
@@ -257,6 +293,7 @@ export default function CustomerDashboard() {
                             key={idx}
                             onMouseDown={() => {
                               setPickup(`${s.place_name} (${s.postal_code || s.state_code || s.state_name})`);
+                              setPickupCoords({ lat: s.latitude ?? s.lat ?? 0, lng: s.longitude ?? s.lng ?? 0 });
                               setIsSearchingPickup(false);
                             }}
                             className="p-3 hover:bg-slate-50 dark:hover:bg-slate-700/50 cursor-pointer text-sm border-b border-slate-100 dark:border-slate-700 last:border-b-0 text-slate-700 dark:text-slate-300"
@@ -307,6 +344,7 @@ export default function CustomerDashboard() {
                             key={idx}
                             onMouseDown={() => {
                               setDropoff(`${s.place_name} (${s.postal_code || s.state_code || s.state_name})`);
+                              setDropoffCoords({ lat: s.latitude ?? s.lat ?? 0, lng: s.longitude ?? s.lng ?? 0 });
                               setIsSearchingDropoff(false);
                             }}
                             className="p-3 hover:bg-slate-50 dark:hover:bg-slate-700/50 cursor-pointer text-sm border-b border-slate-100 dark:border-slate-700 last:border-b-0 text-slate-700 dark:text-slate-300"
@@ -319,9 +357,32 @@ export default function CustomerDashboard() {
                   </div>
 
                 </div>
-                <button className="w-full mt-2 bg-slate-800 dark:bg-white text-white dark:text-slate-900 font-bold py-3 rounded-xl hover:bg-slate-700 dark:hover:bg-slate-100 transition-colors cursor-pointer">
-                  Find Ride
+                <button
+                  onClick={handleFindRide}
+                  disabled={isFindingRides}
+                  className="w-full mt-2 bg-slate-800 dark:bg-white text-white dark:text-slate-900 font-bold py-3 rounded-xl hover:bg-slate-700 dark:hover:bg-slate-100 transition-colors cursor-pointer disabled:opacity-60"
+                >
+                  {isFindingRides ? "Searching…" : "Find Ride"}
                 </button>
+
+                {/* Ride search results */}
+                {rideResults !== null && (
+                  <div className="mt-4 space-y-2">
+                    {rideResults.length === 0 ? (
+                      <p className="text-sm text-slate-500 text-center py-2">No matching rides found on this route right now.</p>
+                    ) : (
+                      rideResults.map((r) => (
+                        <div key={r.id} className="bg-slate-50 dark:bg-slate-800/50 p-3 rounded-xl border border-slate-100 dark:border-slate-700 flex justify-between items-center">
+                          <div>
+                            <p className="font-bold text-slate-800 dark:text-white text-sm">{r.driver_name || 'Driver'}{r.is_ev ? ' · EV' : ''}</p>
+                            <p className="text-xs text-slate-500">{r.seats_available} seats · ~{Math.round((r.pickup_deviation || 0))}m detour</p>
+                          </div>
+                          <p className="font-bold text-emerald-600">₹{r.price_split}</p>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -334,7 +395,12 @@ export default function CustomerDashboard() {
             <div className="glass-panel p-8 rounded-3xl flex justify-between items-center bg-gradient-to-r from-emerald-50 to-teal-50 dark:from-emerald-900/20 dark:to-teal-900/20 border-emerald-100 dark:border-emerald-800/30">
               <div>
                 <p className="text-sm font-semibold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider mb-1">Available Balance</p>
-                <h2 className="text-5xl font-black text-slate-800 dark:text-white">₹1,250.00</h2>
+                <h2 className="text-5xl font-black text-slate-800 dark:text-white">
+                  {wallet ? `₹${wallet.available.toFixed(2)}` : "…"}
+                </h2>
+                {wallet && wallet.escrow > 0 && (
+                  <p className="text-xs text-slate-500 mt-1">₹{wallet.escrow.toFixed(2)} locked in escrow</p>
+                )}
               </div>
               <button className="bg-emerald-500 hover:bg-emerald-600 text-white font-bold px-8 py-4 rounded-xl shadow-lg shadow-emerald-200 dark:shadow-none transition-all">
                 + Add Funds
@@ -388,7 +454,7 @@ export default function CustomerDashboard() {
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="block text-xs text-slate-500 uppercase font-bold mb-1">Full Name</label>
-                    <input type="text" key={user?.displayName || "name"} defaultValue={user?.displayName || "Pooja Yadav"} className="w-full p-3 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900" />
+                    <input type="text" value={settingsName} onChange={(e) => setSettingsName(e.target.value)} className="w-full p-3 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900" />
                   </div>
                   <div>
                     <label className="block text-xs text-slate-500 uppercase font-bold mb-1">Email Address</label>
@@ -404,8 +470,26 @@ export default function CustomerDashboard() {
                     <p className="font-medium text-slate-800 dark:text-white">Push Notifications</p>
                     <p className="text-sm text-slate-500">Receive alerts for ride matches</p>
                   </div>
-                  <div className="w-12 h-6 bg-emerald-500 rounded-full relative"><div className="w-4 h-4 bg-white rounded-full absolute right-1 top-1"></div></div>
+                  <button
+                    onClick={() => setNotificationsEnabled((v) => !v)}
+                    aria-pressed={notificationsEnabled}
+                    className={`w-12 h-6 rounded-full relative transition-colors ${notificationsEnabled ? 'bg-emerald-500' : 'bg-slate-300 dark:bg-slate-600'}`}
+                  >
+                    <div className={`w-4 h-4 bg-white rounded-full absolute top-1 transition-all ${notificationsEnabled ? 'right-1' : 'left-1'}`}></div>
+                  </button>
                 </div>
+              </div>
+
+              {/* Save preferences / profile */}
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={handleSaveSettings}
+                  disabled={settingsSaving}
+                  className="bg-emerald-500 hover:bg-emerald-600 text-white font-bold py-2.5 px-6 rounded-xl transition-all disabled:opacity-60 cursor-pointer"
+                >
+                  {settingsSaving ? "Saving…" : "Save Changes"}
+                </button>
+                {settingsSaved && <span className="text-sm text-emerald-600 font-semibold">Saved ✓</span>}
               </div>
 
               {/* Danger Zone */}

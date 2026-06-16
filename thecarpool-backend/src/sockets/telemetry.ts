@@ -1,9 +1,9 @@
 import { Server as SocketIOServer, Socket } from 'socket.io';
+import * as admin from 'firebase-admin';
 import { db } from '../server';
-import * as jwt from 'jsonwebtoken';
 
 interface TelemetryPayload {
-  userId: number;
+  userId: string;
   lng: number;
   lat: number;
   speed: number;
@@ -27,15 +27,15 @@ function haversineDistance(lat1: number, lon1: number, lat2: number, lon2: numbe
 }
 
 export function setupTelemetrySocket(io: SocketIOServer) {
-  io.use((socket, next) => {
+  io.use(async (socket, next) => {
     const token = socket.handshake.auth?.token;
     if (!token) {
       return next(new Error("Authentication error: Token missing"));
     }
     try {
-      const secret = process.env.JWT_SECRET || 'thecarpool_jwt_secret_dev_only';
-      const decoded = jwt.verify(token, secret) as any;
-      (socket as any).userId = parseInt(decoded.sub || decoded.uid || decoded.user_id, 10);
+      // Verify the Firebase ID token — same source of truth as the REST API.
+      const decoded = await admin.auth().verifyIdToken(token);
+      (socket as any).userId = decoded.uid;
       next();
     } catch (err) {
       return next(new Error("Authentication error: Invalid token"));

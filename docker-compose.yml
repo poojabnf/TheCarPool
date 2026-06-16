@@ -1,19 +1,8 @@
 version: '3.8'
 
 services:
-  postgres:
-    image: postgis/postgis:15-3.3
-    container_name: thecarpool-db
-    environment:
-      POSTGRES_DB: thecarpool
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: thecarpoolsecretpassword
-    ports:
-      - "5432:5432"
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    restart: unless-stopped
-
+  # NOTE: PostgreSQL was removed — the database was migrated to Firestore.
+  # Only Redis (cache) and MinIO (local S3 emulator) remain for local dev.
   redis:
     image: redis:7.0-alpine
     container_name: thecarpool-cache
@@ -38,6 +27,5 @@ services:
     restart: unless-stopped
 
 volumes:
-  postgres_data:
   redis_data:
   minio_data:

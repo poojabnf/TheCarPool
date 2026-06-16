@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "../../context/AuthContext";
+import { apiFetch } from "../../lib/api";
 import { 
   User, 
   MapPin, 
@@ -53,6 +54,8 @@ export default function OnboardingPage() {
   // Selfie State
   const [selfieStage, setSelfieStage] = useState<'idle' | 'scanning' | 'done'>('idle');
 
+  const [saving, setSaving] = useState(false);
+
   // Redirection guard
   useEffect(() => {
     if (!loading) {
@@ -63,25 +66,53 @@ export default function OnboardingPage() {
         if (user.displayName && !name) {
           setName(user.displayName);
         }
-        
-        // If already onboarded, send to customer portal
-        const onboarded = localStorage.getItem(`thecarpool_onboarded_${user.uid}`);
-        if (onboarded === 'true') {
-          router.push("/customer");
-        }
+
+        // If already onboarded (server-side flag), send to customer portal.
+        (async () => {
+          try {
+            const res = await apiFetch("/api/users/me");
+            if (res.ok) {
+              const data = await res.json();
+              if (data.onboarded === true) {
+                router.push("/customer");
+              }
+            }
+          } catch {
+            // Network/API failure — let the user proceed with onboarding.
+          }
+        })();
       }
     }
   }, [user, loading, name, router]);
 
-  const handleNext = () => {
+  const handleNext = async () => {
     if (currentStep < TOTAL_STEPS - 1) {
       setCurrentStep(prev => prev + 1);
-    } else {
-      if (user) {
-        localStorage.setItem(`thecarpool_onboarded_${user.uid}`, 'true');
-      }
-      router.push("/customer");
+      return;
     }
+
+    // Final step: persist the collected profile to Firestore via the backend,
+    // which also sets the authoritative `onboarded` flag.
+    if (user) {
+      setSaving(true);
+      try {
+        await apiFetch("/api/users/profile", {
+          method: "POST",
+          body: JSON.stringify({
+            name,
+            company,
+            employeeId,
+            workLocation,
+            role,
+          }),
+        });
+      } catch {
+        // Non-fatal: surface but still let the user into the app.
+      } finally {
+        setSaving(false);
+      }
+    }
+    router.push("/customer");
   };
 
   // OTP simulation for Aadhaar
@@ -510,9 +541,10 @@ export default function OnboardingPage() {
               ) : (
                 <button
                   onClick={handleNext}
-                  className="w-full py-4 mt-4 bg-emerald-500 hover:bg-emerald-600 text-white font-bold rounded-xl flex items-center justify-center gap-2 transition-all shadow-lg shadow-emerald-500/20 cursor-pointer"
+                  disabled={saving}
+                  className="w-full py-4 mt-4 bg-emerald-500 hover:bg-emerald-600 text-white font-bold rounded-xl flex items-center justify-center gap-2 transition-all shadow-lg shadow-emerald-500/20 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
                 >
-                  🎉 Activate My Account
+                  {saving ? "Saving…" : "🎉 Activate My Account"}
                 </button>
               )}
 

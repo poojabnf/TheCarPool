@@ -163,7 +163,7 @@ export default function OtpScreen() {
             .map((_, i) => (
               <TextInput
                 key={i}
-                ref={(el) => (inputs.current[i] = el)}
+                ref={(el) => { inputs.current[i] = el; }}
                 style={[
                   styles.otpBox,
                   otp[i] ? styles.otpBoxFilled : null,

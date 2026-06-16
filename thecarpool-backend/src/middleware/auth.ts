@@ -1,16 +1,26 @@
 import { FastifyRequest, FastifyReply } from 'fastify';
-import * as jwt from 'jsonwebtoken';
+import * as admin from 'firebase-admin';
 
-// Extend FastifyRequest to include user object
+// Extend FastifyRequest to include user object.
+// id is the Firebase UID (a string), not a numeric id.
 declare module 'fastify' {
   interface FastifyRequest {
     user?: {
-      id: number;
+      id: string;
       role: string;
+      email?: string;
     };
   }
 }
 
+/**
+ * Verifies the caller's Firebase ID token using the Admin SDK.
+ *
+ * The frontend (web + mobile) authenticates with Firebase Auth (Google
+ * sign-in, phone OTP) and sends the resulting ID token as a Bearer token.
+ * We verify it here against Firebase rather than a local JWT secret so the
+ * two systems share a single source of truth.
+ */
 export async function requireAuth(request: FastifyRequest, reply: FastifyReply) {
   try {
     const authHeader = request.headers.authorization;
@@ -19,23 +29,32 @@ export async function requireAuth(request: FastifyRequest, reply: FastifyReply) 
     }
 
     const token = authHeader.split(' ')[1];
-    
-    // For production, this should verify against Firebase Admin SDK or Clerk JWKS.
-    // As a generic implementation, we use a secret.
-    const secret = process.env.JWT_SECRET || 'thecarpool_jwt_secret_dev_only';
-    
-    // Attempt verification (if it's a signed JWT)
-    // Note: In development or if using mock tokens, we can fallback to extracting payload
-    const decoded = jwt.verify(token, secret) as any;
-    
-    // Attach the user to the request
-    request.user = {
-      id: parseInt(decoded.sub || decoded.uid || decoded.user_id, 10),
-      role: decoded.role || 'USER'
-    };
 
+    // Verify the Firebase ID token. Throws if expired, malformed, or not
+    // signed by the project's Firebase Auth.
+    const decoded = await admin.auth().verifyIdToken(token);
+
+    // Custom claims (e.g. { admin: true }) can be set server-side via
+    // admin.auth().setCustomUserClaims(uid, { role: 'ADMIN' }).
+    request.user = {
+      id: decoded.uid,
+      role: (decoded.role as string) || (decoded.admin ? 'ADMIN' : 'USER'),
+      email: decoded.email,
+    };
   } catch (err: any) {
-    request.log.error('Authentication failed:', err.message);
+    request.log.error('Authentication failed: %s', err.message);
     return reply.code(401).send({ error: 'Unauthorized: Invalid token.' });
+  }
+}
+
+/**
+ * Authenticates AND requires the `admin` custom claim / ADMIN role.
+ * Use as a preHandler on admin-only routes.
+ */
+export async function requireAdmin(request: FastifyRequest, reply: FastifyReply) {
+  await requireAuth(request, reply);
+  if (reply.sent) return; // requireAuth already rejected
+  if (request.user?.role !== 'ADMIN') {
+    return reply.code(403).send({ error: 'Forbidden: admin access required.' });
   }
 }

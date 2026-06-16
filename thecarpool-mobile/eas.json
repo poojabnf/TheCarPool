@@ -5,16 +5,41 @@
   "build": {
     "development": {
       "developmentClient": true,
-      "distribution": "internal"
+      "distribution": "internal",
+      "android": {
+        "image": "latest",
+        "resourceClass": "medium"
+      },
+      "env": {
+        "EXPO_PUBLIC_API_URL": "http://localhost:5000"
+      },
+      "channel": "development"
     },
     "preview": {
-      "distribution": "internal"
+      "distribution": "internal",
+      "android": {
+        "image": "latest",
+        "buildType": "apk",
+        "resourceClass": "medium"
+      },
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://thecarpool-backend-953521578640.asia-south1.run.app"
+      },
+      "channel": "preview"
     },
     "production": {
       "ios": {
         "image": "latest",
         "distribution": "store"
-      }
+      },
+      "android": {
+        "image": "latest",
+        "resourceClass": "medium"
+      },
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://thecarpool-backend-953521578640.asia-south1.run.app"
+      },
+      "channel": "production"
     }
   },
   "submit": {

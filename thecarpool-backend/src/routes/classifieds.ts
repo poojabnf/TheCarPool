@@ -1,5 +1,5 @@
 import { FastifyInstance } from 'fastify';
-import { db } from '../server';
+import { db, storage } from '../server';
 import { requireAuth } from '../middleware/auth';
 
 interface CreateClassifiedBody {
@@ -83,6 +83,45 @@ export async function classifiedRoutes(fastify: FastifyInstance) {
     } catch (err: any) {
       fastify.log.error('Failed to post classified:', err);
       return reply.code(500).send({ error: 'Database failure to register classified post.' });
+    }
+  });
+
+  // 3. Generate a signed URL to upload a listing image (owner-bound path)
+  fastify.post('/:id/image', { preHandler: [requireAuth] }, async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const body = (request.body as any) || {};
+    const filename = (body.filename || `img_${Date.now()}.jpg`).replace(/[^a-zA-Z0-9._-]/g, '');
+    const content_type = body.content_type || 'image/jpeg';
+    const uid = request.user!.id;
+
+    try {
+      // Verify the listing exists and belongs to the requesting user.
+      const doc = await db.collection('classifieds').doc(id).get();
+      if (!doc.exists) {
+        return reply.code(404).send({ error: 'Classified listing not found.' });
+      }
+      if (String(doc.data()?.user_id) !== String(uid)) {
+        return reply.code(403).send({ error: 'Forbidden: you can only add images to your own listing.' });
+      }
+
+      const bucket = storage.bucket();
+      const file = bucket.file(`users/${uid}/classifieds/${id}/${Date.now()}_${filename}`);
+      const [uploadUrl] = await file.getSignedUrl({
+        version: 'v4',
+        action: 'write',
+        expires: Date.now() + 15 * 60 * 1000,
+        contentType: content_type,
+      });
+
+      return reply.code(201).send({
+        status: 'SIGNED_UPLOAD_URL_GENERATED',
+        bucket: bucket.name,
+        file_key: file.name,
+        upload_url: uploadUrl,
+      });
+    } catch (err: any) {
+      fastify.log.error(err, 'Failed to generate classified image upload URL');
+      return reply.code(500).send({ error: 'Failed to initialize image upload.' });
     }
   });
 }
