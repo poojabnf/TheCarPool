@@ -29,7 +29,7 @@
     },
     "production": {
       "ios": {
-        "image": "macos-sonoma-14.6-xcode-16.1",
+        "image": "latest",
         "distribution": "store"
       },
       "android": {

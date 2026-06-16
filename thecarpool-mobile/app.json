@@ -60,7 +60,7 @@
     "owner": "poojaya2k19",
     "plugins": [
       "./plugins/withFixGradle8.js",
-      "./plugins/withFirebaseAppDelegate.js",
+      "@react-native-firebase/app",
       "@react-native-firebase/auth",
       "@react-native-google-signin/google-signin",
       [

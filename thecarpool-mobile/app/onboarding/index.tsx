@@ -228,7 +228,7 @@ function StepAadhaar({ onNext }: { onNext: (data: any) => void }) {
             label="Aadhaar Number *"
             placeholder="XXXX XXXX XXXX"
             value={formatted}
-            onChangeText={(t) => setAadhaar(t.replace(/\D/g, '').slice(0, 12))}
+            onChangeText={(t: string) => setAadhaar(t.replace(/\D/g, '').slice(0, 12))}
             keyboardType="number-pad"
             maxLength={14}
           />
@@ -258,7 +258,7 @@ function StepAadhaar({ onNext }: { onNext: (data: any) => void }) {
             label="Enter 6-digit OTP *"
             placeholder="• • • • • •"
             value={otp}
-            onChangeText={(t) => setOtp(t.replace(/\D/g, '').slice(0, 6))}
+            onChangeText={(t: string) => setOtp(t.replace(/\D/g, '').slice(0, 6))}
             keyboardType="number-pad"
             maxLength={6}
           />
@@ -336,7 +336,7 @@ function StepPan({ onNext }: { onNext: (data: any) => void }) {
         label="PAN Card Number *"
         placeholder="ABCDE1234F"
         value={panFormatted}
-        onChangeText={(t) => setPan(t.toUpperCase().slice(0, 10))}
+        onChangeText={(t: string) => setPan(t.toUpperCase().slice(0, 10))}
         autoCapitalize="characters"
         maxLength={10}
       />
