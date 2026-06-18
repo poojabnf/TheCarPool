@@ -1,0 +1,56 @@
+<svg width="1024" height="500" viewBox="0 0 1024 500" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#065f46"/>
+      <stop offset="0.55" stop-color="#059669"/>
+      <stop offset="1" stop-color="#0d9488"/>
+    </linearGradient>
+    <linearGradient id="fade" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.10"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1024" height="500" fill="url(#bg)"/>
+  <rect width="1024" height="250" fill="url(#fade)"/>
+
+  <!-- Decorative route curve with pins -->
+  <path d="M 60 430 C 280 360, 360 200, 620 180 C 820 165, 900 120, 980 90"
+        fill="none" stroke="#ffffff" stroke-opacity="0.35" stroke-width="4"
+        stroke-dasharray="2 14" stroke-linecap="round"/>
+  <!-- start pin -->
+  <g transform="translate(60,430)">
+    <circle r="13" fill="#ffffff"/>
+    <circle r="5" fill="#059669"/>
+  </g>
+  <!-- end pin -->
+  <g transform="translate(980,90)">
+    <path d="M0 -22 C 12 -22, 20 -13, 20 -2 C 20 12, 0 26, 0 26 C 0 26, -20 12, -20 -2 C -20 -13, -12 -22, 0 -22 Z" fill="#ffffff"/>
+    <circle cy="-2" r="7" fill="#0d9488"/>
+  </g>
+
+  <!-- Leaf mark -->
+  <g transform="translate(150,150)" opacity="0.9">
+    <circle r="54" fill="#ffffff" fill-opacity="0.12"/>
+    <path d="M -22 22 C -22 -14, 6 -28, 26 -26 C 28 -6, 14 22, -22 22 Z" fill="#ffffff"/>
+    <path d="M -14 16 C -2 4, 10 -8, 22 -20" stroke="#059669" stroke-width="3" fill="none" stroke-linecap="round"/>
+  </g>
+
+  <!-- Wordmark + tagline (centered) -->
+  <text x="512" y="250" text-anchor="middle"
+        font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="92" font-weight="800"
+        fill="#ffffff" letter-spacing="-1">TheCarPool</text>
+
+  <text x="512" y="312" text-anchor="middle"
+        font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="32" font-weight="500"
+        fill="#ffffff" fill-opacity="0.92">Share the ride. Split the cost. Travel greener.</text>
+
+  <!-- Pill subtitle -->
+  <g transform="translate(512,372)">
+    <rect x="-200" y="-22" width="400" height="44" rx="22" fill="#ffffff" fill-opacity="0.16"/>
+    <text x="0" y="7" text-anchor="middle"
+          font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="20" font-weight="600"
+          fill="#ffffff" letter-spacing="1">VERIFIED WORKPLACE CARPOOLING</text>
+  </g>
+</svg>

@@ -2,7 +2,7 @@
   "expo": {
     "name": "TheCarPool",
     "slug": "thecarpool-mobile",
-    "version": "1.1.0",
+    "version": "1.2.2",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -18,7 +18,7 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.thecarpool.app",
       "googleServicesFile": "./GoogleService-Info.plist",
-      "buildNumber": "1.1.0",
+      "buildNumber": "1.2.2",
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "TheCarPool requires location access to find nearby workplace carpools and match you with active co-workers on your route.",
         "NSLocationAlwaysAndWhenInUseUsageDescription": "TheCarPool requires background location access to monitor route detour deviations and ensure real-time safety during active trips.",
@@ -44,7 +44,12 @@
       },
       "package": "com.thecarpool.app",
       "googleServicesFile": "./google-services.json",
-      "versionCode": 2
+      "versionCode": 7,
+      "config": {
+        "googleMaps": {
+          "apiKey": "AIzaSyBTkNesFuUVR-8u9FNOh4RmsuZn28DT5cM"
+        }
+      }
     },
     "web": {
       "favicon": "./assets/favicon.png"

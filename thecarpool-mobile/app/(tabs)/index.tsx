@@ -1,9 +1,16 @@
-import React, { useState } from 'react';
-import { StyleSheet, View, Text, TouchableOpacity, Dimensions, ScrollView, TextInput } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import * as Location from 'expo-location';
+import { StyleSheet, View, Text, TouchableOpacity, Dimensions, ScrollView, TextInput, Alert, Platform } from 'react-native';
 import MapView, { Marker } from 'react-native-maps';
+
+// From the 1.2.2 native build onward the Android Maps key is in the manifest,
+// so the Google map renders on both platforms. (Older keyless 1.1.0 builds stay
+// on their own JS via runtimeVersion separation, so they keep the placeholder.)
+const MAPS_SUPPORTED = true;
 import { useRouter } from 'expo-router';
 import { ShieldAlert, UserCheck, Zap, Navigation, Shield, Phone, Music, Smile, Wind, Car, Bike } from 'lucide-react-native';
 import { useAuthStore } from '../store/authStore';
+import { apiFetch } from '../services/api';
 import { colors } from '../../theme/colors';
 
 const riderLocation = { latitude: 28.4610, longitude: 77.0280 };
@@ -43,6 +50,42 @@ export default function RiderInterface() {
   const [acFilter, setAcFilter] = useState(false);
   const [musicFilter, setMusicFilter] = useState(false);
   const [smokingFilter, setSmokingFilter] = useState(false);
+
+  // Destination search ("Where are you going?")
+  const [destination, setDestination] = useState('');
+  const [destSuggestions, setDestSuggestions] = useState<any[]>([]);
+  const [destCoords, setDestCoords] = useState<{ lat: number; lng: number } | null>(null);
+  const [rideResults, setRideResults] = useState<any[] | null>(null);
+  const [isSearching, setIsSearching] = useState(false);
+
+  // Rider's real GPS location, used as the pickup origin (falls back to the
+  // default region until permission is granted / a fix is acquired).
+  const [userLoc, setUserLoc] = useState({ latitude: riderLocation.latitude, longitude: riderLocation.longitude });
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status !== 'granted') return;
+        const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+        setUserLoc({ latitude: pos.coords.latitude, longitude: pos.coords.longitude });
+      } catch {
+        /* keep default location */
+      }
+    })();
+  }, []);
+
+  const fetchDestSuggestions = async (q: string) => {
+    setDestination(q);
+    if (q.trim().length < 2) { setDestSuggestions([]); return; }
+    try {
+      const res = await apiFetch(`/api/geo/search?query=${encodeURIComponent(q)}`);
+      const data = res.ok ? await res.json() : [];
+      setDestSuggestions(Array.isArray(data) ? data : []);
+    } catch {
+      setDestSuggestions([]);
+    }
+  };
 
   // Mock list with competitor differentiator values
   const mockRides = [
@@ -104,23 +147,67 @@ export default function RiderInterface() {
     return true;
   });
 
-  const handleFindRides = () => {
-    if (!kycVerified) {
-      router.push('/onboarding');
-    } else {
-      setSearchMode(true);
+  // Browsing is open to everyone — search, prices, and listings are visible
+  // without verification. Verification is only required to book (see handleBook).
+  // Uses the selected destination's coordinates to query real matching rides.
+  const handleFindRides = async () => {
+    setSearchMode(true);
+    if (!destCoords) {
+      setRideResults(null); // no destination chosen → show sample rides
+      return;
     }
+    setIsSearching(true);
+    try {
+      const res = await apiFetch('/api/rides/search', {
+        method: 'POST',
+        body: JSON.stringify({
+          pickup_lat: userLoc.latitude,
+          pickup_lng: userLoc.longitude,
+          drop_lat: destCoords.lat,
+          drop_lng: destCoords.lng,
+          max_detour_meters: 1500,
+        }),
+      });
+      const data = res.ok ? await res.json() : [];
+      setRideResults(Array.isArray(data) ? data : []);
+    } catch {
+      setRideResults([]);
+    } finally {
+      setIsSearching(false);
+    }
+  };
+
+  // Gate the actual booking on KYC verification.
+  const handleBook = (ride: any) => {
+    if (!kycVerified) {
+      Alert.alert(
+        'Verification required',
+        'Complete a quick verification (Aadhaar + PAN + selfie, ~2 mins) to book your ride.',
+        [
+          { text: 'Not now', style: 'cancel' },
+          { text: 'Verify now', onPress: () => router.push('/onboarding') },
+        ]
+      );
+      return;
+    }
+    router.push('/components/KycUploadModal');
+    setActiveTrip(true);
   };
 
   return (
     <View style={styles.container}>
-      {/* Light Map Background */}
-      <MapView 
-        style={styles.map} 
-        initialRegion={{ ...riderLocation, latitudeDelta: 0.05, longitudeDelta: 0.05 }}
-      >
-        <Marker coordinate={riderLocation} title="You" pinColor={colors.primary} />
-      </MapView>
+      {/* Map background — Google map on iOS; placeholder on Android until a
+          native build ships the Maps key (avoids the keyless-launch crash). */}
+      {MAPS_SUPPORTED ? (
+        <MapView
+          style={styles.map}
+          region={{ ...userLoc, latitudeDelta: 0.05, longitudeDelta: 0.05 }}
+        >
+          <Marker coordinate={userLoc} title="You" pinColor={colors.primary} />
+        </MapView>
+      ) : (
+        <View style={[styles.map, { backgroundColor: colors.card }]} />
+      )}
 
       {/* Floating Header */}
       <View style={styles.topArea}>
@@ -184,7 +271,33 @@ export default function RiderInterface() {
 
               <View style={styles.inputBox}>
                 <Text style={styles.inputLabel}>Where are you going?</Text>
-                <TextInput style={styles.input} value="DLF Cyber City, Phase 3" editable={false} />
+                <TextInput
+                  style={styles.input}
+                  value={destination}
+                  onChangeText={fetchDestSuggestions}
+                  placeholder="Search destination…"
+                  placeholderTextColor={colors.textMuted}
+                  autoCorrect={false}
+                />
+                {destSuggestions.length > 0 && (
+                  <View style={styles.suggestionsBox}>
+                    {destSuggestions.slice(0, 6).map((s, i) => (
+                      <TouchableOpacity
+                        key={i}
+                        style={styles.suggestionItem}
+                        onPress={() => {
+                          setDestination(`${s.place_name}${s.postal_code ? ` (${s.postal_code})` : ''}`);
+                          setDestCoords({ lat: s.latitude ?? s.lat ?? 0, lng: s.longitude ?? s.lng ?? 0 });
+                          setDestSuggestions([]);
+                        }}
+                      >
+                        <Text style={styles.suggestionText} numberOfLines={1}>
+                          {s.place_name}{s.state_name ? `, ${s.state_name}` : ''}{s.country_name ? `, ${s.country_name}` : ''}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                )}
               </View>
 
               {/* Vehicle Type Filter (Togopool Bike vs Car Gap) */}
@@ -262,7 +375,7 @@ export default function RiderInterface() {
 
               <TouchableOpacity style={styles.searchButton} onPress={handleFindRides}>
                 <Text style={styles.searchButtonText}>
-                  {kycVerified ? 'Find Rides' : '🔒 Verify & Find Rides'}
+                  Find Rides
                 </Text>
               </TouchableOpacity>
             </View>
@@ -275,7 +388,33 @@ export default function RiderInterface() {
               </View>
               
               <ScrollView showsVerticalScrollIndicator={false}>
-                {filteredRides.map((ride) => (
+                {isSearching && <Text style={styles.searchingText}>Searching rides to your destination…</Text>}
+
+                {/* Real rides matched to the selected destination */}
+                {rideResults && rideResults.length > 0 && rideResults.map((r) => (
+                  <View key={`real-${r.id}`} style={styles.rideCard}>
+                    <View style={styles.cardHeader}>
+                      <View style={styles.driverInfo}>
+                        <View style={styles.avatar} />
+                        <View>
+                          <Text style={styles.driverName}>{r.driver_name || 'Driver'} {r.is_ev ? '⚡ EV' : ''}</Text>
+                          <Text style={styles.driverRating}>{r.seats_available} seats · ~{Math.round(r.pickup_deviation || 0)}m detour</Text>
+                        </View>
+                      </View>
+                      <View style={styles.priceTag}><Text style={styles.priceText}>₹{r.price_split}</Text></View>
+                    </View>
+                    <TouchableOpacity style={[styles.bookButton, { marginTop: 12 }]} onPress={() => handleBook(r)}>
+                      <Text style={styles.bookButtonText}>Confirm & Book</Text>
+                    </TouchableOpacity>
+                  </View>
+                ))}
+
+                {rideResults && rideResults.length === 0 && !isSearching && (
+                  <Text style={styles.searchingText}>No live rides to that destination yet — showing sample rides.</Text>
+                )}
+
+                {/* Sample rides — shown when there are no live results */}
+                {(!rideResults || rideResults.length === 0) && filteredRides.map((ride) => (
                   <View key={ride.id} style={styles.rideCard}>
                     <View style={styles.cardHeader}>
                       <View style={styles.driverInfo}>
@@ -318,7 +457,7 @@ export default function RiderInterface() {
                         <Phone color={colors.textMuted} size={18} />
                         <Text style={styles.callText}>Masked Call</Text>
                       </TouchableOpacity>
-                      <TouchableOpacity style={styles.bookButton} onPress={() => { router.push('/components/KycUploadModal'); setActiveTrip(true); }}>
+                      <TouchableOpacity style={styles.bookButton} onPress={() => handleBook(ride)}>
                         <Text style={styles.bookButtonText}>Confirm & Book</Text>
                       </TouchableOpacity>
                     </View>
@@ -378,6 +517,10 @@ const styles = StyleSheet.create({
   inputBox: { backgroundColor: colors.inputBackground, padding: 12, borderRadius: 12, marginBottom: 16 },
   inputLabel: { fontSize: 11, color: colors.textMuted, marginBottom: 4, fontWeight: 'bold' },
   input: { fontSize: 15, color: colors.text, height: 24, padding: 0 },
+  suggestionsBox: { marginTop: 8, borderTopWidth: 1, borderTopColor: colors.cardBorder },
+  suggestionItem: { paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: colors.cardBorder },
+  suggestionText: { fontSize: 13, color: colors.text },
+  searchingText: { color: colors.textMuted, fontSize: 13, textAlign: 'center', paddingVertical: 12 },
   
   sectionTitle: { fontSize: 13, fontWeight: 'bold', color: colors.text, marginBottom: 10, textTransform: 'uppercase', letterSpacing: 0.5 },
   vehicleFilterRow: { flexDirection: 'row', gap: 10, marginBottom: 16 },

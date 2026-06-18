@@ -1,8 +1,12 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Alert } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Alert, Platform } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import io from 'socket.io-client';
 import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
+
+// Google Maps on Android (default provider there), Apple Maps on iOS — iOS
+// has no Google Maps pod, so forcing PROVIDER_GOOGLE there is avoided.
+const MAP_PROVIDER = Platform.OS === 'android' ? PROVIDER_GOOGLE : undefined;
 import { auth } from '../services/firebase';
 import { API_URL, apiFetch } from '../services/api';
 
@@ -100,7 +104,7 @@ export default function TripScreen() {
       {/* Live Map Panel */}
       <View style={styles.mapContainer}>
         <MapView
-          provider={PROVIDER_GOOGLE}
+          provider={MAP_PROVIDER}
           style={styles.map}
           region={{
             latitude: driverLocation.lat,

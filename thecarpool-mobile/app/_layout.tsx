@@ -6,7 +6,7 @@ import { auth } from './services/firebase';
 import { registerForPushNotifications } from './services/notifications';
 
 function AuthGuard({ children }: { children: React.ReactNode }) {
-  const { isLoggedIn, isAuthLoading, setFirebaseUser, kycStatus } = useAuthStore();
+  const { isLoggedIn, isAuthLoading, setFirebaseUser } = useAuthStore();
   const segments = useSegments();
   const router = useRouter();
 
@@ -27,21 +27,16 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
     if (isAuthLoading) return; // Wait for Firebase to resolve
 
     const inAuthGroup = segments[0] === '(auth)';
-    const inOnboarding = segments[0] === 'onboarding';
 
     if (!isLoggedIn && !inAuthGroup) {
+      // Require sign-in, but nothing more — browsing is open after login.
       router.replace('/(auth)/login');
-    } else if (isLoggedIn) {
-      // If logged in but onboarding is not complete
-      if (kycStatus !== 'verified' && !inOnboarding) {
-        router.replace('/onboarding');
-      } 
-      // If logged in and onboarding IS complete, don't stay in auth or onboarding screens
-      else if (kycStatus === 'verified' && (inAuthGroup || inOnboarding)) {
-        router.replace('/(tabs)');
-      }
+    } else if (isLoggedIn && inAuthGroup) {
+      // Signed in: drop into the app. Verification is no longer a gate here;
+      // it's enforced only at booking time (see the rider screen's handleBook).
+      router.replace('/(tabs)');
     }
-  }, [isLoggedIn, isAuthLoading, kycStatus, segments]);
+  }, [isLoggedIn, isAuthLoading, segments]);
 
   // Show splash/loading while Firebase checks persisted auth
   if (isAuthLoading) {

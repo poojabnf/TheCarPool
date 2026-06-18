@@ -5,6 +5,7 @@ import axios from 'axios';
 import { colors } from '../../theme/colors';
 import { auth } from '../services/firebase';
 import { API_URL as API_BASE } from '../services/api';
+import { useAuthStore } from '../store/authStore';
 
 // Backend gateway API (env-driven base + /api prefix).
 const API_URL = `${API_BASE}/api`;
@@ -28,6 +29,8 @@ interface Ride {
 export default function HomeScreen() {
   const router = useRouter();
   const userId = auth().currentUser?.uid ?? null;
+  const { kycStatus } = useAuthStore();
+  const kycVerified = kycStatus === 'verified';
   const [origin, setOrigin] = useState('Sector 56, Gurgaon');
   const [destination, setDestination] = useState('DLF Cyber City, Phase 3');
   const [rides, setRides] = useState<Ride[]>([]);
@@ -69,6 +72,18 @@ export default function HomeScreen() {
   };
 
   const bookRide = async (ride: Ride) => {
+    // Verification gate — browsing/search is open, booking requires KYC.
+    if (!kycVerified) {
+      Alert.alert(
+        'Verification required',
+        'Complete a quick verification (Aadhaar + PAN + selfie, ~2 mins) to book your ride.',
+        [
+          { text: 'Not now', style: 'cancel' },
+          { text: 'Verify now', onPress: () => router.push('/onboarding') },
+        ]
+      );
+      return;
+    }
     try {
       const payload = {
         ride_id: ride.id,

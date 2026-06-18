@@ -33,6 +33,9 @@ export default function CustomerDashboard() {
   const [rideResults, setRideResults] = useState<any[] | null>(null);
   const [isFindingRides, setIsFindingRides] = useState(false);
 
+  // Verification status — browsing is open; KYC is only required to book.
+  const [isVerified, setIsVerified] = useState(false);
+
   // Real wallet data (F04).
   const [wallet, setWallet] = useState<{ available: number; escrow: number; currency: string } | null>(null);
 
@@ -135,21 +138,50 @@ export default function CustomerDashboard() {
       router.push("/");
       return;
     }
-    // Gate on the authoritative server-side onboarded flag (not localStorage).
+    // Browsing is open to any signed-in user — no forced onboarding/KYC gate.
+    // We only read verification status so booking can require it (consistent
+    // with the mobile app: browse freely, verify only to book).
     (async () => {
       try {
         const res = await apiFetch("/api/users/me");
         if (res.ok) {
           const data = await res.json();
-          if (data.onboarded !== true) {
-            router.push("/onboarding");
-          }
+          setIsVerified(data.kyc_status === "VERIFIED");
         }
       } catch {
-        /* On API failure, don't hard-redirect — let the user stay. */
+        /* leave unverified; booking will prompt verification */
       }
     })();
   }, [user, loading, router]);
+
+  // Booking gate — open to browse, verify to book.
+  const handleBookRide = async (ride: any) => {
+    if (!isVerified) {
+      router.push("/onboarding");
+      return;
+    }
+    try {
+      const res = await apiFetch("/api/bookings", {
+        method: "POST",
+        body: JSON.stringify({
+          ride_id: String(ride.id),
+          rider_id: user?.uid,
+          seats_booked: 1,
+          pickup_lat: pickupCoords?.lat ?? 0,
+          pickup_lng: pickupCoords?.lng ?? 0,
+          drop_lat: dropoffCoords?.lat ?? 0,
+          drop_lng: dropoffCoords?.lng ?? 0,
+        }),
+      });
+      if (res.status === 403) {
+        router.push("/onboarding");
+        return;
+      }
+      alert(res.ok ? "Ride booked! Funds locked in escrow." : "Could not book this ride. Please try again.");
+    } catch {
+      alert("Could not book this ride. Please try again.");
+    }
+  };
 
   if (loading) {
     return (
@@ -372,12 +404,20 @@ export default function CustomerDashboard() {
                       <p className="text-sm text-slate-500 text-center py-2">No matching rides found on this route right now.</p>
                     ) : (
                       rideResults.map((r) => (
-                        <div key={r.id} className="bg-slate-50 dark:bg-slate-800/50 p-3 rounded-xl border border-slate-100 dark:border-slate-700 flex justify-between items-center">
-                          <div>
-                            <p className="font-bold text-slate-800 dark:text-white text-sm">{r.driver_name || 'Driver'}{r.is_ev ? ' · EV' : ''}</p>
+                        <div key={r.id} className="bg-slate-50 dark:bg-slate-800/50 p-3 rounded-xl border border-slate-100 dark:border-slate-700 flex justify-between items-center gap-3">
+                          <div className="min-w-0">
+                            <p className="font-bold text-slate-800 dark:text-white text-sm truncate">{r.driver_name || 'Driver'}{r.is_ev ? ' · EV' : ''}</p>
                             <p className="text-xs text-slate-500">{r.seats_available} seats · ~{Math.round((r.pickup_deviation || 0))}m detour</p>
                           </div>
-                          <p className="font-bold text-emerald-600">₹{r.price_split}</p>
+                          <div className="flex items-center gap-3 flex-shrink-0">
+                            <p className="font-bold text-emerald-600">₹{r.price_split}</p>
+                            <button
+                              onClick={() => handleBookRide(r)}
+                              className="bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-bold px-3 py-2 rounded-lg cursor-pointer"
+                            >
+                              {isVerified ? "Book" : "🔒 Verify & Book"}
+                            </button>
+                          </div>
                         </div>
                       ))
                     )}

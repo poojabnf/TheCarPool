@@ -55,6 +55,16 @@ export async function bookingRoutes(fastify: FastifyInstance) {
       return reply.code(403).send({ error: 'Forbidden: Rider ID mismatch.' });
     }
 
+    // Verification gate: browsing is open, but booking requires a KYC-verified
+    // account. Enforced here so the client-side gate can't be bypassed.
+    const riderDoc = await db.collection('users').doc(String(request.user!.id)).get();
+    if (riderDoc.data()?.kyc_status !== 'VERIFIED') {
+      return reply.code(403).send({
+        error: 'VERIFICATION_REQUIRED',
+        message: 'Complete identity verification to book a ride.',
+      });
+    }
+
     const bookingId = 'booking_' + Math.random().toString(36).substring(7);
 
     try {
