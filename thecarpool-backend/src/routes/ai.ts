@@ -1,24 +1,50 @@
 import { FastifyInstance } from 'fastify';
+import { z } from 'zod';
 import { aiQueue } from '../queue/processor';
 import { requireAuth } from '../middleware/auth';
+import { parseOrReply } from '../lib/validate';
 import { optimizeRoute } from '../lib/maps';
 
-interface RouteOptimizeBody {
-  driver_origin: [number, number];
-  driver_destination: [number, number];
-  riders: Array<{
-    id: number;
-    pickup: [number, number];
-    drop: [number, number];
-  }>;
-}
+const LatLngTuple = z.tuple([z.number(), z.number()]);
+
+const RouteOptimizeSchema = z.object({
+  driver_origin: LatLngTuple,
+  driver_destination: LatLngTuple,
+  riders: z.array(z.object({
+    id: z.union([z.string(), z.number()]),
+    pickup: LatLngTuple,
+    drop: LatLngTuple,
+  })).min(1),
+});
+
+const VoiceConfirmSchema = z.object({
+  booking_id: z.union([z.string(), z.number()]),
+  phone_number: z.string().min(5),
+});
+
+const AssistantCommandSchema = z.object({
+  user_id: z.union([z.string(), z.number()]).optional(),
+  raw_speech: z.string().min(1),
+});
+
+const SentimentSchema = z.object({
+  ride_id: z.union([z.string(), z.number()]).optional(),
+  comment: z.string().min(1),
+});
+
+const TranslateSchema = z.object({
+  message: z.string().min(1),
+  target_language: z.string().min(1),
+});
 
 export async function aiRoutes(fastify: FastifyInstance) {
 
   // 1. Pre-Ride Confirmation Call Dispatcher (Feature 11)
   fastify.post('/voice/trigger-confirmation', { preHandler: [requireAuth] }, async (request, reply) => {
-    const { booking_id, phone_number } = request.body as { booking_id: number; phone_number: string };
-    
+    const body = parseOrReply(VoiceConfirmSchema, request.body, reply);
+    if (!body) return;
+    const { booking_id, phone_number } = body;
+
     fastify.log.info(`Dispatching AI Confirmation Call Job for booking ${booking_id}`);
     
     // Async push to queue instead of waiting for Twilio/ElevenLabs inline
@@ -38,8 +64,10 @@ export async function aiRoutes(fastify: FastifyInstance) {
 
   // 2. Voice Ride Assistant Parsing Stub (Feature 12)
   fastify.post('/voice/assistant-command', { preHandler: [requireAuth] }, async (request, reply) => {
-    const { user_id, raw_speech } = request.body as { user_id: number; raw_speech: string };
-    
+    const body = parseOrReply(AssistantCommandSchema, request.body, reply);
+    if (!body) return;
+    const { user_id, raw_speech } = body;
+
     // Forwards the transcribed query to Claude NLU service (or local regex parser fallback)
     try {
       const response = await fetch('http://localhost:8000/voice/gather', {
@@ -70,11 +98,9 @@ export async function aiRoutes(fastify: FastifyInstance) {
   // 3. AI Route Optimizer sequencing (Feature 13) — Google Routes API with
   //    a nearest-neighbour fallback when GOOGLE_MAPS_API_KEY is not set.
   fastify.post('/optimize-route', { preHandler: [requireAuth] }, async (request, reply) => {
-    const { driver_origin, driver_destination, riders } = request.body as RouteOptimizeBody;
-
-    if (!Array.isArray(driver_origin) || !Array.isArray(driver_destination) || !Array.isArray(riders)) {
-      return reply.code(400).send({ error: 'driver_origin, driver_destination and riders are required.' });
-    }
+    const body = parseOrReply(RouteOptimizeSchema, request.body, reply);
+    if (!body) return;
+    const { driver_origin, driver_destination, riders } = body;
 
     // Inputs are [lat, lng] tuples.
     const origin = { lat: driver_origin[0], lng: driver_origin[1] };
@@ -101,8 +127,10 @@ export async function aiRoutes(fastify: FastifyInstance) {
 
   // 4. AI Feedback Comment NLP Analyzer (Feature 14)
   fastify.post('/feedback/nlp-sentiment', { preHandler: [requireAuth] }, async (request, reply) => {
-    const { ride_id, comment } = request.body as { ride_id: number; comment: string };
-    
+    const body = parseOrReply(SentimentSchema, request.body, reply);
+    if (!body) return;
+    const { ride_id, comment } = body;
+
     // Analyzes rider text feedback using sentiment logs (mocking high-level parser)
     const positive = comment.includes('good') || comment.includes('nice') || comment.includes('great') || comment.includes('safe');
     
@@ -128,17 +156,22 @@ export async function aiRoutes(fastify: FastifyInstance) {
 
   // 6. Suggest pricing logic (Feature 17)
   fastify.post('/suggest-pricing', { preHandler: [requireAuth] }, async (request, reply) => {
-    const { route_length_km, passenger_count } = request.body as any;
-    
+    const body = parseOrReply(
+      z.object({ route_length_km: z.number().positive(), passenger_count: z.number().int().positive().optional().default(1) }),
+      request.body,
+      reply
+    );
+    if (!body) return;
+
     // Calculates fair fuel split: standard rate ₹12 per km divided by passengers
-    const baseRatePerKm = 12.00;
-    const totalCost = route_length_km * baseRatePerKm;
-    const passengerSplit = totalCost / (passenger_count || 1);
-    
+    const baseRatePerKm = 12.0;
+    const totalCost = body.route_length_km * baseRatePerKm;
+    const passengerSplit = totalCost / body.passenger_count;
+
     return reply.send({
-      suggested_total_compensation: totalCost,
+      suggested_total_compensation: parseFloat(totalCost.toFixed(2)),
       fair_passenger_split: parseFloat(passengerSplit.toFixed(2)),
-      congestion_index_multiplier: 1.0
+      congestion_index_multiplier: 1.0,
     });
   });
 
@@ -157,8 +190,10 @@ export async function aiRoutes(fastify: FastifyInstance) {
 
   // 8. In-chat translation (Feature 19)
   fastify.post('/chat/translate', { preHandler: [requireAuth] }, async (request, reply) => {
-    const { message, target_language } = request.body as { message: string; target_language: string };
-    
+    const body = parseOrReply(TranslateSchema, request.body, reply);
+    if (!body) return;
+    const { message, target_language } = body;
+
     // Mock translation mapping Indian languages (Hindi / English / Tamil / Telugu)
     let translated = message;
     if (message.toLowerCase() === 'coming in 5 minutes' && target_language.toLowerCase() === 'hi') {

@@ -1,7 +1,11 @@
 import Fastify from 'fastify';
+import helmet from '@fastify/helmet';
+import cors from '@fastify/cors';
+import rateLimit from '@fastify/rate-limit';
 import { createClient } from 'redis';
 import { Server as SocketIOServer } from 'socket.io';
 import * as dotenv from 'dotenv';
+import { validateEnv, allowedOrigins } from './lib/config';
 import { rideRoutes } from './routes/rides';
 import { bookingRoutes } from './routes/bookings';
 import { safetyRoutes } from './routes/safety';
@@ -16,10 +20,24 @@ import { initSentry, captureError } from './lib/sentry';
 
 dotenv.config();
 
+// Fail fast on missing critical secrets (production); warn on optional ones.
+validateEnv();
+
 // Initialise error monitoring before anything else (no-op without SENTRY_DSN).
 initSentry();
 
 const fastify = Fastify({ logger: true });
+
+// Security headers, CORS allowlist, and a global rate limit. Registered before
+// routes so they apply to every endpoint. The CORS/Socket.IO origin allowlist
+// is driven by CORS_ALLOWED_ORIGINS (comma-separated; '*' to allow all).
+fastify.register(helmet, { contentSecurityPolicy: false });
+fastify.register(cors, { origin: allowedOrigins(), credentials: true });
+fastify.register(rateLimit, {
+  max: Number(process.env.RATE_LIMIT_MAX || 200),
+  timeWindow: process.env.RATE_LIMIT_WINDOW || '1 minute',
+  allowList: ['127.0.0.1'],
+});
 
 // Forward unhandled route errors to Sentry, then fall through to the default
 // Fastify error response.
@@ -53,7 +71,7 @@ seedFirestoreIfEmpty().then(() => {
 // (handled by Fastify) and websockets share one port.
 const io = new SocketIOServer(fastify.server, {
   cors: {
-    origin: '*',
+    origin: allowedOrigins(),
   }
 });
 
@@ -83,7 +101,7 @@ redisClient.on('connect', () => {
 redisClient.connect().catch(() => {});
 
 // Register real-time telemetry events
-setupTelemetrySocket(io);
+setupTelemetrySocket(io, fastify.log);
 
 // Register API Routes
 fastify.register(rideRoutes, { prefix: '/api/rides' });

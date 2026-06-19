@@ -1,6 +1,18 @@
 import { FastifyInstance } from 'fastify';
+import { z } from 'zod';
 import { db } from '../server';
 import { requireAuth } from '../middleware/auth';
+import { parseOrReply } from '../lib/validate';
+
+const PoolConfigSchema = z.object({
+  restriction_type: z.enum(['CORPORATE', 'SOCIETY', 'NONE']),
+  target_name: z.string().min(1),
+});
+
+const EvPrioritizeSchema = z.object({
+  driver_id: z.union([z.string(), z.number()]).transform(String),
+  is_ev: z.boolean(),
+});
 
 export async function sustainabilityRoutes(fastify: FastifyInstance) {
 
@@ -17,6 +29,13 @@ export async function sustainabilityRoutes(fastify: FastifyInstance) {
   // 2. ESG Enterprise Portals (Feature 39)
   fastify.get('/esg-report/:company_domain', { preHandler: [requireAuth] }, async (request, reply) => {
     const { company_domain } = request.params as { company_domain: string };
+
+    // ESG data is company-confidential — restrict to an admin or a member of the
+    // company (verified by email domain), not any signed-in user.
+    const callerDomain = (request.user!.email || '').split('@')[1]?.toLowerCase();
+    if (request.user!.role !== 'ADMIN' && callerDomain !== company_domain.toLowerCase()) {
+      return reply.code(403).send({ error: 'Forbidden: ESG reports are restricted to company members.' });
+    }
 
     try {
       // Count users in this domain
@@ -65,15 +84,23 @@ export async function sustainabilityRoutes(fastify: FastifyInstance) {
 
   // 3. Office & Society pool configurations (Features 40 & 41)
   fastify.post('/pools/configure', { preHandler: [requireAuth] }, async (request, reply) => {
-    const { restriction_type, target_name } = request.body as {
-      restriction_type: 'CORPORATE' | 'SOCIETY' | 'NONE';
-      target_name: string;
-    };
+    const parsed = parseOrReply(PoolConfigSchema, request.body, reply);
+    if (!parsed) return;
+    const { restriction_type, target_name } = parsed;
     const user_id = request.user!.id;
 
     try {
       if (restriction_type === 'CORPORATE') {
-        await db.collection('users').doc(String(user_id)).update({ company_domain: target_name });
+        // A user may only attach themselves to a company whose domain matches
+        // their verified email — otherwise `company_domain` becomes a
+        // self-asserted claim that unlocks corporate billing and ESG data.
+        const callerDomain = (request.user!.email || '').split('@')[1]?.toLowerCase();
+        if (request.user!.role !== 'ADMIN' && callerDomain !== target_name.toLowerCase()) {
+          return reply.code(403).send({
+            error: 'Forbidden: corporate pool requires an email address on that domain.',
+          });
+        }
+        await db.collection('users').doc(String(user_id)).update({ company_domain: target_name.toLowerCase() });
       } else if (restriction_type === 'SOCIETY') {
         await db.collection('users').doc(String(user_id)).update({ society_name: target_name });
       }
@@ -82,7 +109,6 @@ export async function sustainabilityRoutes(fastify: FastifyInstance) {
         status: 'POOL_RESTRICTION_UPDATED',
         restriction_type,
         target_name,
-        total_group_members: Math.floor(Math.random() * 50) + 12
       });
     } catch (err: any) {
       fastify.log.error('Failed to configure pool restrictions:', err);
@@ -92,9 +118,23 @@ export async function sustainabilityRoutes(fastify: FastifyInstance) {
 
   // 4. EV Matching priority filter (Feature 43)
   fastify.post('/ev/prioritize', { preHandler: [requireAuth] }, async (request, reply) => {
-    const { driver_id, is_ev } = request.body as { driver_id: number; is_ev: boolean };
+    const parsed = parseOrReply(EvPrioritizeSchema, request.body, reply);
+    if (!parsed) return;
+    const { driver_id, is_ev } = parsed;
 
     try {
+      // Only the driver who owns this profile may flip its EV flag, otherwise
+      // anyone could award themselves (or strip) EV priority/badges.
+      const driverDoc = await db.collection('drivers').doc(String(driver_id)).get();
+      if (!driverDoc.exists) {
+        return reply.code(404).send({ error: 'Driver profile not found.' });
+      }
+      const ownerUid = String(driverDoc.data()?.user_id);
+      const uid = String(request.user!.id);
+      if (ownerUid !== uid && ownerUid !== `user_${uid}` && request.user!.role !== 'ADMIN') {
+        return reply.code(403).send({ error: 'Forbidden: you can only update your own driver profile.' });
+      }
+
       await db.collection('drivers').doc(String(driver_id)).update({ is_ev });
       return reply.send({
         driver_id,

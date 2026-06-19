@@ -1,5 +1,6 @@
 import { Server as SocketIOServer, Socket } from 'socket.io';
 import * as admin from 'firebase-admin';
+import type { FastifyBaseLogger } from 'fastify';
 import { db } from '../server';
 
 interface TelemetryPayload {
@@ -26,7 +27,7 @@ function haversineDistance(lat1: number, lon1: number, lat2: number, lon2: numbe
   return R * c; // in meters
 }
 
-export function setupTelemetrySocket(io: SocketIOServer) {
+export function setupTelemetrySocket(io: SocketIOServer, log: FastifyBaseLogger) {
   io.use(async (socket, next) => {
     const token = socket.handshake.auth?.token;
     if (!token) {
@@ -43,12 +44,12 @@ export function setupTelemetrySocket(io: SocketIOServer) {
   });
 
   io.on('connection', (socket: Socket) => {
-    console.log(`Socket client connected: ${socket.id}, User ID: ${(socket as any).userId}`);
+    log.info({ socketId: socket.id, userId: (socket as any).userId }, 'Socket client connected');
 
     // Join ride-specific room for broadcasts
     socket.on('ride:join', (rideId: number) => {
       socket.join(`ride_${rideId}`);
-      console.log(`Socket ${socket.id} joined channel: ride_${rideId}`);
+      log.info({ socketId: socket.id, rideId }, 'Socket joined ride channel');
     });
 
     // Ingest telemetry update from mobile device
@@ -56,7 +57,7 @@ export function setupTelemetrySocket(io: SocketIOServer) {
       const { userId, lng, lat, speed, bearing, rideId } = data;
 
       if ((socket as any).userId !== userId) {
-        console.error(`User ${(socket as any).userId} attempted to spoof telemetry for user ${userId}`);
+        log.warn({ authedUser: (socket as any).userId, claimedUser: userId }, 'Telemetry user-id spoof attempt blocked');
         return;
       }
 
@@ -110,12 +111,12 @@ export function setupTelemetrySocket(io: SocketIOServer) {
           }
         }
       } catch (err) {
-        console.error('Telemetry processing failed:', err);
+        log.error(err, 'Telemetry processing failed');
       }
     });
 
     socket.on('disconnect', () => {
-      console.log(`Socket client disconnected: ${socket.id}`);
+      log.info({ socketId: socket.id }, 'Socket client disconnected');
     });
   });
 }
