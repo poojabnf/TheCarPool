@@ -72,7 +72,7 @@ export const useAuthStore = create<AuthState>((set) => ({
   setOnboardingStep: (step) => set({ onboardingStep: step }),
 
   completeOnboarding: () =>
-    set({ kycStatus: 'verified', onboardingStep: 5 }),
+    set({ onboardingStep: 5 }), // kycStatus stays as-is; set by setKycStatus after backend confirms
 
   reset: () => set({ ...initialState, isAuthLoading: false }),
 }));

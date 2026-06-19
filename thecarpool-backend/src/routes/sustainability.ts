@@ -17,19 +17,50 @@ export async function sustainabilityRoutes(fastify: FastifyInstance) {
   // 2. ESG Enterprise Portals (Feature 39)
   fastify.get('/esg-report/:company_domain', { preHandler: [requireAuth] }, async (request, reply) => {
     const { company_domain } = request.params as { company_domain: string };
-    
-    // Aggregate company-wide carpooling stats for corporate ESG audit sheets
-    return reply.send({
-      company: company_domain,
-      reporting_period: 'Q2 2026',
-      active_employees: 482,
-      total_shared_trips: 1840,
-      total_passenger_kms: 15420,
-      metric_tons_co2_offset: 3.39,
-      equivalent_trees_planted: 154,
-      fuel_spend_saved_inr: 125420.00,
-      audit_ready: true
-    });
+
+    try {
+      // Count users in this domain
+      const usersSnap = await db.collection('users').where('company_domain', '==', company_domain).get();
+      const activeCarpools = usersSnap.size;
+
+      // Sum distance_km from completed rides where driver is in this domain
+      const domainUids = usersSnap.docs.map((d: any) => d.id);
+      let totalKm = 0;
+      let evCount = 0;
+      let totalRides = 0;
+
+      // Batch queries in groups of 30 (Firestore IN limit)
+      for (let i = 0; i < domainUids.length; i += 30) {
+        const batch = domainUids.slice(i, i + 30);
+        if (batch.length === 0) break;
+        const ridesSnap = await db.collection('rides')
+          .where('driver_id', 'in', batch)
+          .where('status', '==', 'COMPLETED')
+          .get();
+        for (const doc of ridesSnap.docs) {
+          const d = doc.data();
+          totalKm += Number(d.distance_km || 0);
+          totalRides++;
+          if ((d.vehicle_type || '').toUpperCase() === 'EV') evCount++;
+        }
+      }
+
+      // ~2.3 kg CO2 saved per car-km avoided (avg Indian car emission factor)
+      const totalCarbonOffset = parseFloat((totalKm * 2.3 / 1000).toFixed(1)); // tonnes
+      const evAdoptionRate = totalRides > 0 ? parseFloat(((evCount / totalRides) * 100).toFixed(1)) : 0;
+
+      return reply.send({
+        company_domain,
+        active_carpoolers: activeCarpools,
+        total_carpool_kms: parseFloat(totalKm.toFixed(1)),
+        total_carbon_offset_tonnes: totalCarbonOffset,
+        ev_adoption_rate_percent: evAdoptionRate,
+        active_carpools: activeCarpools,
+      });
+    } catch (err: any) {
+      fastify.log.error(err, 'ESG report generation failed');
+      return reply.code(500).send({ error: 'ESG report generation failed.' });
+    }
   });
 
   // 3. Office & Society pool configurations (Features 40 & 41)

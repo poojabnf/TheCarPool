@@ -28,6 +28,12 @@ export const instantiateRecurringRides = onSchedule(
     const snap = await db.collection('recurring_rides').get();
     let created = 0;
 
+    // I03: Use a WriteBatch to avoid per-document round-trips.
+    // Firestore batch limit is 500; flush every MAX_BATCH operations.
+    const MAX_BATCH = 490;
+    let batch = db.batch();
+    let batchCount = 0;
+
     for (const doc of snap.docs) {
       const t = doc.data();
       const days: number[] = Array.isArray(t.days_of_week) ? t.days_of_week : [];
@@ -45,7 +51,7 @@ export const instantiateRecurringRides = onSchedule(
       const existing = await rideRef.get();
       if (existing.exists) continue;
 
-      await rideRef.set({
+      batch.set(rideRef, {
         id: rideId,
         driver_id: String(t.driver_id),
         route_coords: t.route_coords || [],
@@ -58,7 +64,19 @@ export const instantiateRecurringRides = onSchedule(
         source_recurring_id: doc.id,
         created_at: new Date().toISOString(),
       });
+      batchCount++;
       created++;
+
+      if (batchCount >= MAX_BATCH) {
+        await batch.commit();
+        batch = db.batch();
+        batchCount = 0;
+      }
+    }
+
+    // Commit any remaining writes.
+    if (batchCount > 0) {
+      await batch.commit();
     }
 
     logger.info(`Recurring rides: created ${created} ride(s) for ${yyyymmdd} (dow=${dow}).`);

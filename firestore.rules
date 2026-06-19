@@ -22,9 +22,16 @@ service cloud.firestore {
     }
 
     // Users may read and write only their own profile document.
+    // Sensitive fields (kycVerified, role, onboarded, company_domain, kyc_status)
+    // can only be written by the backend (Admin SDK bypasses rules) or by admins.
     match /users/{userId} {
       allow read: if isOwner(userId) || isAdmin();
-      allow create, update: if isOwner(userId);
+      allow create: if isOwner(userId)
+        && !request.resource.data.keys().hasAny(
+            ['kycVerified', 'kyc_status', 'role', 'onboarded', 'company_domain']);
+      allow update: if isOwner(userId)
+        && !request.resource.data.diff(resource.data).affectedKeys().hasAny(
+            ['kycVerified', 'kyc_status', 'role', 'onboarded', 'company_domain']);
       allow delete: if isAdmin();
     }
 

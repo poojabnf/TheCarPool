@@ -2,7 +2,9 @@
 
 import React, { useState, useEffect } from "react";
 import { UploadCloud, CheckCircle, CarFront, ShieldCheck, Globe, Activity, Wallet, CreditCard, Settings, HelpCircle } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { apiFetch } from "../lib/api";
+import { useAuth } from "../context/AuthContext";
 
 const TOP_20_COUNTRIES = [
   "United States", "China", "Germany", "Japan", "India", "United Kingdom", "France", "Italy", "Brazil", "Canada",
@@ -10,6 +12,8 @@ const TOP_20_COUNTRIES = [
 ];
 
 export default function VendorDashboard() {
+  const { user, loading } = useAuth();
+  const router = useRouter();
   const [activeTab, setActiveTab] = useState('dashboard');
   const [rcStatus, setRcStatus] = useState("PENDING");
   const [insStatus, setInsStatus] = useState("PENDING");
@@ -17,26 +21,68 @@ export default function VendorDashboard() {
 
   // The driver's own rides, fetched from the backend (F09).
   const [myRides, setMyRides] = useState<any[] | null>(null);
+  // Real earnings from the wallet endpoint (F04).
+  const [earnings, setEarnings] = useState<number | null>(null);
+
+  // Auth guard — redirect unauthenticated visitors to the landing page.
+  useEffect(() => {
+    if (!loading && !user) router.push("/");
+  }, [user, loading, router]);
 
   useEffect(() => {
+    if (!user) return;
     (async () => {
       try {
         const res = await apiFetch("/api/rides/mine");
-        if (res.ok) {
-          const data = await res.json();
-          setMyRides(Array.isArray(data) ? data : []);
-        } else {
-          setMyRides([]);
-        }
+        setMyRides(res.ok ? (await res.json()) : []);
       } catch {
         setMyRides([]);
       }
+      try {
+        const w = await apiFetch(`/api/payments/wallet/${user.uid}`);
+        if (w.ok) {
+          const d = await w.json();
+          setEarnings(d.available_wallet_balance ?? 0);
+        }
+      } catch {
+        /* leave null */
+      }
     })();
-  }, []);
+  }, [user]);
 
-  const simulateUpload = (setter: React.Dispatch<React.SetStateAction<string>>) => {
-    setter("UPLOADING");
-    setTimeout(() => setter("VERIFIED"), 2000);
+  if (loading || !user) {
+    return (
+      <div className="min-h-screen bg-slate-50 dark:bg-slate-900 flex items-center justify-center">
+        <div className="w-12 h-12 border-4 border-orange-500 border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  // Real upload: pick a file → get a signed URL from the backend → PUT bytes.
+  const uploadDocument = (documentType: string, setter: React.Dispatch<React.SetStateAction<string>>) => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'image/*';
+    input.onchange = async () => {
+      const file = input.files?.[0];
+      if (!file) return;
+      setter('UPLOADING');
+      try {
+        const res = await apiFetch('/api/safety/kyc/upload', {
+          method: 'POST',
+          body: JSON.stringify({ filename: file.name, content_type: file.type, document_type: documentType }),
+        });
+        if (!res.ok) throw new Error('signed url');
+        const { upload_url } = await res.json();
+        const put = await fetch(upload_url, { method: 'PUT', headers: { 'Content-Type': file.type }, body: file });
+        if (!put.ok) throw new Error('upload');
+        setter('VERIFIED');
+      } catch {
+        setter('PENDING');
+        alert('Upload failed. Please try again.');
+      }
+    };
+    input.click();
   };
 
   return (
@@ -145,7 +191,7 @@ export default function VendorDashboard() {
                       <h3 className="font-bold text-slate-800 dark:text-white text-sm">Vehicle Registration (RC)</h3>
                       <p className="text-xs text-slate-500">Official Govt. Registration</p>
                     </div>
-                    {rcStatus === "PENDING" && <button onClick={() => simulateUpload(setRcStatus)} className="px-4 py-2 bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 text-xs font-bold rounded-lg hover:bg-emerald-100">Upload</button>}
+                    {rcStatus === "PENDING" && <button onClick={() => uploadDocument('vehicle_rc', setRcStatus)} className="px-4 py-2 bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 text-xs font-bold rounded-lg hover:bg-emerald-100">Upload</button>}
                     {rcStatus === "UPLOADING" && <span className="text-xs font-bold text-orange-500 animate-pulse">Uploading...</span>}
                     {rcStatus === "VERIFIED" && <CheckCircle className="text-emerald-500" size={24} />}
                   </div>
@@ -155,7 +201,7 @@ export default function VendorDashboard() {
                       <h3 className="font-bold text-slate-800 dark:text-white text-sm">Commercial Insurance</h3>
                       <p className="text-xs text-slate-500">Valid Comprehensive Policy</p>
                     </div>
-                    {insStatus === "PENDING" && <button onClick={() => simulateUpload(setInsStatus)} className="px-4 py-2 bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 text-xs font-bold rounded-lg hover:bg-emerald-100">Upload</button>}
+                    {insStatus === "PENDING" && <button onClick={() => uploadDocument('insurance', setInsStatus)} className="px-4 py-2 bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 text-xs font-bold rounded-lg hover:bg-emerald-100">Upload</button>}
                     {insStatus === "UPLOADING" && <span className="text-xs font-bold text-orange-500 animate-pulse">Uploading...</span>}
                     {insStatus === "VERIFIED" && <CheckCircle className="text-emerald-500" size={24} />}
                   </div>
@@ -165,7 +211,7 @@ export default function VendorDashboard() {
                       <h3 className="font-bold text-slate-800 dark:text-white text-sm">State/Country Permit</h3>
                       <p className="text-xs text-slate-500">Authorization to operate</p>
                     </div>
-                    {permitStatus === "PENDING" && <button onClick={() => simulateUpload(setPermitStatus)} className="px-4 py-2 bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 text-xs font-bold rounded-lg hover:bg-emerald-100">Upload</button>}
+                    {permitStatus === "PENDING" && <button onClick={() => uploadDocument('permit', setPermitStatus)} className="px-4 py-2 bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 text-xs font-bold rounded-lg hover:bg-emerald-100">Upload</button>}
                     {permitStatus === "UPLOADING" && <span className="text-xs font-bold text-orange-500 animate-pulse">Uploading...</span>}
                     {permitStatus === "VERIFIED" && <CheckCircle className="text-emerald-500" size={24} />}
                   </div>
@@ -182,7 +228,7 @@ export default function VendorDashboard() {
             <div className="glass-panel p-8 rounded-3xl flex justify-between items-center bg-gradient-to-r from-orange-50 to-amber-50 dark:from-orange-900/20 dark:to-amber-900/20 border-orange-100 dark:border-orange-800/30">
               <div>
                 <p className="text-sm font-semibold text-orange-600 dark:text-orange-400 uppercase tracking-wider mb-1">Total Balance</p>
-                <h2 className="text-5xl font-black text-slate-800 dark:text-white">₹45,250.00</h2>
+                <h2 className="text-5xl font-black text-slate-800 dark:text-white">{earnings === null ? "…" : `₹${earnings.toFixed(2)}`}</h2>
               </div>
               <button className="bg-orange-500 hover:bg-orange-600 text-white font-bold px-8 py-4 rounded-xl shadow-lg shadow-orange-200 dark:shadow-none transition-all">
                 Withdraw Funds

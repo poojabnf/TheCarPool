@@ -371,6 +371,32 @@ export async function rideRoutes(fastify: FastifyInstance) {
     }
   });
 
+  // 2c. Fetch a single ride's details (driver, vehicle, pickup) for the trip screen.
+  fastify.get('/:id', { preHandler: [requireAuth] }, async (request, reply) => {
+    const { id } = request.params as { id: string };
+    try {
+      const rideDoc = await db.collection('rides').doc(String(id)).get();
+      if (!rideDoc.exists) {
+        return reply.code(404).send({ error: 'Ride not found.' });
+      }
+      const ride: any = { id: rideDoc.id, ...rideDoc.data() };
+      // Enrich with the driver's display info when available.
+      if (ride.driver_id) {
+        const driverDoc = await db.collection('drivers').doc(String(ride.driver_id)).get();
+        if (driverDoc.exists) {
+          const d = driverDoc.data()!;
+          ride.driver_name = ride.driver_name || d.name;
+          ride.vehicle = ride.vehicle || d.vehicle_model || d.vehicle_type;
+          ride.vehicle_plate = ride.vehicle_plate || d.vehicle_plate;
+        }
+      }
+      return reply.send(ride);
+    } catch (err: any) {
+      fastify.log.error(err, 'Failed to fetch ride');
+      return reply.code(500).send({ error: 'Failed to fetch ride.' });
+    }
+  });
+
   // 3. Multi-modal / Transit Stitching Engine stub
   fastify.post('/search/stitch', { preHandler: [requireAuth] }, async (request, reply) => {
     const { pickup_lng, pickup_lat, drop_lng, drop_lat } = request.body as any;

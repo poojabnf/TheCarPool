@@ -15,8 +15,8 @@ export default function CustomerDashboard() {
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState('');
 
-  const [pickup, setPickup] = useState("Home (Sector 44)");
-  const [dropoff, setDropoff] = useState("Office (Cyber Hub)");
+  const [pickup, setPickup] = useState("");
+  const [dropoff, setDropoff] = useState("");
   
   const [pickupQuery, setPickupQuery] = useState("");
   const [dropoffQuery, setDropoffQuery] = useState("");
@@ -38,6 +38,9 @@ export default function CustomerDashboard() {
 
   // Real wallet data (F04).
   const [wallet, setWallet] = useState<{ available: number; escrow: number; currency: string } | null>(null);
+  // Real transaction history + ESG (F03).
+  const [transactions, setTransactions] = useState<any[] | null>(null);
+  const [co2Saved, setCo2Saved] = useState<number | null>(null);
 
   // Settings form (F08).
   const [settingsName, setSettingsName] = useState("");
@@ -62,6 +65,28 @@ export default function CustomerDashboard() {
       } catch {
         /* leave wallet null — UI shows a loading/unavailable state */
       }
+
+      // Transaction history (F03)
+      try {
+        const res = await apiFetch(`/api/payments/history/${user.uid}`);
+        const d = res.ok ? await res.json() : null;
+        setTransactions(Array.isArray(d?.transactions) ? d.transactions : []);
+      } catch { setTransactions([]); }
+
+      // CO₂ saved (F03)
+      try {
+        const res = await apiFetch(`/api/bookings/carbon-savings/${user.uid}`);
+        const d = res.ok ? await res.json() : null;
+        if (d) setCo2Saved(d.co2_saved_kg ?? 0);
+      } catch { /* leave null */ }
+
+      // Saved home/work addresses (F07)
+      try {
+        const res = await apiFetch('/api/users/me');
+        const d = res.ok ? await res.json() : null;
+        if (d?.workLocation) setDropoff(d.workLocation);
+        if (d?.homeLocation) setPickup(d.homeLocation);
+      } catch { /* leave blank */ }
     })();
     setSettingsName(user.displayName || "");
   }, [user]);
@@ -108,6 +133,46 @@ export default function CustomerDashboard() {
       /* swallow — could surface a toast */
     } finally {
       setSettingsSaving(false);
+    }
+  };
+
+  // Help tab — Emergency SOS (uses browser geolocation when available).
+  const handleTriggerSos = () => {
+    if (!confirm("Trigger an emergency SOS alert to your contacts?")) return;
+    const dispatch = async (lat: number, lng: number) => {
+      try {
+        const res = await apiFetch("/api/safety/sos/trigger", {
+          method: "POST",
+          body: JSON.stringify({ latitude: lat, longitude: lng, is_silent: false }),
+        });
+        alert(res.ok ? "🚨 SOS dispatched to your emergency contacts." : "Could not dispatch SOS — please call emergency services directly.");
+      } catch {
+        alert("Could not dispatch SOS — please call emergency services directly.");
+      }
+    };
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => dispatch(pos.coords.latitude, pos.coords.longitude),
+        () => dispatch(0, 0)
+      );
+    } else {
+      dispatch(0, 0);
+    }
+  };
+
+  // Help tab — AI assistant.
+  const handleAiChat = async () => {
+    const msg = window.prompt("Ask the TheCarPool AI assistant:");
+    if (!msg) return;
+    try {
+      const res = await apiFetch("/api/ai/voice/assistant-command", {
+        method: "POST",
+        body: JSON.stringify({ command: msg }),
+      });
+      const data = res.ok ? await res.json() : null;
+      alert(data?.response || data?.reply || "Sorry, I couldn't process that right now.");
+    } catch {
+      alert("The AI assistant is unavailable right now.");
     }
   };
 
@@ -275,8 +340,8 @@ export default function CustomerDashboard() {
                 <div className="w-16 h-16 bg-emerald-100 dark:bg-emerald-900/40 rounded-full flex items-center justify-center text-emerald-600 dark:text-emerald-400 mb-4">
                   <Leaf size={32} />
                 </div>
-                <h2 className="text-3xl font-black text-slate-800 dark:text-white">24.5 kg</h2>
-                <p className="text-slate-500 dark:text-slate-400 font-medium">CO₂ Saved this Month</p>
+                <h2 className="text-3xl font-black text-slate-800 dark:text-white">{co2Saved === null ? "…" : `${co2Saved.toFixed(1)} kg`}</h2>
+                <p className="text-slate-500 dark:text-slate-400 font-medium">CO₂ Saved</p>
               </div>
 
               {/* Quick Action Widget */}
@@ -449,18 +514,27 @@ export default function CustomerDashboard() {
             
             <h3 className="text-xl font-bold text-slate-800 dark:text-white mt-8 mb-4">Recent Transactions</h3>
             <div className="space-y-3">
-              {[1, 2, 3].map((i) => (
-                <div key={i} className="bg-white dark:bg-slate-800 p-4 rounded-xl border border-slate-200 dark:border-slate-700 flex justify-between items-center">
-                  <div className="flex items-center space-x-4">
-                    <div className="w-10 h-10 bg-red-100 dark:bg-red-900/30 text-red-600 rounded-full flex items-center justify-center font-bold">↑</div>
-                    <div>
-                      <p className="font-bold text-slate-800 dark:text-white">Ride Payment</p>
-                      <p className="text-sm text-slate-500">To: Amit Sharma</p>
+              {transactions === null ? (
+                <p className="text-sm text-slate-500">Loading…</p>
+              ) : transactions.length === 0 ? (
+                <p className="text-sm text-slate-500">No transactions yet.</p>
+              ) : (
+                transactions.map((t) => {
+                  const credit = t.type === 'CREDIT';
+                  return (
+                    <div key={t.id} className="bg-white dark:bg-slate-800 p-4 rounded-xl border border-slate-200 dark:border-slate-700 flex justify-between items-center">
+                      <div className="flex items-center space-x-4">
+                        <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold ${credit ? 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600' : 'bg-red-100 dark:bg-red-900/30 text-red-600'}`}>{credit ? '↓' : '↑'}</div>
+                        <div>
+                          <p className="font-bold text-slate-800 dark:text-white">{t.label}</p>
+                          <p className="text-sm text-slate-500">{t.at ? new Date(t.at).toLocaleDateString() : t.status}</p>
+                        </div>
+                      </div>
+                      <p className={`font-bold ${credit ? 'text-emerald-600' : 'text-slate-800 dark:text-white'}`}>{credit ? '+' : ''}₹{Math.abs(t.amount).toFixed(2)}</p>
                     </div>
-                  </div>
-                  <p className="font-bold text-slate-800 dark:text-white">-₹120.00</p>
-                </div>
-              ))}
+                  );
+                })
+              )}
             </div>
           </div>
         )}
@@ -563,12 +637,12 @@ export default function CustomerDashboard() {
               <div className="bg-blue-50 dark:bg-blue-900/20 p-6 rounded-2xl border border-blue-100 dark:border-blue-800/30">
                 <h3 className="font-bold text-blue-800 dark:text-blue-300 text-lg mb-2">Emergency SOS</h3>
                 <p className="text-blue-600 dark:text-blue-400 text-sm mb-4">Contact authorities immediately if you feel unsafe.</p>
-                <button className="bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-6 rounded-lg w-full">Trigger SOS</button>
+                <button onClick={handleTriggerSos} className="bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-6 rounded-lg w-full cursor-pointer">Trigger SOS</button>
               </div>
               <div className="bg-slate-50 dark:bg-slate-800 p-6 rounded-2xl border border-slate-200 dark:border-slate-700">
                 <h3 className="font-bold text-slate-800 dark:text-white text-lg mb-2">Contact Support</h3>
                 <p className="text-slate-500 text-sm mb-4">Have an issue with a recent ride?</p>
-                <button className="bg-slate-800 dark:bg-white text-white dark:text-slate-900 font-bold py-2 px-6 rounded-lg w-full">Chat with AI Agent</button>
+                <button onClick={handleAiChat} className="bg-slate-800 dark:bg-white text-white dark:text-slate-900 font-bold py-2 px-6 rounded-lg w-full cursor-pointer">Chat with AI Agent</button>
               </div>
             </div>
           </div>

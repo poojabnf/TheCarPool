@@ -8,6 +8,7 @@ import {
   StatusBar,
   ScrollView,
   Animated,
+  Alert,
   Dimensions,
   ActivityIndicator,
   Platform,
@@ -547,7 +548,16 @@ export default function OnboardingScreen() {
 
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()}>
+        <TouchableOpacity onPress={() => {
+          Alert.alert(
+            'Skip KYC Setup?',
+            'You can browse rides but will need to complete identity verification before booking your first ride.',
+            [
+              { text: 'Continue Setup', style: 'cancel' },
+              { text: 'Skip for Now', style: 'destructive', onPress: () => router.replace('/(tabs)') },
+            ]
+          );
+        }}>
           <Text style={styles.skipText}>Skip for now</Text>
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Account Setup</Text>

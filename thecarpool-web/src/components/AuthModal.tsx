@@ -1,66 +1,201 @@
-import React, { useState } from 'react';
-import { X, Lock } from 'lucide-react';
+'use client';
+
+import React, { useState, useRef } from 'react';
+import { useAuth } from '../context/AuthContext';
 
 interface AuthModalProps {
-  isOpen: boolean;
-  onClose: () => void;
+  isOpen?: boolean;
   onSuccess: () => void;
+  onClose: () => void;
 }
 
-export default function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps) {
-  const [formData, setFormData] = useState({ firstName: '', lastName: '', mobile: '', email: '' });
+export default function AuthModal({ isOpen = true, onSuccess, onClose }: AuthModalProps) {
+  const { signInWithGoogle, setupRecaptcha, sendOtpCode } = useAuth();
+  const [mode, setMode] = useState<'choose' | 'phone' | 'otp'>('choose');
+  const [phone, setPhone] = useState('');
+  const [otp, setOtp] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  // Holds the ConfirmationResult so we can call .confirm(otp) in the verify step.
+  const confirmationRef = useRef<import('firebase/auth').ConfirmationResult | null>(null);
+  const recaptchaContainerId = 'auth-modal-recaptcha-container';
 
   if (!isOpen) return null;
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (formData.firstName && formData.mobile) {
+  const handleGoogle = async () => {
+    setLoading(true);
+    setError('');
+    try {
+      await signInWithGoogle();
       onSuccess();
+    } catch (e: any) {
+      setError(e?.message || 'Google sign-in failed. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSendOtp = async () => {
+    if (!phone || phone.length < 10) {
+      setError('Enter a valid 10-digit mobile number.');
+      return;
+    }
+    setLoading(true);
+    setError('');
+    try {
+      const formattedPhone = phone.startsWith('+') ? phone : `+91${phone.replace(/\D/g, '')}`;
+      const verifier = setupRecaptcha(recaptchaContainerId);
+      const confirmation = await sendOtpCode(formattedPhone, verifier);
+      confirmationRef.current = confirmation;
+      setMode('otp');
+    } catch (e: any) {
+      setError(e?.message || 'Failed to send OTP. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleVerifyOtp = async () => {
+    if (!otp || otp.length < 6) {
+      setError('Enter the 6-digit OTP.');
+      return;
+    }
+    if (!confirmationRef.current) {
+      setError('Session expired. Please request a new OTP.');
+      setMode('phone');
+      return;
+    }
+    setLoading(true);
+    setError('');
+    try {
+      await confirmationRef.current.confirm(otp);
+      onSuccess();
+    } catch (e: any) {
+      setError(e?.message || 'Invalid OTP. Please try again.');
+    } finally {
+      setLoading(false);
     }
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
-      <div className="bg-white dark:bg-slate-800 w-full max-w-md rounded-3xl shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-200">
-        
-        <div className="flex justify-between items-center p-6 border-b border-slate-100 dark:border-slate-700">
-          <div className="flex items-center space-x-2">
-            <Lock className="text-emerald-500" size={24} />
-            <h2 className="text-xl font-bold text-slate-800 dark:text-white">Secure Sign In</h2>
-          </div>
-          <button onClick={onClose} className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-full hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors">
-            <X size={20} />
-          </button>
-        </div>
+    <div style={overlay}>
+      <div style={card}>
+        <button onClick={onClose} style={closeBtn} aria-label="Close">✕</button>
+        <div style={logo}>🚗</div>
+        <h2 style={title}>Sign in to TheCarPool</h2>
+        <p style={subtitle}>Join 50,000+ verified corporate commuters</p>
 
-        <form onSubmit={handleSubmit} className="p-6 space-y-5">
-          <div className="flex space-x-4">
-            <div className="flex-1 space-y-1">
-              <label className="text-xs font-semibold text-slate-500 uppercase">First Name *</label>
-              <input required type="text" placeholder="e.g. Pooja" value={formData.firstName} onChange={(e) => setFormData({...formData, firstName: e.target.value})} className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none" />
+        {error && <p style={errorBox}>{error}</p>}
+
+        {mode === 'choose' && (
+          <>
+            <button
+              style={{ ...primaryBtn, backgroundColor: '#fff', color: '#1f2937', border: '1px solid #e5e7eb' }}
+              onClick={handleGoogle}
+              disabled={loading}
+            >
+              <span style={{ marginRight: 8 }}>🔵</span>
+              {loading ? 'Signing in…' : 'Continue with Google'}
+            </button>
+
+            <div style={divider}><span>or</span></div>
+
+            <button
+              style={primaryBtn}
+              onClick={() => setMode('phone')}
+              disabled={loading}
+            >
+              📱 Continue with Phone OTP
+            </button>
+          </>
+        )}
+
+        {mode === 'phone' && (
+          <>
+            <label style={fieldLabel}>Mobile Number</label>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <span style={prefix}>+91</span>
+              <input
+                id="auth-phone-input"
+                type="tel"
+                placeholder="10-digit mobile number"
+                value={phone}
+                onChange={(e) => setPhone(e.target.value.replace(/\D/g, '').slice(0, 10))}
+                style={fieldInput}
+                autoFocus
+              />
             </div>
-            <div className="flex-1 space-y-1">
-              <label className="text-xs font-semibold text-slate-500 uppercase">Last Name</label>
-              <input type="text" placeholder="Optional" value={formData.lastName} onChange={(e) => setFormData({...formData, lastName: e.target.value})} className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none" />
-            </div>
-          </div>
+            <div id={recaptchaContainerId} style={{ marginTop: 12 }} />
+            <button style={primaryBtn} onClick={handleSendOtp} disabled={loading || phone.length < 10}>
+              {loading ? 'Sending…' : 'Send OTP →'}
+            </button>
+            <button style={backBtn} onClick={() => setMode('choose')}>← Back</button>
+          </>
+        )}
 
-          <div className="space-y-1">
-            <label className="text-xs font-semibold text-slate-500 uppercase">Mobile Number *</label>
-            <input required type="tel" placeholder="+91 9876543210" value={formData.mobile} onChange={(e) => setFormData({...formData, mobile: e.target.value})} className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none" />
-          </div>
+        {mode === 'otp' && (
+          <>
+            <p style={subtitle}>OTP sent to +91 {phone}</p>
+            <label style={fieldLabel}>6-Digit OTP</label>
+            <input
+              id="auth-otp-input"
+              type="tel"
+              placeholder="• • • • • •"
+              value={otp}
+              onChange={(e) => setOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
+              style={{ ...fieldInput, letterSpacing: 8, fontSize: 22, textAlign: 'center' }}
+              autoFocus
+            />
+            <button style={primaryBtn} onClick={handleVerifyOtp} disabled={loading || otp.length < 6}>
+              {loading ? 'Verifying…' : 'Verify & Sign In →'}
+            </button>
+            <button style={backBtn} onClick={() => { setMode('phone'); setOtp(''); confirmationRef.current = null; }}>← Change Number</button>
+          </>
+        )}
 
-          <div className="space-y-1">
-            <label className="text-xs font-semibold text-slate-500 uppercase">Email Address</label>
-            <input type="email" placeholder="Optional" value={formData.email} onChange={(e) => setFormData({...formData, email: e.target.value})} className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none" />
-          </div>
-
-          <button type="submit" className="w-full py-3.5 mt-2 bg-emerald-500 hover:bg-emerald-600 text-white font-bold rounded-xl shadow-lg shadow-emerald-200 dark:shadow-none transition-colors">
-            Continue securely
-          </button>
-        </form>
-
+        <p style={legalText}>By signing in you agree to our Terms &amp; Privacy Policy</p>
       </div>
     </div>
   );
 }
+
+// Inline styles
+const overlay: React.CSSProperties = {
+  position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', display: 'flex',
+  alignItems: 'center', justifyContent: 'center', zIndex: 1000,
+};
+const card: React.CSSProperties = {
+  background: '#fff', borderRadius: 24, padding: '40px 32px', width: '100%', maxWidth: 400,
+  position: 'relative', display: 'flex', flexDirection: 'column', gap: 12,
+};
+const closeBtn: React.CSSProperties = {
+  position: 'absolute', top: 16, right: 16, background: 'none', border: 'none',
+  fontSize: 18, cursor: 'pointer', color: '#6b7280',
+};
+const logo: React.CSSProperties = { fontSize: 40, textAlign: 'center' };
+const title: React.CSSProperties = { fontSize: 22, fontWeight: 700, textAlign: 'center', margin: 0 };
+const subtitle: React.CSSProperties = { fontSize: 13, color: '#6b7280', textAlign: 'center', margin: 0 };
+const errorBox: React.CSSProperties = {
+  background: '#fef2f2', color: '#dc2626', borderRadius: 8, padding: '8px 12px', fontSize: 13, margin: 0,
+};
+const primaryBtn: React.CSSProperties = {
+  background: '#10b981', color: '#fff', border: 'none', borderRadius: 12,
+  padding: '14px 20px', fontSize: 15, fontWeight: 600, cursor: 'pointer', width: '100%',
+};
+const backBtn: React.CSSProperties = {
+  background: 'none', border: 'none', color: '#6b7280', cursor: 'pointer', fontSize: 14,
+};
+const divider: React.CSSProperties = {
+  display: 'flex', alignItems: 'center', gap: 8, color: '#9ca3af', fontSize: 12,
+  textAlign: 'center',
+};
+const fieldLabel: React.CSSProperties = { fontSize: 12, fontWeight: 600, color: '#374151' };
+const prefix: React.CSSProperties = {
+  background: '#f3f4f6', border: '1px solid #e5e7eb', borderRadius: 8,
+  padding: '10px 12px', fontSize: 15, color: '#374151',
+};
+const fieldInput: React.CSSProperties = {
+  border: '1px solid #e5e7eb', borderRadius: 8, padding: '10px 12px',
+  fontSize: 15, outline: 'none', width: '100%',
+};
+const legalText: React.CSSProperties = { fontSize: 11, color: '#9ca3af', textAlign: 'center', margin: 0 };

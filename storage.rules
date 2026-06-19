@@ -12,14 +12,25 @@ service firebase.storage {
       return request.auth != null && request.auth.uid == userId;
     }
 
-    // Per-user KYC documents — owner only.
-    match /users/{userId}/kyc/{allPaths=**} {
-      allow read, write: if isOwner(userId);
+    // Valid upload: image only, max 10 MB.
+    function isValidImage() {
+      return request.resource.size < 10 * 1024 * 1024
+        && request.resource.contentType.matches('image/.*');
     }
 
-    // Any other per-user assets — owner only.
-    match /users/{userId}/{allPaths=**} {
-      allow read, write: if isOwner(userId);
+    // Per-user KYC documents — owner only, images up to 10 MB.
+    match /users/{uid}/kyc/{allPaths=**} {
+      allow read: if isOwner(uid) || isAdmin();
+      allow write: if isOwner(uid)
+        && request.resource.size < 10 * 1024 * 1024
+        && request.resource.contentType.matches('image/.*');
+    }
+
+    // Any other per-user assets — owner only, up to 10 MB.
+    match /users/{uid}/{allPaths=**} {
+      allow read: if isOwner(uid) || isAdmin();
+      allow write: if isOwner(uid)
+        && request.resource.size < 10 * 1024 * 1024;
     }
 
     // Deny everything else by default.

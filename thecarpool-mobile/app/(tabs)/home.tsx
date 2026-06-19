@@ -1,21 +1,12 @@
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView, Alert } from 'react-native';
 import { useRouter } from 'expo-router';
-import axios from 'axios';
 import { colors } from '../../theme/colors';
-import { auth } from '../services/firebase';
-import { API_URL as API_BASE } from '../services/api';
+import { apiFetch } from '../services/api';
 import { useAuthStore } from '../store/authStore';
+import auth from '@react-native-firebase/auth';
 
-// Backend gateway API (env-driven base + /api prefix).
-const API_URL = `${API_BASE}/api`;
-
-// Returns axios config with the current user's Firebase ID token attached,
-// so the backend's requireAuth middleware can authenticate the request.
-async function authConfig() {
-  const token = await auth().currentUser?.getIdToken();
-  return token ? { headers: { Authorization: `Bearer ${token}` } } : {};
-}
+// apiFetch (from services/api) automatically attaches the Firebase ID token.
 
 interface Ride {
   id: number;
@@ -36,24 +27,55 @@ export default function HomeScreen() {
   const [rides, setRides] = useState<Ride[]>([]);
   const [searching, setSearching] = useState(false);
 
+  // Geo selections drive the real search coordinates (M02).
+  const [originCoords, setOriginCoords] = useState<{ lat: number; lng: number } | null>(null);
+  const [destCoords, setDestCoords] = useState<{ lat: number; lng: number } | null>(null);
+  const [originSug, setOriginSug] = useState<any[]>([]);
+  const [destSug, setDestSug] = useState<any[]>([]);
+
+  const searchGeo = async (q: string, setSuggestions: (s: any[]) => void) => {
+    if (q.trim().length < 3) { setSuggestions([]); return; }
+    try {
+      const res = await apiFetch(`/api/geo/search?query=${encodeURIComponent(q)}`);
+      if (!res.ok) { setSuggestions([]); return; }
+      const data = await res.json();
+      const suggestions = data.results || data.suggestions || (Array.isArray(data) ? data : []);
+      setSuggestions(suggestions);
+    } catch {
+      setSuggestions([]);
+    }
+  };
+
   const searchMatchingRides = async () => {
+    // M02: require confirmed geo coords before searching.
+    if (!originCoords || !destCoords) {
+      Alert.alert('Select Location', 'Please select pickup and dropoff from suggestions.');
+      return;
+    }
     setSearching(true);
     try {
-      // Mock coordinates for Sector 56 and Cyber City
       const payload = {
-        pickup_lng: 77.0872,
-        pickup_lat: 28.4231,
-        drop_lng: 77.0896,
-        drop_lat: 28.4952,
+        pickup_lng: originCoords.lng,
+        pickup_lat: originCoords.lat,
+        drop_lng: destCoords.lng,
+        drop_lat: destCoords.lat,
         max_detour_meters: 1500
       };
 
-      const res = await axios.post(`${API_URL}/rides/search`, payload, await authConfig());
-      setRides(res.data);
-      
-      if (res.data.length === 0) {
+      const res = await apiFetch('/api/rides/search', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        Alert.alert('Search Failed', errData.error || `Server error (${res.status}). Please try again.`);
+        return;
+      }
+      const data = await res.json();
+      setRides(data);
+
+      if (!data.length) {
         Alert.alert('No matches found', 'No active drivers matched your route direction. Showing local mocks.');
-        // Set fallback mocks for demonstration
         setRides([
           { id: 1, driver_name: 'Amit Kumar (TCS Colleague)', seats_available: 3, price_split: 125.00, departure_time: '8:55 AM', pickup_deviation: 230 },
           { id: 2, driver_name: 'Neha Sharma (Google Circle)', seats_available: 2, price_split: 130.00, departure_time: '8:40 AM', pickup_deviation: 410 }
@@ -84,36 +106,50 @@ export default function HomeScreen() {
       );
       return;
     }
+    // M02: require confirmed geo coords before booking.
+    if (!originCoords || !destCoords) {
+      Alert.alert('Select Location', 'Please select pickup and dropoff from suggestions.');
+      return;
+    }
+    // M01: use apiFetch and guard on res.ok before showing success.
     try {
-      const payload = {
-        ride_id: ride.id,
-        rider_id: userId,
-        seats_booked: 1,
-        pickup_lng: 77.0872,
-        pickup_lat: 28.4231,
-        drop_lng: 77.0896,
-        drop_lat: 28.4952
-      };
-
-      await axios.post(`${API_URL}/bookings`, payload, await authConfig());
+      const res = await apiFetch('/api/bookings', {
+        method: 'POST',
+        body: JSON.stringify({
+          ride_id: ride.id,
+          rider_id: userId,
+          seats_booked: 1,
+          pickup_lng: originCoords.lng,
+          pickup_lat: originCoords.lat,
+          drop_lng: destCoords.lng,
+          drop_lat: destCoords.lat,
+        }),
+      });
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        if (res.status === 403) {
+          Alert.alert(
+            'Verification required',
+            'Complete a quick verification to book a ride.',
+            [
+              { text: 'Not now', style: 'cancel' },
+              { text: 'Verify now', onPress: () => router.push('/onboarding') },
+            ]
+          );
+          return;
+        }
+        Alert.alert('Booking Failed', errData.error || `Server error (${res.status}). Please try again.`);
+        return;
+      }
+      const booking = await res.json();
       Alert.alert(
-        'Ride Booked! 🎉',
-        `Successfully locked price seat split via Razorpay Escrow. Co-worker ride confirmed with ${ride.driver_name}.`,
-        [
-          { text: 'Track Live', onPress: () => router.push(`/trip/${ride.id}`) },
-          { text: 'OK' }
-        ]
+        '✅ Booking Confirmed!',
+        `Your seat is reserved. Booking #${booking.id || booking.booking_id || 'N/A'}\nEscrow locked: ₹${booking.escrow_locked || booking.amount || ''}`,
+        [{ text: 'View Trip', onPress: () => router.push(`/trip/${booking.ride_id || ride.id}`) }]
       );
-    } catch (err) {
+    } catch (err: any) {
       console.log('Booking error:', err);
-      // Fallback alert for simulator
-      Alert.alert(
-        'Escrow Confirmed!',
-        `Created lock split of ₹${ride.price_split} with ${ride.driver_name}. Automated voice call scheduled.`,
-        [
-          { text: 'Track Live', onPress: () => router.push(`/trip/${ride.id}`) }
-        ]
-      );
+      Alert.alert('Booking Failed', 'Network error. Please check your connection and try again.');
     }
   };
 
@@ -127,21 +163,47 @@ export default function HomeScreen() {
       <View style={styles.card}>
         <Text style={styles.label}>Where are you commuting?</Text>
         
-        <TextInput 
-          style={styles.input} 
-          value={origin} 
-          onChangeText={setOrigin} 
+        <TextInput
+          style={styles.input}
+          value={origin}
+          onChangeText={(t) => { setOrigin(t); searchGeo(t, setOriginSug); }}
           placeholder="Origin location..."
           placeholderTextColor="#6b7280"
         />
-        
-        <TextInput 
-          style={styles.input} 
-          value={destination} 
-          onChangeText={setDestination} 
+        {originSug.length > 0 && (
+          <View style={styles.suggBox}>
+            {originSug.slice(0, 5).map((s, i) => (
+              <TouchableOpacity key={i} style={styles.suggItem} onPress={() => {
+                setOrigin(`${s.place_name}${s.postal_code ? ` (${s.postal_code})` : ''}`);
+                setOriginCoords({ lat: s.latitude ?? s.lat ?? 0, lng: s.longitude ?? s.lng ?? 0 });
+                setOriginSug([]);
+              }}>
+                <Text style={styles.suggText} numberOfLines={1}>{s.place_name}{s.state_name ? `, ${s.state_name}` : ''}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        )}
+
+        <TextInput
+          style={styles.input}
+          value={destination}
+          onChangeText={(t) => { setDestination(t); searchGeo(t, setDestSug); }}
           placeholder="Office park destination..."
           placeholderTextColor="#6b7280"
         />
+        {destSug.length > 0 && (
+          <View style={styles.suggBox}>
+            {destSug.slice(0, 5).map((s, i) => (
+              <TouchableOpacity key={i} style={styles.suggItem} onPress={() => {
+                setDestination(`${s.place_name}${s.postal_code ? ` (${s.postal_code})` : ''}`);
+                setDestCoords({ lat: s.latitude ?? s.lat ?? 0, lng: s.longitude ?? s.lng ?? 0 });
+                setDestSug([]);
+              }}>
+                <Text style={styles.suggText} numberOfLines={1}>{s.place_name}{s.state_name ? `, ${s.state_name}` : ''}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        )}
 
         <TouchableOpacity 
           style={styles.btn} 
@@ -227,6 +289,21 @@ const styles = StyleSheet.create({
     color: colors.text,
     marginBottom: 12,
   },
+  suggBox: {
+    backgroundColor: colors.inputBackground,
+    borderRadius: 8,
+    marginTop: -8,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: colors.cardBorder,
+  },
+  suggItem: {
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.cardBorder,
+  },
+  suggText: { color: colors.text, fontSize: 13 },
   btn: {
     backgroundColor: colors.primary,
     borderRadius: 8,

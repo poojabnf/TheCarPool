@@ -62,7 +62,7 @@ export default function TheCarPoolLanding() {
             Commute <span className="text-transparent bg-clip-text bg-gradient-to-r from-teal-600 to-teal-400">Smarter.</span><br/>Together.
           </h1>
           <p className="text-lg text-slate-500 dark:text-slate-400 max-w-lg leading-relaxed">
-            The world's most trusted carpool network. Split costs, reduce your carbon footprint, and travel securely with strict government ID-verified peers.
+            {"The world's most trusted carpool network. Split costs, reduce your carbon footprint, and travel securely with strict government ID-verified peers."}
           </p>
           <div className="flex flex-col sm:flex-row gap-4 pt-4">
             {loading ? (

@@ -12,6 +12,7 @@ import {
   signInWithPhoneNumber as firebaseSignInWithPhoneNumber,
   ConfirmationResult
 } from 'firebase/auth';
+import { setSentryUser, clearSentryUser } from '../components/SentryInit';
 import { auth } from '../lib/firebase';
 import { apiFetch } from '../lib/api';
 
@@ -38,6 +39,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
       setLoading(false);
+      // Tag Sentry events with the signed-in user (no-op if Sentry has no DSN).
+      if (currentUser) {
+        setSentryUser(currentUser.uid, currentUser.email ?? undefined);
+        document.cookie = 'firebase_authenticated=1; path=/; max-age=3600; SameSite=Lax';
+      } else {
+        clearSentryUser();
+        document.cookie = 'firebase_authenticated=; path=/; max-age=0; SameSite=Lax';
+      }
     });
     return () => {
       unsubscribe();
@@ -57,6 +66,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const signOut = async () => {
+    document.cookie = 'firebase_authenticated=; path=/; max-age=0; SameSite=Lax';
+    clearSentryUser();
     await firebaseSignOut(auth);
   };
 
@@ -74,8 +85,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // 2. Delete Firebase Auth account on the client side
     await firebaseDeleteUser(auth.currentUser);
 
-    // 3. Clear any local onboarding state
+    // 3. Clear any local onboarding state and auth cookies
     localStorage.removeItem(`thecarpool_onboarded_${uid}`);
+    document.cookie = 'firebase_authenticated=; path=/; max-age=0; SameSite=Lax';
+    clearSentryUser();
   };
 
   const setupRecaptcha = (containerId: string) => {

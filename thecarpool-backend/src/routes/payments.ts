@@ -6,6 +6,8 @@ import { parseOrReply } from '../lib/validate';
 import {
   getRazorpay,
   isRazorpayConfigured,
+  isRazorpayXConfigured,
+  createUpiPayout,
   verifyPaymentSignature,
   verifyWebhookSignature,
 } from '../lib/razorpay';
@@ -45,6 +47,35 @@ export async function paymentRoutes(fastify: FastifyInstance) {
     }
     const wallet = await getWallet(String(user_id));
     return reply.send({ user_id, ...wallet });
+  });
+
+  // 1a-ii. Transaction history — wallet credits (payments) + ride settlements.
+  fastify.get('/history/:user_id', { preHandler: [requireAuth] }, async (request, reply) => {
+    const { user_id } = request.params as { user_id: string };
+    if (String(request.user!.id) !== String(user_id)) {
+      return reply.code(403).send({ error: 'Forbidden: you can only view your own history.' });
+    }
+    try {
+      const [paymentsSnap, bookingsSnap] = await Promise.all([
+        db.collection('payments').where('user_id', '==', String(user_id)).get(),
+        db.collection('bookings').where('rider_id', '==', String(user_id)).where('escrow_status', '==', 'SETTLED').get(),
+      ]);
+
+      const credits = paymentsSnap.docs.map((d) => {
+        const p = d.data();
+        return { id: d.id, type: 'CREDIT', label: 'Wallet top-up', amount: p.amount || 0, status: p.status || 'CAPTURED', at: p.created_at || null };
+      });
+      const debits = bookingsSnap.docs.map((d) => {
+        const b = d.data();
+        return { id: d.id, type: 'DEBIT', label: 'Ride payment', amount: -(b.settled_amount || 0), status: 'SETTLED', at: b.settled_at || b.created_at || null };
+      });
+
+      const transactions = [...credits, ...debits].sort((a, b) => String(b.at).localeCompare(String(a.at)));
+      return reply.send({ user_id, transactions });
+    } catch (err: any) {
+      fastify.log.error(err, 'Failed to fetch transaction history');
+      return reply.code(500).send({ error: 'Failed to fetch transaction history.' });
+    }
   });
 
   // 1b. Create a Razorpay order for a booking/top-up. The client uses the
@@ -183,26 +214,75 @@ export async function paymentRoutes(fastify: FastifyInstance) {
       amount: number;
     };
 
-    // RazorpayX payouts require a RazorpayX account + the payouts API. We
-    // record an auditable payout intent; the actual transfer is performed by
-    // the RazorpayX integration when RAZORPAYX_ACCOUNT_NUMBER is configured.
-    const payoutRef = 'PO_' + Math.random().toString(36).substring(2, 10);
+    if (!upi_payout_id || !amount || amount <= 0) {
+      return reply.code(400).send({ error: 'upi_payout_id and a positive amount are required.' });
+    }
+
+    const payoutRef = 'PO_' + Math.random().toString(36).substring(2, 10).toUpperCase();
+    const status = process.env.RAZORPAYX_ACCOUNT_NUMBER ? 'QUEUED' : 'PENDING_CONFIG';
+
     await db.collection('payouts').doc(payoutRef).set({
       booking_id: String(booking_id),
       upi_payout_id,
       amount,
-      status: process.env.RAZORPAYX_ACCOUNT_NUMBER ? 'QUEUED' : 'PENDING_CONFIG',
+      status,
       requested_by: request.user!.id,
       created_at: new Date().toISOString(),
     });
 
+    // Call RazorpayX Payouts API when account is configured
+    if (process.env.RAZORPAYX_ACCOUNT_NUMBER && process.env.RAZORPAY_KEY_ID && process.env.RAZORPAY_KEY_SECRET) {
+      try {
+        const auth = Buffer.from(`${process.env.RAZORPAY_KEY_ID}:${process.env.RAZORPAY_KEY_SECRET}`).toString('base64');
+        const res = await fetch('https://api.razorpay.com/v1/payouts', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Basic ${auth}`,
+            'Content-Type': 'application/json',
+            'X-Payout-Idempotency': payoutRef,
+          },
+          body: JSON.stringify({
+            account_number: process.env.RAZORPAYX_ACCOUNT_NUMBER,
+            fund_account: { account_type: 'vpa', vpa: { address: upi_payout_id } },
+            amount: Math.round(amount * 100), // paise
+            currency: 'INR',
+            mode: 'UPI',
+            purpose: 'payout',
+            notes: { booking_id: String(booking_id), payout_ref: payoutRef },
+          }),
+        });
+        const data = await res.json() as any;
+        if (res.ok && data.id) {
+          await db.collection('payouts').doc(payoutRef).update({
+            status: 'PROCESSING',
+            razorpayx_payout_id: data.id,
+          });
+          return reply.send({
+            status: 'PAYOUT_PROCESSING',
+            booking_id,
+            upi_payout_id,
+            transaction_ref: payoutRef,
+            razorpayx_payout_id: data.id,
+            amount_settled: amount,
+          });
+        }
+        fastify.log.error(data, 'RazorpayX payout failed');
+        await db.collection('payouts').doc(payoutRef).update({ status: 'FAILED', razorpayx_error: data });
+        return reply.code(502).send({ error: 'Payout initiation failed via RazorpayX.', detail: data?.error?.description });
+      } catch (err: any) {
+        fastify.log.error(err, 'RazorpayX API call failed');
+        await db.collection('payouts').doc(payoutRef).update({ status: 'FAILED' });
+        return reply.code(502).send({ error: 'Payout API call failed.' });
+      }
+    }
+
     return reply.send({
-      status: process.env.RAZORPAYX_ACCOUNT_NUMBER ? 'PAYOUT_QUEUED' : 'PAYOUT_RECORDED_PENDING_CONFIG',
+      status: status === 'QUEUED' ? 'PAYOUT_QUEUED' : 'PAYOUT_RECORDED_PENDING_CONFIG',
       booking_id,
       upi_payout_id,
       transaction_ref: payoutRef,
       amount_settled: amount,
-      timestamp: new Date()
+      timestamp: new Date(),
     });
   });
 
@@ -210,13 +290,48 @@ export async function paymentRoutes(fastify: FastifyInstance) {
   fastify.post('/corporate/bill-ride', { preHandler: [requireAuth] }, async (request, reply) => {
     const { employee_id, company_domain, amount } = request.body as any;
 
-    return reply.send({
-      status: 'BILLED_TO_CORPORATE_ALLOWANCE',
-      employee_id,
-      company: company_domain,
-      charged_amount: amount,
-      monthly_budget_remaining: 1800.00
-    });
+    if (!company_domain || !amount) {
+      return reply.code(400).send({ error: 'company_domain and amount are required.' });
+    }
+
+    try {
+      const accountDoc = await db.collection('corporate_accounts').doc(company_domain).get();
+      if (!accountDoc.exists) {
+        return reply.code(404).send({ error: `No corporate account found for domain: ${company_domain}` });
+      }
+      const account = accountDoc.data() as { monthly_budget: number; spent_this_month: number; currency: string };
+      const remaining = (account.monthly_budget || 0) - (account.spent_this_month || 0);
+
+      if (amount > remaining) {
+        return reply.code(402).send({
+          error: 'Monthly corporate budget exceeded.',
+          budget_remaining: remaining,
+        });
+      }
+
+      await db.collection('corporate_accounts').doc(company_domain).update({
+        spent_this_month: (account.spent_this_month || 0) + Number(amount),
+      });
+
+      await db.collection('corporate_billing').add({
+        employee_id: employee_id || null,
+        company_domain,
+        amount: Number(amount),
+        billed_by: request.user!.id,
+        billed_at: new Date().toISOString(),
+      });
+
+      return reply.send({
+        status: 'BILLED_TO_CORPORATE_ALLOWANCE',
+        employee_id,
+        company: company_domain,
+        charged_amount: amount,
+        monthly_budget_remaining: parseFloat((remaining - amount).toFixed(2)),
+      });
+    } catch (err: any) {
+      fastify.log.error(err, 'Corporate billing failed');
+      return reply.code(500).send({ error: 'Corporate billing failed.' });
+    }
   });
 
   // 5. Fuel Savings Tracker (Feature 34)
@@ -226,14 +341,40 @@ export async function paymentRoutes(fastify: FastifyInstance) {
       return reply.code(403).send({ error: 'Forbidden: you can only view your own savings.' });
     }
 
-    return reply.send({
-      user_id,
-      total_commute_kms: 342,
-      equivalent_taxi_cost: 4104.00,
-      thecarpool_cost: 1368.00,
-      total_fuel_saved_inr: 2736.00,
-      prevented_fuel_liters: 28.5
-    });
+    try {
+      const bookingsSnap = await db.collection('bookings')
+        .where('rider_id', '==', String(user_id))
+        .where('status', '==', 'COMPLETED')
+        .get();
+
+      let totalKm = 0;
+      for (const doc of bookingsSnap.docs) {
+        const data = doc.data();
+        totalKm += Number(data.distance_km || 0);
+      }
+
+      // ₹12/km taxi rate vs ₹4/km carpool rate
+      const taxiRate = 12;
+      const carpoolRate = 4;
+      const equivalentTaxiCost = parseFloat((totalKm * taxiRate).toFixed(2));
+      const carpoolCost = parseFloat((totalKm * carpoolRate).toFixed(2));
+      const totalSaved = parseFloat((equivalentTaxiCost - carpoolCost).toFixed(2));
+      // ~3.5L/100km * price ₹106/L
+      const fuelLitersPrevented = parseFloat(((totalKm * 3.5) / 100).toFixed(1));
+
+      return reply.send({
+        user_id,
+        total_commute_kms: parseFloat(totalKm.toFixed(1)),
+        equivalent_taxi_cost: equivalentTaxiCost,
+        thecarpool_cost: carpoolCost,
+        total_fuel_saved_inr: totalSaved,
+        prevented_fuel_liters: fuelLitersPrevented,
+        rides_completed: bookingsSnap.size,
+      });
+    } catch (err: any) {
+      fastify.log.error(err, 'Fuel savings calculation failed');
+      return reply.code(500).send({ error: 'Failed to calculate fuel savings.' });
+    }
   });
 
   // 6. Cancellation Policy Escrow (Feature 35)

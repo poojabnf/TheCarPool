@@ -18,6 +18,19 @@ export default function TripScreen() {
   const [driverLocation, setDriverLocation] = useState({ lat: 28.4231, lng: 77.0872 });
   const [speed, setSpeed] = useState(0);
   const [geofenceAlert, setGeofenceAlert] = useState<string | null>(null);
+  const [ride, setRide] = useState<any | null>(null);
+
+  // Fetch real ride details for the header.
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await apiFetch(`/api/rides/${id}`);
+        if (res.ok) setRide(await res.json());
+      } catch {
+        /* leave null — header shows a neutral placeholder */
+      }
+    })();
+  }, [id]);
 
   useEffect(() => {
     let socket: ReturnType<typeof io> | undefined;
@@ -39,7 +52,7 @@ export default function TripScreen() {
       // 2. Listen to live GPS broadcasts from driver device
       socket.on('telemetry:broadcast', (data) => {
         setDriverLocation({ lat: data.lat, lng: data.lng });
-        setSpeed(data.speed || 42);
+        setSpeed(typeof data.speed === 'number' ? data.speed : 0);
       });
 
       // 3. Listen to geofencing breach alerts from gateway matching server
@@ -135,9 +148,15 @@ export default function TripScreen() {
 
       <View style={styles.card}>
         <Text style={styles.label}>Driver Info</Text>
-        <Text style={styles.val}>Rajesh Kumar · Nexon EV (DL 3C BC 8712)</Text>
-        <Text style={styles.label}>Pickup Coordinates</Text>
-        <Text style={styles.val}>Sector 18 HDFC ATM (ETA 8:55 AM)</Text>
+        <Text style={styles.val}>
+          {ride
+            ? `${ride.driver_name || 'Driver'}${ride.vehicle ? ` · ${ride.vehicle}` : ''}${ride.vehicle_plate ? ` (${ride.vehicle_plate})` : ''}`
+            : 'Loading ride details…'}
+        </Text>
+        <Text style={styles.label}>Status</Text>
+        <Text style={styles.val}>
+          {ride?.status || '—'}{ride?.departure_time ? ` · ${new Date(ride.departure_time).toLocaleString()}` : ''}
+        </Text>
       </View>
 
       <TouchableOpacity style={styles.sosBtn} onPress={triggerSOS}>

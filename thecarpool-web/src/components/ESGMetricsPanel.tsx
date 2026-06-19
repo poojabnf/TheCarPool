@@ -13,7 +13,25 @@ const mockCarbonData = [
   { month: "Jun", offset: 890 },
 ];
 
-export default function ESGMetricsPanel() {
+interface ESGProps {
+  totalCarbonOffsetKg?: number;  // kg
+  evAdoptionPercent?: number;
+  activeCarpools?: number;
+  carbonTrendData?: Array<{ month: string; offset: number }>;
+}
+
+export default function ESGMetricsPanel({
+  totalCarbonOffsetKg,
+  evAdoptionPercent,
+  activeCarpools,
+  carbonTrendData,
+}: ESGProps) {
+  // Fall back to mock values when real props are not provided.
+  const carbonKg = totalCarbonOffsetKg ?? 8450;
+  const evPercent = evAdoptionPercent ?? 42.5;
+  const carpoolCount = activeCarpools ?? 1240;
+  const chartData = carbonTrendData ?? mockCarbonData;
+
   return (
     <div className="space-y-6">
       {/* Top Metrics Row */}
@@ -24,7 +42,9 @@ export default function ESGMetricsPanel() {
           </div>
           <div>
             <p className="text-sm text-slate-500 dark:text-slate-400">Total Carbon Offset</p>
-            <h3 className="text-3xl font-bold text-slate-800 dark:text-white">8,450 kg</h3>
+            <h3 className="text-3xl font-bold text-slate-800 dark:text-white">
+              {carbonKg.toLocaleString()} kg
+            </h3>
           </div>
         </div>
 
@@ -34,7 +54,9 @@ export default function ESGMetricsPanel() {
           </div>
           <div>
             <p className="text-sm text-slate-500 dark:text-slate-400">EV Adoption Rate</p>
-            <h3 className="text-3xl font-bold text-slate-800 dark:text-white">42.5%</h3>
+            <h3 className="text-3xl font-bold text-slate-800 dark:text-white">
+              {evPercent.toFixed(1)}%
+            </h3>
           </div>
         </div>
 
@@ -44,7 +66,9 @@ export default function ESGMetricsPanel() {
           </div>
           <div>
             <p className="text-sm text-slate-500 dark:text-slate-400">Active Carpools</p>
-            <h3 className="text-3xl font-bold text-slate-800 dark:text-white">1,240</h3>
+            <h3 className="text-3xl font-bold text-slate-800 dark:text-white">
+              {carpoolCount.toLocaleString()}
+            </h3>
           </div>
         </div>
       </div>
@@ -54,17 +78,17 @@ export default function ESGMetricsPanel() {
         <h3 className="text-xl font-semibold mb-6 text-slate-800 dark:text-white">CO2 Offset Growth (YTD)</h3>
         <div className="h-80 w-full">
           <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={mockCarbonData} margin={{ top: 5, right: 20, bottom: 5, left: 0 }}>
+            <LineChart data={chartData} margin={{ top: 5, right: 20, bottom: 5, left: 0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
               <XAxis dataKey="month" stroke="#94a3b8" />
               <YAxis stroke="#94a3b8" />
-              <Tooltip 
+              <Tooltip
                 contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)' }}
               />
-              <Line 
-                type="monotone" 
-                dataKey="offset" 
-                stroke="#10b981" 
+              <Line
+                type="monotone"
+                dataKey="offset"
+                stroke="#10b981"
                 strokeWidth={4}
                 dot={{ r: 6, strokeWidth: 2, fill: "#fff" }}
                 activeDot={{ r: 8, stroke: '#10b981', strokeWidth: 2 }}

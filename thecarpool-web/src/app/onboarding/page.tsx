@@ -55,6 +55,7 @@ export default function OnboardingPage() {
   const [selfieStage, setSelfieStage] = useState<'idle' | 'scanning' | 'done'>('idle');
 
   const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState("");
 
   // Redirection guard
   useEffect(() => {
@@ -95,22 +96,21 @@ export default function OnboardingPage() {
     // which also sets the authoritative `onboarded` flag.
     if (user) {
       setSaving(true);
+      setSaveError("");
       try {
-        await apiFetch("/api/users/profile", {
+        const res = await apiFetch("/api/users/profile", {
           method: "POST",
-          body: JSON.stringify({
-            name,
-            company,
-            employeeId,
-            workLocation,
-            role,
-          }),
+          body: JSON.stringify({ name, company, employeeId, workLocation, role }),
         });
+        if (!res.ok) throw new Error(`Save failed (${res.status})`);
       } catch {
-        // Non-fatal: surface but still let the user into the app.
-      } finally {
+        // Block navigation on failure — otherwise the `onboarded` flag never
+        // gets set and the next visit bounces in an infinite redirect loop.
+        setSaveError("We couldn't save your profile. Please check your connection and try again.");
         setSaving(false);
+        return;
       }
+      setSaving(false);
     }
     router.push("/customer");
   };
@@ -546,6 +546,10 @@ export default function OnboardingPage() {
                 >
                   {saving ? "Saving…" : "🎉 Activate My Account"}
                 </button>
+              )}
+
+              {saveError && (
+                <p className="mt-3 text-sm text-red-500 text-center">{saveError}</p>
               )}
 
             </div>
