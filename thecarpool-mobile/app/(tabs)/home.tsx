@@ -5,6 +5,7 @@ import auth from '@react-native-firebase/auth';
 import { colors } from '../../theme/colors';
 import { apiFetch } from '../services/api';
 import { useAuthStore } from '../store/authStore';
+import BookingConfirmModal, { BookingDraft } from '../components/BookingConfirmModal';
 
 // apiFetch (from services/api) automatically attaches the Firebase ID token.
 
@@ -32,6 +33,10 @@ export default function HomeScreen() {
   const [destCoords, setDestCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [originSug, setOriginSug] = useState<any[]>([]);
   const [destSug, setDestSug] = useState<any[]>([]);
+
+  // Booking confirmation modal state.
+  const [confirmRide, setConfirmRide] = useState<Ride | null>(null);
+  const [booking, setBooking] = useState(false);
 
   const searchGeo = async (q: string, setSuggestions: (s: any[]) => void) => {
     if (q.trim().length < 3) { setSuggestions([]); return; }
@@ -93,7 +98,8 @@ export default function HomeScreen() {
     }
   };
 
-  const bookRide = async (ride: Ride) => {
+  // Step 1 — tapping "Book" opens the confirmation modal (after the KYC gate).
+  const bookRide = (ride: Ride) => {
     // Verification gate — browsing/search is open, booking requires KYC.
     if (!kycVerified) {
       Alert.alert(
@@ -106,28 +112,31 @@ export default function HomeScreen() {
       );
       return;
     }
-    // M02: require confirmed geo coords before booking.
-    if (!originCoords || !destCoords) {
-      Alert.alert('Select Location', 'Please select pickup and dropoff from suggestions.');
-      return;
-    }
-    // M01: use apiFetch and guard on res.ok before showing success.
+    setConfirmRide(ride);
+  };
+
+  // Step 2 — the modal confirms with its own (editable) source/destination + seats.
+  const confirmBooking = async (draft: BookingDraft) => {
+    const ride = confirmRide;
+    if (!ride) return;
+    setBooking(true);
     try {
       const res = await apiFetch('/api/bookings', {
         method: 'POST',
         body: JSON.stringify({
           ride_id: ride.id,
           rider_id: userId,
-          seats_booked: 1,
-          pickup_lng: originCoords.lng,
-          pickup_lat: originCoords.lat,
-          drop_lng: destCoords.lng,
-          drop_lat: destCoords.lat,
+          seats_booked: draft.seats_booked,
+          pickup_lng: draft.pickup_lng,
+          pickup_lat: draft.pickup_lat,
+          drop_lng: draft.drop_lng,
+          drop_lat: draft.drop_lat,
         }),
       });
       if (!res.ok) {
         const errData = await res.json().catch(() => ({}));
         if (res.status === 403) {
+          setConfirmRide(null);
           Alert.alert(
             'Verification required',
             'Complete a quick verification to book a ride.',
@@ -141,15 +150,18 @@ export default function HomeScreen() {
         Alert.alert('Booking Failed', errData.error || `Server error (${res.status}). Please try again.`);
         return;
       }
-      const booking = await res.json();
+      const result = await res.json();
+      setConfirmRide(null);
       Alert.alert(
         '✅ Booking Confirmed!',
-        `Your seat is reserved. Booking #${booking.id || booking.booking_id || 'N/A'}\nEscrow locked: ₹${booking.escrow_locked || booking.amount || ''}`,
-        [{ text: 'View Trip', onPress: () => router.push(`/trip/${booking.ride_id || ride.id}`) }]
+        `Your seat is reserved. Booking #${result.id || result.booking_id || 'N/A'}\nEscrow locked: ₹${result.escrow_locked || result.amount || ''}`,
+        [{ text: 'View Trip', onPress: () => router.push(`/trip/${result.ride_id || ride.id}`) }]
       );
     } catch (err: any) {
       console.log('Booking error:', err);
       Alert.alert('Booking Failed', 'Network error. Please check your connection and try again.');
+    } finally {
+      setBooking(false);
     }
   };
 
@@ -243,6 +255,18 @@ export default function HomeScreen() {
           </TouchableOpacity>
         </View>
       ))}
+
+      <BookingConfirmModal
+        visible={confirmRide !== null}
+        ride={confirmRide}
+        initialOrigin={origin}
+        initialOriginCoords={originCoords}
+        initialDestination={destination}
+        initialDestCoords={destCoords}
+        submitting={booking}
+        onConfirm={confirmBooking}
+        onClose={() => { if (!booking) setConfirmRide(null); }}
+      />
     </ScrollView>
   );
 }
