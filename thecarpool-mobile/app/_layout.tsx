@@ -4,19 +4,48 @@ import { StatusBar, View, ActivityIndicator } from 'react-native';
 import { useAuthStore } from './store/authStore';
 import { auth } from './services/firebase';
 import { registerForPushNotifications } from './services/notifications';
+import { apiFetch } from './services/api';
 
 function AuthGuard({ children }: { children: React.ReactNode }) {
-  const { isLoggedIn, isAuthLoading, setFirebaseUser } = useAuthStore();
+  const { isLoggedIn, isAuthLoading, setFirebaseUser, setKycStatus, setUserProfile } = useAuthStore();
   const segments = useSegments();
   const router = useRouter();
 
   // Listen to Firebase auth state changes
   useEffect(() => {
-    const unsubscribe = auth().onAuthStateChanged((user) => {
+    const unsubscribe = auth().onAuthStateChanged(async (user) => {
       setFirebaseUser(user);
-      // Register this device for push notifications once signed in.
       if (user) {
+        // Register this device for push notifications once signed in.
         registerForPushNotifications().catch(() => { /* non-fatal */ });
+
+        // Rehydrate KYC + profile from backend — fixes cold-start reset bug.
+        try {
+          const res = await apiFetch('/api/users/me');
+          if (res.ok) {
+            const data = await res.json();
+            // Map backend kyc_status (VERIFIED/NONE/PENDING) to store KycStatus type
+            if (data.kyc_status === 'VERIFIED' || data.onboarded === true) {
+              setKycStatus('verified');
+            } else if (data.kyc_status === 'PENDING') {
+              setKycStatus('pending');
+            }
+            // Rehydrate profile fields if present
+            if (data.name || data.company) {
+              setUserProfile({
+                name: data.name,
+                phone: user.phoneNumber || '',
+                email: data.email,
+                company: data.company,
+                employeeId: data.employeeId,
+                workLocation: data.workLocation,
+                role: data.role,
+              });
+            }
+          }
+        } catch {
+          /* non-fatal — user proceeds with local state */
+        }
       }
     });
     return unsubscribe;

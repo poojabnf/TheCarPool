@@ -1,6 +1,6 @@
 {
   "name": "thecarpool-workspace",
-  "version": "1.0.0",
+  "version": "1.2.5",
   "description": "Unified workspace command runner for the TheCarPool platform",
   "private": true,
   "scripts": {

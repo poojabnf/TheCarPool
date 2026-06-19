@@ -1,4 +1,6 @@
 import React, { useState, useRef } from 'react';
+import { Alert } from 'react-native';
+import { apiFetch } from '../services/api';
 import {
   View,
   Text,
@@ -508,8 +510,9 @@ function InfoCard({ icon, text }: { icon: string; text: string }) {
 // ─── Main Wizard ──────────────────────────────────────────────────
 export default function OnboardingScreen() {
   const router = useRouter();
-  const { setUserProfile, setOnboardingStep, completeOnboarding } = useAuthStore();
+  const { setUserProfile, setOnboardingStep, completeOnboarding, userProfile } = useAuthStore();
   const [currentStep, setCurrentStep] = useState(0);
+  const [isSaving, setIsSaving] = useState(false);
   const slideAnim = useRef(new Animated.Value(0)).current;
 
   const goToStep = (next: number) => {
@@ -522,15 +525,47 @@ export default function OnboardingScreen() {
     );
   };
 
-  const handleNext = (data?: any) => {
+  const handleNext = async (data?: any) => {
     if (data) setUserProfile(data);
     setOnboardingStep(currentStep + 1);
     if (currentStep < TOTAL_STEPS - 1) {
       goToStep(currentStep + 1);
     } else {
-      // All done!
-      completeOnboarding();
-      router.replace('/(tabs)');
+      // All steps complete — persist to backend then navigate.
+      setIsSaving(true);
+      try {
+        // Merge any last-step data with accumulated profile
+        const fullProfile = { ...(userProfile || {}), ...(data || {}) };
+
+        // 1. Save user profile to Firestore via backend
+        await apiFetch('/api/users/profile', {
+          method: 'POST',
+          body: JSON.stringify({
+            name: fullProfile.name,
+            company: fullProfile.company,
+            employeeId: fullProfile.employeeId,
+            workLocation: fullProfile.workLocation,
+            role: fullProfile.role,
+          }),
+        });
+
+        // 2. Mark KYC as verified
+        await apiFetch('/api/safety/kyc/complete', {
+          method: 'POST',
+        });
+
+        // 3. Update local store
+        completeOnboarding();
+        router.replace('/(tabs)');
+      } catch {
+        Alert.alert(
+          'Save Failed',
+          'Could not save your profile. Please check your connection and try again.',
+          [{ text: 'Retry', onPress: () => handleNext(data) }, { text: 'Skip for Now', onPress: () => { completeOnboarding(); router.replace('/(tabs)'); } }]
+        );
+      } finally {
+        setIsSaving(false);
+      }
     }
   };
 

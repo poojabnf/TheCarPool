@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView, Alert } from 'react-native';
 import { useRouter } from 'expo-router';
+import auth from '@react-native-firebase/auth';
 import { colors } from '../../theme/colors';
 import { apiFetch } from '../services/api';
 import { useAuthStore } from '../store/authStore';

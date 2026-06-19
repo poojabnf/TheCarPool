@@ -1,6 +1,6 @@
 {
   "name": "thecarpool-backend",
-  "version": "1.0.0",
+  "version": "1.2.5",
   "description": "Main API gateway scheduler and match validator for TheCarPool carpooling",
   "main": "dist/server.js",
   "scripts": {
