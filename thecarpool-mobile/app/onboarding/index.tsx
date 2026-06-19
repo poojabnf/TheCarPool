@@ -1,6 +1,4 @@
 import React, { useState, useRef } from 'react';
-import { Alert } from 'react-native';
-import { apiFetch } from '../services/api';
 import {
   View,
   Text,
@@ -15,6 +13,7 @@ import {
   ActivityIndicator,
   Platform,
 } from 'react-native';
+import { apiFetch } from '../services/api';
 import { useRouter } from 'expo-router';
 import { useAuthStore } from '../store/authStore';
 
