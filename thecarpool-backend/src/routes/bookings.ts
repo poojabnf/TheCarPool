@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { db } from '../server';
 import { requireAuth } from '../middleware/auth';
 import { parseOrReply } from '../lib/validate';
+import { sendPushToUser } from '../lib/fcm';
 
 const CreateBookingSchema = z.object({
   ride_id: z.string().min(1),
@@ -107,6 +108,26 @@ export async function bookingRoutes(fastify: FastifyInstance) {
 
         return { id: bookingId, payment_status: 'ESCROW_LOCKED', escrow_status: 'HELD' };
       });
+
+      // Fire-and-forget push notifications — do not await, do not block response
+      const rideSnap = await db.collection('rides').doc(String(ride_id)).get();
+      const driverUid = rideSnap.exists ? rideSnap.data()?.driver_uid : null;
+
+      sendPushToUser(
+        String(rider_id),
+        '✅ Booking Confirmed!',
+        `Your seat is reserved. Escrow locked. Booking #${bookingId}`,
+        { booking_id: bookingId, type: 'BOOKING_CONFIRMED' }
+      );
+
+      if (driverUid) {
+        sendPushToUser(
+          driverUid,
+          '🚗 New Seat Booked',
+          `A rider has booked a seat on your commute. ${seats_booked} seat(s) filled.`,
+          { booking_id: bookingId, type: 'RIDER_JOINED' }
+        );
+      }
 
       return reply.code(201).send(result);
     } catch (err: any) {

@@ -1,8 +1,12 @@
-import React, { useState, useEffect } from 'react';
-import { StyleSheet, View, Text, TouchableOpacity, ScrollView, Dimensions, TextInput, Switch, Alert } from 'react-native';
+import React, { useState, useEffect, useRef } from 'react';
+import { StyleSheet, View, Text, TouchableOpacity, ScrollView, Dimensions, TextInput, Switch, Alert, ActivityIndicator } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Lock, FileText, CheckCircle, PlusCircle, Activity, Navigation, MapPin, Calendar, Users, X, Check, Car, Bike, Shield } from 'lucide-react-native';
 import { colors } from '../../theme/colors';
+import { apiFetch } from '../services/api';
+import auth from '@react-native-firebase/auth';
+import io from 'socket.io-client';
+import { API_URL } from '../services/api';
 
 function Linkedin({ size = 16, color, style }: { size?: number; color?: string; style?: any }) {
   return (
@@ -27,9 +31,12 @@ function Linkedin({ size = 16, color, style }: { size?: number; color?: string; 
 
 export default function DriverInterface() {
   const router = useRouter();
-  const [kycLevel2Complete, setKycLevel2Complete] = useState(false); // Simulate KYC Lock
+  const [kycLevel2Complete, setKycLevel2Complete] = useState(false);
   const [isOnline, setIsOnline] = useState(false);
+  const [isPosting, setIsPosting] = useState(false);
   const [activeTab, setActiveTab] = useState<'overview' | 'requests' | 'drive'>('overview');
+  const socketRef = useRef<ReturnType<typeof io> | null>(null);
+  const telemetryIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Ride posting form states
   const [showPostModal, setShowPostModal] = useState(false);
@@ -44,8 +51,9 @@ export default function DriverInterface() {
   const [chattiness, setChattiness] = useState<'QUIET' | 'MEDIUM' | 'TALKATIVE'>('MEDIUM');
   const [suggestedPrice, setSuggestedPrice] = useState<number | null>(null);
   const [customPrice, setCustomPrice] = useState('');
+  const [activeRideId, setActiveRideId] = useState<string | null>(null);
 
-  // Calculate suggested pricing on the fly (Smart Pricing engine integration)
+  // Calculate suggested pricing on the fly
   useEffect(() => {
     const dist = parseFloat(distanceKm);
     if (!isNaN(dist) && dist > 0) {
@@ -61,6 +69,49 @@ export default function DriverInterface() {
     }
   }, [distanceKm, vehicleType, acAvailable]);
 
+  // Connect Socket.IO and broadcast simulated telemetry when online
+  useEffect(() => {
+    if (!isOnline || !activeRideId) {
+      // Clean up socket and interval when going offline
+      if (telemetryIntervalRef.current) clearInterval(telemetryIntervalRef.current);
+      socketRef.current?.disconnect();
+      socketRef.current = null;
+      return;
+    }
+
+    let cancelled = false;
+    (async () => {
+      const token = await auth().currentUser?.getIdToken();
+      if (cancelled) return;
+
+      const socket = io(API_URL, { auth: { token } });
+      socketRef.current = socket;
+
+      socket.on('connect', () => {
+        socket.emit('ride:join', activeRideId);
+        // Simulated GPS: increments slightly each tick (replace with expo-location for real GPS)
+        let lat = 28.4231, lng = 77.0872;
+        telemetryIntervalRef.current = setInterval(() => {
+          lat += 0.0001 * (Math.random() - 0.5);
+          lng += 0.0002;
+          socket.emit('telemetry:update', {
+            userId: auth().currentUser?.uid,
+            lat, lng,
+            speed: Math.round(30 + Math.random() * 20),
+            bearing: 90,
+            rideId: activeRideId,
+          });
+        }, 5000);
+      });
+    })();
+
+    return () => {
+      cancelled = true;
+      if (telemetryIntervalRef.current) clearInterval(telemetryIntervalRef.current);
+      socketRef.current?.disconnect();
+    };
+  }, [isOnline, activeRideId]);
+
   const toggleDay = (dayIndex: number) => {
     if (selectedDays.includes(dayIndex)) {
       setSelectedDays(selectedDays.filter(d => d !== dayIndex));
@@ -69,17 +120,46 @@ export default function DriverInterface() {
     }
   };
 
-  const handlePostRide = () => {
+  const handlePostRide = async () => {
     if (!destination || !distanceKm) {
       Alert.alert('Error', 'Please fill in the destination and estimated distance.');
       return;
     }
-    
-    Alert.alert(
-      'Ride Offered Successfully! 🚗',
-      `Your commute is scheduled. Mode: ${vehicleType}. ${isRecurring ? `Recurring on selected days.` : ''} Price split set at ₹${customPrice}.`,
-      [{ text: 'OK', onPress: () => setShowPostModal(false) }]
-    );
+    setIsPosting(true);
+    try {
+      const res = await apiFetch('/api/rides', {
+        method: 'POST',
+        body: JSON.stringify({
+          destination,
+          distance_km: parseFloat(distanceKm),
+          vehicle_type: vehicleType,
+          price_per_seat: parseFloat(customPrice) || suggestedPrice || 100,
+          is_recurring: isRecurring,
+          recurring_days: selectedDays,
+          ac_available: acAvailable,
+          music_allowed: musicAllowed,
+          smoking_allowed: smokingAllowed,
+          chattiness,
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        Alert.alert('Failed to Post Ride', err.error || `Server error ${res.status}`);
+        return;
+      }
+      const ride = await res.json();
+      setActiveRideId(String(ride.id || ride.ride_id));
+      setShowPostModal(false);
+      Alert.alert(
+        'Ride Posted! 🚗',
+        `Your commute is live. Ride #${ride.id || ride.ride_id}. Go Online to start broadcasting your location.`,
+        [{ text: 'OK' }]
+      );
+    } catch {
+      Alert.alert('Network Error', 'Could not reach the server. Check your connection.');
+    } finally {
+      setIsPosting(false);
+    }
   };
 
   // Locked State for Passengers trying to access Driver features

@@ -438,4 +438,25 @@ export async function safetyRoutes(fastify: FastifyInstance) {
       return reply.code(500).send({ error: 'Failed to initialize Firebase Storage bucket.' });
     }
   });
+
+  // ── Self-service KYC completion ──────────────────────────────────────────
+  // Called by the mobile onboarding wizard after all 5 steps pass client-side
+  // validation. Sets kyc_status = VERIFIED in Firestore so the AuthGuard and
+  // backend booking gate both recognise the user as verified on the next load.
+  fastify.post('/kyc/complete', { preHandler: [requireAuth] }, async (request, reply) => {
+    const uid = request.user!.id;
+    try {
+      await db.collection('users').doc(uid).set({
+        kyc_status: 'VERIFIED',
+        kyc_completed_at: new Date().toISOString(),
+        onboarded: true,
+      }, { merge: true });
+
+      fastify.log.info({ uid }, 'KYC self-completed via onboarding wizard');
+      return reply.send({ status: 'KYC_VERIFIED', user_id: uid });
+    } catch (err: any) {
+      fastify.log.error(err, 'Failed to complete KYC');
+      return reply.code(500).send({ error: 'Failed to update KYC status.' });
+    }
+  });
 }

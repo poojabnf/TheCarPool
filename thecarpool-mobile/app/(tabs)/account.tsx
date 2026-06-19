@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { StyleSheet, View, Text, TouchableOpacity, ScrollView, Switch, Alert, Linking } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { StyleSheet, View, Text, TouchableOpacity, ScrollView, Switch, Alert, Linking, ActivityIndicator } from 'react-native';
 import { Wallet, CreditCard, Settings, HelpCircle, ChevronRight, LogOut } from 'lucide-react-native';
 import { auth } from '../services/firebase';
 import { apiFetch } from '../services/api';
@@ -28,6 +28,33 @@ export default function AccountInterface() {
   const [savingPref, setSavingPref] = useState(false);
   const [selectedMethod, setSelectedMethod] = useState('wallet');
   const [openFaq, setOpenFaq] = useState<number | null>(null);
+  // Wallet state
+  const [walletBalance, setWalletBalance] = useState<number | null>(null);
+  const [walletLoading, setWalletLoading] = useState(false);
+  const [transactions, setTransactions] = useState<any[]>([]);
+  const [showTopUp, setShowTopUp] = useState(false);
+
+  // Fetch real wallet balance when wallet view opens
+  useEffect(() => {
+    if (activeView !== 'wallet') return;
+    const uid = auth().currentUser?.uid;
+    if (!uid) return;
+    setWalletLoading(true);
+    Promise.all([
+      apiFetch(`/api/payments/wallet/${uid}`).then(r => r.ok ? r.json() : null),
+      apiFetch(`/api/payments/history/${uid}`).then(r => r.ok ? r.json() : []),
+    ]).then(([wallet, history]) => {
+      if (wallet) setWalletBalance(wallet.available_wallet_balance ?? 0);
+      if (Array.isArray(history)) setTransactions(history.slice(0, 5));
+    }).catch(() => {}).finally(() => setWalletLoading(false));
+  }, [activeView]);
+
+  const handleTopUp = () => {
+    // Open Razorpay hosted checkout page in browser — OTA-safe, no native SDK needed
+    Linking.openURL('https://rzp.io/l/thecarpool-topup').catch(() =>
+      Alert.alert('Error', 'Could not open payment page.')
+    );
+  };
 
   const handleLogout = () => {
     Alert.alert('Log Out', 'Are you sure you want to log out?', [
@@ -101,16 +128,35 @@ export default function AccountInterface() {
         <ScrollView contentContainerStyle={{ padding: 20 }}>
           {activeView === 'wallet' && (
             <>
-              <View style={styles.currencyToggle}>
-                <TouchableOpacity style={[styles.currencyBtn, { backgroundColor: '#0f766e' }]}><Text style={{ color: 'white', fontWeight: 'bold' }}>INR (₹)</Text></TouchableOpacity>
-                <TouchableOpacity style={styles.currencyBtn}><Text style={{ color: '#64748b', fontWeight: 'bold' }}>USD ($)</Text></TouchableOpacity>
-                <TouchableOpacity style={styles.currencyBtn}><Text style={{ color: '#64748b', fontWeight: 'bold' }}>EUR (€)</Text></TouchableOpacity>
-              </View>
               <View style={styles.walletCard}>
-                <Text style={styles.walletLabel}>Current Balance</Text>
-                <Text style={styles.walletBalance}>₹1,250.00</Text>
-                <TouchableOpacity style={styles.addFundsBtn}><Text style={styles.addFundsText}>+ Add Funds (UPI/Card)</Text></TouchableOpacity>
+                <Text style={styles.walletLabel}>Available Balance</Text>
+                {walletLoading ? (
+                  <ActivityIndicator color="#10b981" style={{ marginVertical: 8 }} />
+                ) : (
+                  <Text style={styles.walletBalance}>
+                    ₹{walletBalance !== null ? walletBalance.toFixed(2) : '—'}
+                  </Text>
+                )}
+                <TouchableOpacity style={styles.addFundsBtn} onPress={handleTopUp}>
+                  <Text style={styles.addFundsText}>+ Add Funds via Razorpay</Text>
+                </TouchableOpacity>
               </View>
+              {transactions.length > 0 && (
+                <View style={{ marginTop: 16 }}>
+                  <Text style={[styles.sectionHint, { marginBottom: 8 }]}>Recent Transactions</Text>
+                  {transactions.map((tx: any, i: number) => (
+                    <View key={i} style={styles.methodRow}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.methodTitle}>{tx.description || tx.type || 'Transaction'}</Text>
+                        <Text style={styles.methodSub}>{tx.created_at ? new Date(tx.created_at).toLocaleDateString() : ''}</Text>
+                      </View>
+                      <Text style={{ color: tx.amount > 0 ? '#10b981' : '#ef4444', fontWeight: '700' }}>
+                        {tx.amount > 0 ? '+' : ''}₹{Math.abs(tx.amount || 0).toFixed(2)}
+                      </Text>
+                    </View>
+                  ))}
+                </View>
+              )}
             </>
           )}
 
@@ -161,7 +207,7 @@ export default function AccountInterface() {
               </TouchableOpacity>
 
               <View style={styles.settingRow}>
-                <View><Text style={styles.settingTitle}>App Version</Text><Text style={styles.settingSub}>TheCarPool 1.1.0</Text></View>
+                <View><Text style={styles.settingTitle}>App Version</Text><Text style={styles.settingSub}>TheCarPool v1.2.5</Text></View>
               </View>
 
               <TouchableOpacity style={styles.dangerRow} onPress={handleDeleteAccount}>
