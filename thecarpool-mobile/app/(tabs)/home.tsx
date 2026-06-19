@@ -5,7 +5,6 @@ import auth from '@react-native-firebase/auth';
 import { colors } from '../../theme/colors';
 import { apiFetch } from '../services/api';
 import { useAuthStore } from '../store/authStore';
-import auth from '@react-native-firebase/auth';
 
 // apiFetch (from services/api) automatically attaches the Firebase ID token.
 
