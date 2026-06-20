@@ -10,11 +10,16 @@
 
 type Logger = { warn: (msg: string) => void; info: (msg: string) => void };
 
-// Secrets the server cannot function without in production.
-const REQUIRED_IN_PROD = ['FIREBASE_SERVICE_ACCOUNT_KEY'] as const;
+// Secrets the server cannot function without in production. NOTE:
+// FIREBASE_SERVICE_ACCOUNT_KEY is intentionally NOT here — on GCP (Cloud Run)
+// firebase-admin authenticates via Application Default Credentials (the runtime
+// service account), so requiring the env var would crash an otherwise healthy
+// deploy. There are currently no hard-required secrets.
+const REQUIRED_IN_PROD: readonly string[] = [];
 
 // Optional integrations — absence degrades gracefully, we just warn.
 const OPTIONAL = [
+  'FIREBASE_SERVICE_ACCOUNT_KEY', // optional: ADC is used when unset
   'RAZORPAY_KEY_ID',
   'RAZORPAY_KEY_SECRET',
   'RAZORPAY_WEBHOOK_SECRET',
