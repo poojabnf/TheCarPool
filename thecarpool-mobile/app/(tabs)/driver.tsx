@@ -7,6 +7,22 @@ import { apiFetch } from '../services/api';
 import auth from '@react-native-firebase/auth';
 import io from 'socket.io-client';
 import { API_URL } from '../services/api';
+import { useAuthStore } from '../store/authStore';
+
+// Quick-pick departure options — avoids a native date-picker dependency so the
+// feature ships via OTA update.
+function departurePresets(): { label: string; iso: string }[] {
+  const now = Date.now();
+  const tomorrow9 = new Date();
+  tomorrow9.setDate(tomorrow9.getDate() + 1);
+  tomorrow9.setHours(9, 0, 0, 0);
+  return [
+    { label: 'In 30 min', iso: new Date(now + 30 * 60 * 1000).toISOString() },
+    { label: 'In 1 hour', iso: new Date(now + 60 * 60 * 1000).toISOString() },
+    { label: 'In 2 hours', iso: new Date(now + 2 * 60 * 60 * 1000).toISOString() },
+    { label: 'Tomorrow 9 AM', iso: tomorrow9.toISOString() },
+  ];
+}
 
 function Linkedin({ size = 16, color, style }: { size?: number; color?: string; style?: any }) {
   return (
@@ -31,7 +47,9 @@ function Linkedin({ size = 16, color, style }: { size?: number; color?: string; 
 
 export default function DriverInterface() {
   const router = useRouter();
-  const [kycLevel2Complete, setKycLevel2Complete] = useState(false);
+  const userId = auth().currentUser?.uid ?? null;
+  const kycStatus = useAuthStore((s) => s.kycStatus);
+  const kycLevel2Complete = kycStatus === 'verified';
   const [isOnline, setIsOnline] = useState(false);
   const [isPosting, setIsPosting] = useState(false);
   const [activeTab, setActiveTab] = useState<'overview' | 'requests' | 'drive'>('overview');
@@ -40,7 +58,14 @@ export default function DriverInterface() {
 
   // Ride posting form states
   const [showPostModal, setShowPostModal] = useState(false);
+  const [source, setSource] = useState('');
   const [destination, setDestination] = useState('');
+  const [sourceCoords, setSourceCoords] = useState<{ lat: number; lng: number } | null>(null);
+  const [destCoords, setDestCoords] = useState<{ lat: number; lng: number } | null>(null);
+  const [sourceSug, setSourceSug] = useState<any[]>([]);
+  const [destSug, setDestSug] = useState<any[]>([]);
+  const [seatsTotal, setSeatsTotal] = useState(3);
+  const [departure, setDeparture] = useState<{ label: string; iso: string }>(departurePresets()[0]);
   const [distanceKm, setDistanceKm] = useState('');
   const [vehicleType, setVehicleType] = useState<'CAR' | 'BIKE'>('CAR');
   const [isRecurring, setIsRecurring] = useState(false);
@@ -120,22 +145,47 @@ export default function DriverInterface() {
     }
   };
 
+  const searchGeo = async (q: string, setSuggestions: (s: any[]) => void) => {
+    if (q.trim().length < 3) { setSuggestions([]); return; }
+    try {
+      const res = await apiFetch(`/api/geo/search?query=${encodeURIComponent(q)}`);
+      if (!res.ok) { setSuggestions([]); return; }
+      const data = await res.json();
+      setSuggestions(data.results || data.suggestions || (Array.isArray(data) ? data : []));
+    } catch {
+      setSuggestions([]);
+    }
+  };
+
   const handlePostRide = async () => {
-    if (!destination || !distanceKm) {
-      Alert.alert('Error', 'Please fill in the destination and estimated distance.');
+    if (!sourceCoords || !destCoords) {
+      Alert.alert('Select Locations', 'Pick a pickup and destination from the suggestions.');
+      return;
+    }
+    const price = parseFloat(customPrice) || suggestedPrice || 0;
+    if (price <= 0) {
+      Alert.alert('Set a Price', 'Enter the route distance so we can suggest a per-seat price, or set one.');
       return;
     }
     setIsPosting(true);
     try {
+      // GeoJSON LineString coordinates are [lng, lat] pairs.
+      const route_geojson = {
+        type: 'LineString',
+        coordinates: [
+          [sourceCoords.lng, sourceCoords.lat],
+          [destCoords.lng, destCoords.lat],
+        ],
+      };
       const res = await apiFetch('/api/rides', {
         method: 'POST',
         body: JSON.stringify({
-          destination,
-          distance_km: parseFloat(distanceKm),
+          driver_id: userId,
+          route_geojson,
+          seats_total: seatsTotal,
+          price_split: price,
+          departure_time: departure.iso,
           vehicle_type: vehicleType,
-          price_per_seat: parseFloat(customPrice) || suggestedPrice || 100,
-          is_recurring: isRecurring,
-          recurring_days: selectedDays,
           ac_available: acAvailable,
           music_allowed: musicAllowed,
           smoking_allowed: smokingAllowed,
@@ -144,6 +194,17 @@ export default function DriverInterface() {
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
+        if (res.status === 403 && err.error === 'VERIFICATION_REQUIRED') {
+          Alert.alert(
+            'Verification required',
+            'Complete a quick verification to offer a ride.',
+            [
+              { text: 'Not now', style: 'cancel' },
+              { text: 'Verify now', onPress: () => router.push('/onboarding') },
+            ]
+          );
+          return;
+        }
         Alert.alert('Failed to Post Ride', err.error || `Server error ${res.status}`);
         return;
       }
@@ -183,7 +244,7 @@ export default function DriverInterface() {
           </View>
         </View>
 
-        <TouchableOpacity style={styles.upgradeBtn} onPress={() => setKycLevel2Complete(true)}>
+        <TouchableOpacity style={styles.upgradeBtn} onPress={() => router.push('/onboarding')}>
           <Text style={styles.upgradeBtnText}>Complete Verification Now</Text>
         </TouchableOpacity>
       </View>
@@ -275,26 +336,102 @@ export default function DriverInterface() {
             </View>
 
             <View style={styles.formGroup}>
+              <Text style={styles.formLabel}>Pickup (source)</Text>
+              <TextInput
+                style={styles.formInput}
+                placeholder="Where do you start from?"
+                placeholderTextColor={colors.inputPlaceholder}
+                value={source}
+                onChangeText={(t) => { setSource(t); setSourceCoords(null); searchGeo(t, setSourceSug); }}
+              />
+              {sourceSug.length > 0 && (
+                <View style={styles.suggBox}>
+                  {sourceSug.slice(0, 5).map((s, i) => (
+                    <TouchableOpacity key={i} style={styles.suggItem} onPress={() => {
+                      setSource(`${s.place_name}${s.postal_code ? ` (${s.postal_code})` : ''}`);
+                      setSourceCoords({ lat: s.latitude ?? s.lat ?? 0, lng: s.longitude ?? s.lng ?? 0 });
+                      setSourceSug([]);
+                    }}>
+                      <Text style={styles.suggText} numberOfLines={1}>{s.place_name}{s.state_name ? `, ${s.state_name}` : ''}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
+            </View>
+
+            <View style={styles.formGroup}>
               <Text style={styles.formLabel}>Office Destination</Text>
-              <TextInput 
-                style={styles.formInput} 
-                placeholder="e.g. DLF Cyber City Building 10" 
+              <TextInput
+                style={styles.formInput}
+                placeholder="e.g. DLF Cyber City Building 10"
                 placeholderTextColor={colors.inputPlaceholder}
                 value={destination}
-                onChangeText={setDestination}
+                onChangeText={(t) => { setDestination(t); setDestCoords(null); searchGeo(t, setDestSug); }}
               />
+              {destSug.length > 0 && (
+                <View style={styles.suggBox}>
+                  {destSug.slice(0, 5).map((s, i) => (
+                    <TouchableOpacity key={i} style={styles.suggItem} onPress={() => {
+                      setDestination(`${s.place_name}${s.postal_code ? ` (${s.postal_code})` : ''}`);
+                      setDestCoords({ lat: s.latitude ?? s.lat ?? 0, lng: s.longitude ?? s.lng ?? 0 });
+                      setDestSug([]);
+                    }}>
+                      <Text style={styles.suggText} numberOfLines={1}>{s.place_name}{s.state_name ? `, ${s.state_name}` : ''}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
             </View>
 
             <View style={styles.formGroup}>
               <Text style={styles.formLabel}>Route Length (Kms)</Text>
-              <TextInput 
-                style={styles.formInput} 
-                keyboardType="numeric" 
-                placeholder="e.g. 15" 
+              <TextInput
+                style={styles.formInput}
+                keyboardType="numeric"
+                placeholder="e.g. 15 (used for smart pricing)"
                 placeholderTextColor={colors.inputPlaceholder}
                 value={distanceKm}
                 onChangeText={setDistanceKm}
               />
+            </View>
+
+            <View style={styles.formGroup}>
+              <Text style={styles.formLabel}>Seats Offered</Text>
+              <View style={styles.seatRow}>
+                <TouchableOpacity
+                  style={[styles.seatBtn, seatsTotal <= 1 && styles.seatBtnDisabled]}
+                  onPress={() => setSeatsTotal((s) => Math.max(1, s - 1))}
+                  disabled={seatsTotal <= 1}
+                >
+                  <Text style={styles.seatBtnText}>−</Text>
+                </TouchableOpacity>
+                <Text style={styles.seatCount}>{seatsTotal}</Text>
+                <TouchableOpacity
+                  style={[styles.seatBtn, seatsTotal >= 6 && styles.seatBtnDisabled]}
+                  onPress={() => setSeatsTotal((s) => Math.min(6, s + 1))}
+                  disabled={seatsTotal >= 6}
+                >
+                  <Text style={styles.seatBtnText}>+</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            <View style={styles.formGroup}>
+              <Text style={styles.formLabel}>Departure</Text>
+              <View style={styles.depRow}>
+                {departurePresets().map((p) => {
+                  const active = departure.label === p.label;
+                  return (
+                    <TouchableOpacity
+                      key={p.label}
+                      style={[styles.depChip, active && styles.depChipActive]}
+                      onPress={() => setDeparture(p)}
+                    >
+                      <Text style={[styles.depChipText, active && styles.depChipTextActive]}>{p.label}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
             </View>
 
             {/* Vehicle Mode (Togopool Bike vs Car Option Gap) */}
@@ -546,6 +683,19 @@ const styles = StyleSheet.create({
   formLabel: { fontSize: 13, color: colors.text, fontWeight: 'bold', marginBottom: 8 },
   formSubLabel: { fontSize: 11, color: colors.textMuted, marginTop: 2 },
   formInput: { backgroundColor: colors.inputBackground, borderRadius: 8, height: 44, paddingHorizontal: 12, color: colors.text, borderWidth: 1, borderColor: colors.cardBorder },
+  suggBox: { backgroundColor: colors.inputBackground, borderRadius: 8, marginTop: 4, borderWidth: 1, borderColor: colors.cardBorder },
+  suggItem: { paddingVertical: 10, paddingHorizontal: 12, borderBottomWidth: 1, borderBottomColor: colors.cardBorder },
+  suggText: { color: colors.text, fontSize: 13 },
+  seatRow: { flexDirection: 'row', alignItems: 'center' },
+  seatBtn: { width: 40, height: 40, borderRadius: 8, backgroundColor: colors.inputBackground, justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: colors.cardBorder },
+  seatBtnDisabled: { opacity: 0.4 },
+  seatBtnText: { color: colors.text, fontSize: 22, fontWeight: '800' },
+  seatCount: { color: colors.text, fontSize: 18, fontWeight: '800', minWidth: 48, textAlign: 'center' },
+  depRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  depChip: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8, backgroundColor: colors.inputBackground, borderWidth: 1, borderColor: colors.cardBorder },
+  depChipActive: { backgroundColor: colors.primary, borderColor: colors.primary },
+  depChipText: { color: colors.textMuted, fontWeight: '700', fontSize: 12 },
+  depChipTextActive: { color: '#fff' },
   vehicleSelectRow: { flexDirection: 'row', gap: 12 },
   vehicleSelectBtn: { flex: 1, backgroundColor: colors.inputBackground, paddingVertical: 12, borderRadius: 10, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: colors.cardBorder },
   vehicleSelectBtnActive: { backgroundColor: colors.primary, borderColor: colors.primary },

@@ -116,20 +116,56 @@ export async function rideRoutes(fastify: FastifyInstance) {
   
   // 1. Create a ride with LineString geometry
   fastify.post('/', { preHandler: [requireAuth] }, async (request, reply) => {
-    const { 
+    const {
       driver_id, route_geojson, seats_total, price_split, departure_time,
       vehicle_type = 'CAR', music_allowed = true, smoking_allowed = false,
       chattiness = 'MEDIUM', ac_available = true
     } = request.body as CreateRideBody;
 
+    const uid = String(request.user!.id);
+    // The driver always offers under their own identity. A client-supplied
+    // driver_id is only honoured if it resolves to the caller's own profile.
+    const requestedDriverId = driver_id != null ? String(driver_id) : uid;
+
+    // Required ride fields.
+    if (seats_total == null || price_split == null || !departure_time) {
+      return reply.code(400).send({ error: 'seats_total, price_split and departure_time are required.' });
+    }
+    if (Number(seats_total) <= 0 || Number(price_split) < 0) {
+      return reply.code(400).send({ error: 'seats_total must be positive and price_split non-negative.' });
+    }
+
     try {
-      // Verify user is driver
-      const driverDoc = await getDriverDoc(driver_id);
+      // Resolve the caller's driver profile, auto-provisioning one on first
+      // offer. Any KYC-verified user may become a driver; we never provision a
+      // profile for a different user's id.
+      let driverDoc = await getDriverDoc(requestedDriverId);
+      let resolvedDriverId = requestedDriverId;
+
       if (!driverDoc.exists) {
-        return reply.code(404).send({ error: 'Driver profile not found.' });
+        if (requestedDriverId !== uid) {
+          return reply.code(403).send({ error: 'Forbidden: You do not own this driver profile.' });
+        }
+        const userDoc = await db.collection('users').doc(uid).get();
+        if (userDoc.data()?.kyc_status !== 'VERIFIED') {
+          return reply.code(403).send({
+            error: 'VERIFICATION_REQUIRED',
+            message: 'Complete identity verification to offer a ride.',
+          });
+        }
+        // Provision a driver profile keyed on the user's uid.
+        await db.collection('drivers').doc(uid).set({
+          user_id: uid,
+          vehicle_type,
+          is_ev: false,
+          created_at: new Date().toISOString(),
+        }, { merge: true });
+        driverDoc = await db.collection('drivers').doc(uid).get();
+        resolvedDriverId = uid;
       }
+
       const driverData = driverDoc.data()!;
-      if (String(driverData.user_id) !== String(request.user?.id) && String(driverData.user_id) !== `user_${request.user?.id}`) {
+      if (String(driverData.user_id) !== uid && String(driverData.user_id) !== `user_${uid}`) {
         return reply.code(403).send({ error: 'Forbidden: You do not own this driver profile.' });
       }
 
@@ -151,7 +187,8 @@ export async function rideRoutes(fastify: FastifyInstance) {
       const rideId = 'ride_' + Math.random().toString(36).substring(7);
       const newRide = {
         id: rideId,
-        driver_id: String(driver_id),
+        driver_id: String(resolvedDriverId),
+        driver_uid: uid, // used by settlement/cancellation to credit the driver
         route_coords: routeCoords,
         seats_total: Number(seats_total),
         seats_available: Number(seats_total),
