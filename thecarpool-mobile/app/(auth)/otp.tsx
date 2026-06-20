@@ -18,13 +18,12 @@ export default function OtpScreen() {
   const router = useRouter();
   const params = useLocalSearchParams<{ phone: string; verificationId: string }>();
   const phone = params.phone ?? '';
-  const verificationId = params.verificationId ?? '';
+  const [verificationId, setVerificationId] = useState(params.verificationId ?? '');
 
   const [otp, setOtp] = useState<string[]>(Array(OTP_LENGTH).fill(''));
   const [countdown, setCountdown] = useState(RESEND_SECONDS);
   const [isVerifying, setIsVerifying] = useState(false);
   const [error, setError] = useState('');
-  const [autoFilled, setAutoFilled] = useState(false);
   const inputs = useRef<(TextInput | null)[]>([]);
   const shakeAnim = useRef(new Animated.Value(0)).current;
   const successScale = useRef(new Animated.Value(0)).current;
@@ -37,21 +36,12 @@ export default function OtpScreen() {
     return () => clearInterval(timer);
   }, []);
 
-  // Auto-fill simulation after 3s (demo)
-  useEffect(() => {
-    const t = setTimeout(() => {
-      const demo = ['1', '2', '3', '4', '5', '6'];
-      setOtp(demo);
-      setAutoFilled(true);
-    }, 3000);
-    return () => clearTimeout(t);
-  }, []);
-
-  // Auto-verify once all digits filled
+  // Auto-verify once the user has entered all digits.
   useEffect(() => {
     if (otp.every((d) => d !== '')) {
       handleVerify();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [otp]);
 
   const handleVerify = async () => {
@@ -102,12 +92,20 @@ export default function OtpScreen() {
     }
   };
 
-  const handleResend = () => {
+  const handleResend = async () => {
     if (countdown > 0) return;
     setOtp(Array(OTP_LENGTH).fill(''));
-    setCountdown(RESEND_SECONDS);
     setError('');
     inputs.current[0]?.focus();
+    try {
+      // Actually re-request the OTP and swap in the fresh verificationId.
+      const confirmation = await auth().signInWithPhoneNumber(`+91${phone}`);
+      setVerificationId(confirmation.verificationId ?? '');
+      setCountdown(RESEND_SECONDS);
+    } catch (err: any) {
+      console.error('OTP resend failed:', err);
+      setError(err?.message ?? 'Could not resend OTP. Please try again.');
+    }
   };
 
   const shake = () => {
@@ -147,12 +145,6 @@ export default function OtpScreen() {
           We sent a 6-digit code to{'\n'}
           <Text style={styles.phoneHighlight}>+91 {phone}</Text>
         </Text>
-
-        {autoFilled && !isVerifying && (
-          <View style={styles.autofillBadge}>
-            <Text style={styles.autofillText}>✨ OTP auto-detected</Text>
-          </View>
-        )}
 
         {/* OTP boxes */}
         <Animated.View
