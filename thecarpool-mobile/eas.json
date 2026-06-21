@@ -27,6 +27,16 @@
       },
       "channel": "preview"
     },
+    "simulator": {
+      "ios": {
+        "simulator": true,
+        "image": "latest"
+      },
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://thecarpool-backend-953521578640.asia-south1.run.app"
+      },
+      "channel": "simulator"
+    },
     "production": {
       "ios": {
         "image": "latest",
@@ -47,6 +57,9 @@
       "android": {
         "serviceAccountKeyPath": "./google-play-service-account.json",
         "track": "internal"
+      },
+      "ios": {
+        "ascAppId": "6772426075"
       }
     }
   }
