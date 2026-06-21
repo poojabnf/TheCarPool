@@ -1,6 +1,7 @@
 import { FastifyInstance } from 'fastify';
 import { db, redisClient } from '../server';
 import { requireAuth } from '../middleware/auth';
+import { searchPlaces } from '../lib/maps';
 
 interface SearchQuery {
   query?: string;
@@ -26,6 +27,26 @@ export async function geoRoutes(fastify: FastifyInstance) {
         if (cached) {
           return reply.send(JSON.parse(cached));
         }
+      }
+
+      // Prefer real Google Places results (coords included). Falls back to the
+      // local postal_codes dataset when the Maps key lacks the Places API.
+      const places = await searchPlaces(query.trim());
+      if (places && places.length > 0) {
+        const mapped = places.map((p) => ({
+          id: p.place_id || p.place_name,
+          place_name: p.place_name,
+          state_name: p.address, // shown after the name in the client suggestion row
+          postal_code: '',
+          longitude: p.longitude,
+          latitude: p.latitude,
+        }));
+        if (redisClient.isOpen) {
+          redisClient.setEx(cacheKey, 300, JSON.stringify(mapped)).catch((err) => {
+            fastify.log.error('Redis geo cache write failed:', err);
+          });
+        }
+        return reply.send(mapped);
       }
 
       const snap = await db.collection('postal_codes').get();

@@ -8,6 +8,44 @@ export function isMapsConfigured(): boolean {
   return Boolean(process.env.GOOGLE_MAPS_API_KEY);
 }
 
+export interface PlaceResult {
+  place_name: string;
+  address: string;
+  latitude: number;
+  longitude: number;
+  place_id?: string;
+}
+
+/**
+ * Look up real places by free-text query via the Google Places Text Search API.
+ * Returns results with coordinates in a single call (so the client gets usable
+ * lat/lng immediately). Returns null on any failure (no key, REQUEST_DENIED,
+ * network error) so callers can fall back to the local dataset.
+ */
+export async function searchPlaces(query: string): Promise<PlaceResult[] | null> {
+  if (!isMapsConfigured()) return null;
+  try {
+    const url =
+      'https://maps.googleapis.com/maps/api/place/textsearch/json' +
+      `?query=${encodeURIComponent(query)}&region=in&key=${process.env.GOOGLE_MAPS_API_KEY}`;
+    const res = await fetch(url);
+    if (!res.ok) return null;
+    const data: any = await res.json();
+    // OK / ZERO_RESULTS are usable; anything else (REQUEST_DENIED, OVER_QUERY_LIMIT)
+    // means the key lacks Places API — signal a fallback.
+    if (data.status !== 'OK' && data.status !== 'ZERO_RESULTS') return null;
+    return (data.results || []).slice(0, 8).map((r: any) => ({
+      place_name: r.name,
+      address: r.formatted_address || '',
+      latitude: r.geometry?.location?.lat ?? 0,
+      longitude: r.geometry?.location?.lng ?? 0,
+      place_id: r.place_id,
+    }));
+  } catch {
+    return null;
+  }
+}
+
 function haversineMeters(a: LatLng, b: LatLng): number {
   const R = 6371e3;
   const p1 = (a.lat * Math.PI) / 180;
