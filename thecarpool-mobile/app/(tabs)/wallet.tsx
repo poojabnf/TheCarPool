@@ -1,12 +1,20 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, RefreshControl, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, RefreshControl, ActivityIndicator, Modal, TextInput, Linking, Alert } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import auth from '@react-native-firebase/auth';
-import { ArrowDownLeft, ArrowUpRight } from 'lucide-react-native';
+import { ArrowDownLeft, ArrowUpRight, Smartphone, Landmark, CreditCard, Wallet as WalletIcon, X, Check } from 'lucide-react-native';
 import { apiFetch } from '../services/api';
 import { c, font, radius, space, shadowSm } from '../../theme/tokens';
 
 interface Txn { id: string; type: string; label: string; amount: number; status: string; at: string | null; }
+
+const PAY_METHODS = [
+  { key: 'upi', title: 'UPI', sub: 'GPay, PhonePe, Paytm & more', Icon: Smartphone },
+  { key: 'netbanking', title: 'Net Banking', sub: 'All major banks', Icon: Landmark },
+  { key: 'card', title: 'Credit / Debit Card', sub: 'Visa, Mastercard, RuPay, Amex', Icon: CreditCard },
+  { key: 'wallet', title: 'Wallet', sub: 'Amazon Pay, Mobikwik & more', Icon: WalletIcon },
+] as const;
+const QUICK_AMOUNTS = [200, 500, 1000, 2000];
 
 export default function WalletScreen() {
   const insets = useSafeAreaInsets();
@@ -14,6 +22,10 @@ export default function WalletScreen() {
   const [balance, setBalance] = useState<number | null>(null);
   const [txns, setTxns] = useState<Txn[]>([]);
   const [loading, setLoading] = useState(true);
+  const [showAdd, setShowAdd] = useState(false);
+  const [amount, setAmount] = useState('');
+  const [method, setMethod] = useState<string>('upi');
+  const [paying, setPaying] = useState(false);
 
   const load = useCallback(async () => {
     if (!uid) { setLoading(false); return; }
@@ -30,6 +42,32 @@ export default function WalletScreen() {
 
   useEffect(() => { load(); }, [load]);
 
+  const proceedAdd = async () => {
+    const amt = parseFloat(amount);
+    if (!amt || amt <= 0) { Alert.alert('Enter an amount', 'Please enter how much you want to add.'); return; }
+    setPaying(true);
+    try {
+      // Create a Razorpay order on the backend (once Razorpay keys are set).
+      const res = await apiFetch('/api/payments/order', {
+        method: 'POST',
+        body: JSON.stringify({ amount: amt, currency: 'INR' }),
+      });
+      // In-app native checkout needs the Razorpay SDK (added in a native build);
+      // for now route to the secure Razorpay hosted page to complete payment.
+      const url = `https://rzp.io/l/thecarpool-topup`;
+      Linking.openURL(url).catch(() => Alert.alert('Error', 'Could not open the payment page.'));
+      setShowAdd(false);
+      setAmount('');
+      if (res.status === 503) {
+        // expected until Razorpay keys are configured server-side
+      }
+    } catch {
+      Alert.alert('Payment failed', 'Network error. Please try again.');
+    } finally {
+      setPaying(false);
+    }
+  };
+
   return (
     <ScrollView
       style={styles.screen}
@@ -45,7 +83,7 @@ export default function WalletScreen() {
           ? <ActivityIndicator color={c.accent} style={{ alignSelf: 'flex-start', marginVertical: 8 }} />
           : <Text style={styles.balanceValue}>₹{(balance ?? 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</Text>}
         <View style={styles.actionRow}>
-          <TouchableOpacity style={[styles.actionBtn, styles.actionPrimary]} activeOpacity={0.85}>
+          <TouchableOpacity style={[styles.actionBtn, styles.actionPrimary]} activeOpacity={0.85} onPress={() => setShowAdd(true)}>
             <ArrowDownLeft color={c.actionPrimaryText} size={16} strokeWidth={2.4} />
             <Text style={styles.actionPrimaryText}>Add money</Text>
           </TouchableOpacity>
@@ -79,6 +117,56 @@ export default function WalletScreen() {
           </View>
         );
       })}
+
+      <Modal visible={showAdd} animationType="slide" transparent onRequestClose={() => setShowAdd(false)}>
+        <View style={styles.modalBg}>
+          <View style={[styles.sheet, { paddingBottom: insets.bottom + space.lg }]}>
+            <View style={styles.sheetHeader}>
+              <Text style={styles.sheetTitle}>Add money</Text>
+              <TouchableOpacity onPress={() => setShowAdd(false)}><X color={c.textTertiary} size={22} /></TouchableOpacity>
+            </View>
+
+            <Text style={styles.label}>Amount</Text>
+            <View style={styles.amountRow}>
+              <Text style={styles.rupee}>₹</Text>
+              <TextInput
+                style={styles.amountInput}
+                value={amount}
+                onChangeText={(t) => setAmount(t.replace(/[^0-9]/g, ''))}
+                keyboardType="number-pad"
+                placeholder="0"
+                placeholderTextColor={c.textDisabled}
+              />
+            </View>
+            <View style={styles.quickRow}>
+              {QUICK_AMOUNTS.map((q) => (
+                <TouchableOpacity key={q} style={styles.quickChip} onPress={() => setAmount(String(q))}>
+                  <Text style={styles.quickText}>₹{q}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            <Text style={[styles.label, { marginTop: space.lg }]}>Pay using</Text>
+            {PAY_METHODS.map((m) => {
+              const on = method === m.key;
+              return (
+                <TouchableOpacity key={m.key} style={[styles.methodRow, on && styles.methodRowOn]} onPress={() => setMethod(m.key)} activeOpacity={0.85}>
+                  <View style={styles.methodIcon}><m.Icon color={c.textSecondary} size={18} /></View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.methodTitle}>{m.title}</Text>
+                    <Text style={styles.methodSub}>{m.sub}</Text>
+                  </View>
+                  <View style={[styles.radio, on && styles.radioOn]}>{on && <Check color="#fff" size={12} strokeWidth={3} />}</View>
+                </TouchableOpacity>
+              );
+            })}
+
+            <TouchableOpacity style={[styles.proceed, (!amount || paying) && styles.proceedDisabled]} onPress={proceedAdd} disabled={!amount || paying} activeOpacity={0.9}>
+              {paying ? <ActivityIndicator color="#fff" /> : <Text style={styles.proceedText}>Add {amount ? `₹${amount}` : 'money'}</Text>}
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </ScrollView>
   );
 }
@@ -107,4 +195,26 @@ const styles = StyleSheet.create({
   txnLabel: { fontFamily: font.sansSemibold, fontSize: 14, color: c.textPrimary },
   txnMeta: { fontFamily: font.sans, fontSize: 12, color: c.textTertiary, marginTop: 1 },
   txnAmount: { fontFamily: font.monoBold, fontSize: 14 },
+
+  modalBg: { flex: 1, backgroundColor: 'rgba(11,15,20,0.5)', justifyContent: 'flex-end' },
+  sheet: { backgroundColor: c.bgBase, borderTopLeftRadius: radius.xl, borderTopRightRadius: radius.xl, padding: space.xl, maxHeight: '90%' },
+  sheetHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: space.lg },
+  sheetTitle: { fontFamily: font.sansBold, fontSize: 18, color: c.textPrimary },
+  label: { fontFamily: font.sansSemibold, fontSize: 12.5, color: c.textSecondary, marginBottom: 8 },
+  amountRow: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: c.surfaceSunken, borderRadius: radius.md, paddingHorizontal: 16, height: 56, borderWidth: 1, borderColor: c.borderSubtle },
+  rupee: { fontFamily: font.monoBold, fontSize: 24, color: c.textTertiary },
+  amountInput: { flex: 1, fontFamily: font.monoBold, fontSize: 24, color: c.textPrimary, padding: 0 },
+  quickRow: { flexDirection: 'row', gap: 8, marginTop: space.sm },
+  quickChip: { flex: 1, height: 36, borderRadius: radius.sm, alignItems: 'center', justifyContent: 'center', backgroundColor: c.surfaceCard, borderWidth: 1, borderColor: c.borderSubtle },
+  quickText: { fontFamily: font.sansSemibold, fontSize: 13, color: c.textSecondary },
+  methodRow: { flexDirection: 'row', alignItems: 'center', gap: space.md, backgroundColor: c.surfaceCard, borderRadius: radius.md, padding: space.md, marginBottom: space.sm, borderWidth: 1.5, borderColor: c.borderSubtle },
+  methodRowOn: { borderColor: c.go },
+  methodIcon: { width: 38, height: 38, borderRadius: radius.sm, backgroundColor: c.surfaceSunken, alignItems: 'center', justifyContent: 'center' },
+  methodTitle: { fontFamily: font.sansSemibold, fontSize: 14.5, color: c.textPrimary },
+  methodSub: { fontFamily: font.sans, fontSize: 12, color: c.textTertiary, marginTop: 1 },
+  radio: { width: 22, height: 22, borderRadius: 11, borderWidth: 1.5, borderColor: c.borderStrong, alignItems: 'center', justifyContent: 'center' },
+  radioOn: { backgroundColor: c.go, borderColor: c.go },
+  proceed: { backgroundColor: c.go, borderRadius: radius.md, height: 54, alignItems: 'center', justifyContent: 'center', marginTop: space.lg },
+  proceedDisabled: { opacity: 0.5 },
+  proceedText: { fontFamily: font.sansBold, fontSize: 16, color: '#fff' },
 });

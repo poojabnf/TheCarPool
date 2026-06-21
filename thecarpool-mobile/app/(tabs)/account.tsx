@@ -1,9 +1,9 @@
-import React, { useState } from 'react';
-import { StyleSheet, View, Text, TouchableOpacity, ScrollView, Switch, Alert, Linking } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { StyleSheet, View, Text, TouchableOpacity, ScrollView, Switch, Alert, Linking, ActivityIndicator } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
-  CreditCard, Settings, HelpCircle, ChevronRight, LogOut, Newspaper, ShieldCheck, Leaf,
+  CreditCard, Settings, HelpCircle, ChevronRight, LogOut, Newspaper, ShieldCheck, Leaf, Receipt,
 } from 'lucide-react-native';
 import { auth } from '../services/firebase';
 import { apiFetch } from '../services/api';
@@ -30,9 +30,23 @@ export default function AccountInterface() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { kycStatus, userProfile } = useAuthStore();
-  const [view, setView] = useState<'menu' | 'settings' | 'help'>('menu');
+  const [view, setView] = useState<'menu' | 'settings' | 'help' | 'history'>('menu');
   const [notifications, setNotifications] = useState(true);
   const [openFaq, setOpenFaq] = useState<number | null>(null);
+  const [history, setHistory] = useState<any[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+
+  useEffect(() => {
+    if (view !== 'history') return;
+    const uid = auth().currentUser?.uid;
+    if (!uid) return;
+    setHistoryLoading(true);
+    apiFetch(`/api/payments/history/${uid}`)
+      .then((r) => (r.ok ? r.json() : { transactions: [] }))
+      .then((d) => setHistory((d.transactions || []).filter((t: any) => t.type === 'DEBIT' || /ride/i.test(t.label || ''))))
+      .catch(() => {})
+      .finally(() => setHistoryLoading(false));
+  }, [view]);
 
   const user = auth().currentUser;
   const name = userProfile?.name || user?.displayName || 'TheCarPool User';
@@ -72,7 +86,7 @@ export default function AccountInterface() {
       <View style={[styles.screen, { paddingTop: insets.top + space.sm }]}>
         <View style={styles.subHeader}>
           <TouchableOpacity onPress={() => setView('menu')}><Text style={styles.back}>← Back</Text></TouchableOpacity>
-          <Text style={styles.subTitle}>{view === 'help' ? 'Help & Support' : 'Settings'}</Text>
+          <Text style={styles.subTitle}>{view === 'help' ? 'Help & Support' : view === 'history' ? 'Booking history' : 'Settings'}</Text>
           <View style={{ width: 50 }} />
         </View>
         <ScrollView contentContainerStyle={{ padding: space.xl }}>
@@ -93,8 +107,24 @@ export default function AccountInterface() {
                 <View style={{ flex: 1 }}><Text style={styles.rowTitle}>Contact support</Text><Text style={styles.rowSub}>{SUPPORT_EMAIL}</Text></View>
                 <ChevronRight color={c.textDisabled} size={18} />
               </TouchableOpacity>
-              <View style={styles.row}><View style={{ flex: 1 }}><Text style={styles.rowTitle}>App version</Text><Text style={styles.rowSub}>TheCarPool v1.2.5</Text></View></View>
+              <View style={styles.row}><View style={{ flex: 1 }}><Text style={styles.rowTitle}>App version</Text><Text style={styles.rowSub}>TheCarPool v1.2.6</Text></View></View>
               <TouchableOpacity style={styles.dangerRow} onPress={deleteAccount}><Text style={styles.dangerText}>Delete my account</Text></TouchableOpacity>
+            </>
+          )}
+          {view === 'history' && (
+            <>
+              {historyLoading && <ActivityIndicator color={c.accent} style={{ marginTop: 20 }} />}
+              {!historyLoading && history.length === 0 && <Text style={styles.rowSub}>No bookings yet. Your past rides and payments will appear here.</Text>}
+              {history.map((t, i) => (
+                <View key={t.id || i} style={styles.histRow}>
+                  <View style={styles.histIcon}><Receipt color={c.textSecondary} size={16} /></View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.rowTitle}>{t.label || 'Ride payment'}</Text>
+                    <Text style={styles.rowSub}>{t.at ? new Date(t.at).toLocaleString() : (t.status || '')}</Text>
+                  </View>
+                  <Text style={styles.histAmount}>₹{Math.abs(t.amount || 0).toFixed(2)}</Text>
+                </View>
+              ))}
             </>
           )}
           {view === 'help' && (
@@ -151,6 +181,7 @@ export default function AccountInterface() {
 
       <View style={styles.group}>
         <MenuRow icon={<CreditCard color={c.textSecondary} size={20} />} title="Wallet & payments" sub="Balance, UPI, cards" onPress={() => router.push('/(tabs)/wallet')} />
+        <MenuRow icon={<Receipt color={c.textSecondary} size={20} />} title="Booking history" sub="Your past rides & payments" onPress={() => setView('history')} />
         <MenuRow icon={<Newspaper color={c.textSecondary} size={20} />} title="Classifieds" sub="Community marketplace" onPress={() => router.push('/(tabs)/classifieds')} last />
       </View>
       <View style={styles.group}>
@@ -216,6 +247,9 @@ const styles = StyleSheet.create({
   row: { flexDirection: 'row', alignItems: 'center', backgroundColor: c.surfaceCard, padding: space.md, borderRadius: radius.md, marginBottom: space.sm, borderWidth: 1, borderColor: c.borderSubtle },
   rowTitle: { fontFamily: font.sansSemibold, fontSize: 14.5, color: c.textPrimary },
   rowSub: { fontFamily: font.sans, fontSize: 12, color: c.textTertiary, marginTop: 1 },
+  histRow: { flexDirection: 'row', alignItems: 'center', gap: space.md, backgroundColor: c.surfaceCard, padding: space.md, borderRadius: radius.md, marginBottom: space.sm, borderWidth: 1, borderColor: c.borderSubtle },
+  histIcon: { width: 36, height: 36, borderRadius: radius.sm, backgroundColor: c.surfaceSunken, alignItems: 'center', justifyContent: 'center' },
+  histAmount: { fontFamily: font.monoBold, fontSize: 14, color: c.textPrimary },
   dangerRow: { backgroundColor: c.dangerSoft, padding: space.md, borderRadius: radius.md, alignItems: 'center', marginTop: space.sm },
   dangerText: { fontFamily: font.sansBold, fontSize: 14.5, color: c.danger },
 
