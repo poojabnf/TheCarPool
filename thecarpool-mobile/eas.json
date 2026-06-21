@@ -1,6 +1,7 @@
 {
   "cli": {
-    "version": ">= 9.0.0"
+    "version": ">= 9.0.0",
+    "appVersionSource": "local"
   },
   "build": {
     "development": {
@@ -38,6 +39,7 @@
       "channel": "simulator"
     },
     "production": {
+      "autoIncrement": true,
       "ios": {
         "image": "latest",
         "distribution": "store"
