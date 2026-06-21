@@ -1,21 +1,16 @@
 import React, { useState, useRef, useEffect } from 'react';
-import {
-  View,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  StyleSheet,
-  StatusBar,
-  Animated,
-} from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, StatusBar, Animated } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import auth from '@react-native-firebase/auth';
+import { c, font, radius, space } from '../../theme/tokens';
 
 const OTP_LENGTH = 6;
 const RESEND_SECONDS = 30;
 
 export default function OtpScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const params = useLocalSearchParams<{ phone: string; verificationId: string }>();
   const phone = params.phone ?? '';
   const [verificationId, setVerificationId] = useState(params.verificationId ?? '');
@@ -25,22 +20,15 @@ export default function OtpScreen() {
   const [isVerifying, setIsVerifying] = useState(false);
   const [error, setError] = useState('');
   const inputs = useRef<(TextInput | null)[]>([]);
-  const shakeAnim = useRef(new Animated.Value(0)).current;
-  const successScale = useRef(new Animated.Value(0)).current;
+  const shake = useRef(new Animated.Value(0)).current;
 
-  // Countdown timer
   useEffect(() => {
-    const timer = setInterval(() => {
-      setCountdown((c) => (c > 0 ? c - 1 : 0));
-    }, 1000);
-    return () => clearInterval(timer);
+    const t = setInterval(() => setCountdown((c) => (c > 0 ? c - 1 : 0)), 1000);
+    return () => clearInterval(t);
   }, []);
 
-  // Auto-verify once the user has entered all digits.
   useEffect(() => {
-    if (otp.every((d) => d !== '')) {
-      handleVerify();
-    }
+    if (otp.every((d) => d !== '')) handleVerify();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [otp]);
 
@@ -49,47 +37,33 @@ export default function OtpScreen() {
     if (code.length < OTP_LENGTH) return;
     setIsVerifying(true);
     setError('');
-
     try {
-      // Create credential from verification ID and code
-      const credential = auth.PhoneAuthProvider.credential(verificationId, code);
-      // Sign in with Firebase
-      await auth().signInWithCredential(credential);
-      
-      Animated.spring(successScale, {
-        toValue: 1,
-        useNativeDriver: true,
-        tension: 100,
-      }).start();
-      // Notice we do NOT manually route to /(tabs) here.
-      // _layout.tsx has an auth listener that detects the login and handles routing!
-    } catch (err: any) {
-      console.error('OTP verification failed:', err);
-      setError('Invalid OTP code. Please try again.');
+      await auth().signInWithCredential(auth.PhoneAuthProvider.credential(verificationId, code));
+      // _layout AuthGuard redirects on success.
+    } catch {
+      setError('Invalid code. Please try again.');
       setIsVerifying(false);
-      // clear boxes
       setOtp(Array(OTP_LENGTH).fill(''));
       inputs.current[0]?.focus();
+      Animated.sequence([
+        Animated.timing(shake, { toValue: 8, duration: 70, useNativeDriver: true }),
+        Animated.timing(shake, { toValue: -8, duration: 70, useNativeDriver: true }),
+        Animated.timing(shake, { toValue: 0, duration: 70, useNativeDriver: true }),
+      ]).start();
     }
   };
 
-  const handleChange = (value: string, index: number) => {
+  const handleChange = (value: string, i: number) => {
     if (!/^\d*$/.test(value)) return;
-    const newOtp = [...otp];
-    newOtp[index] = value.slice(-1);
-    setOtp(newOtp);
+    const next = [...otp];
+    next[i] = value.slice(-1);
+    setOtp(next);
     setError('');
-
-    // Auto-advance
-    if (value && index < OTP_LENGTH - 1) {
-      inputs.current[index + 1]?.focus();
-    }
+    if (value && i < OTP_LENGTH - 1) inputs.current[i + 1]?.focus();
   };
 
-  const handleKeyPress = (e: any, index: number) => {
-    if (e.nativeEvent.key === 'Backspace' && !otp[index] && index > 0) {
-      inputs.current[index - 1]?.focus();
-    }
+  const handleKey = (e: any, i: number) => {
+    if (e.nativeEvent.key === 'Backspace' && !otp[i] && i > 0) inputs.current[i - 1]?.focus();
   };
 
   const handleResend = async () => {
@@ -98,103 +72,52 @@ export default function OtpScreen() {
     setError('');
     inputs.current[0]?.focus();
     try {
-      // Actually re-request the OTP and swap in the fresh verificationId.
       const confirmation = await auth().signInWithPhoneNumber(`+91${phone}`);
       setVerificationId(confirmation.verificationId ?? '');
       setCountdown(RESEND_SECONDS);
     } catch (err: any) {
-      console.error('OTP resend failed:', err);
-      setError(err?.message ?? 'Could not resend OTP. Please try again.');
+      setError(err?.message ?? 'Could not resend OTP.');
     }
   };
 
-  const shake = () => {
-    Animated.sequence([
-      Animated.timing(shakeAnim, { toValue: 10, duration: 80, useNativeDriver: true }),
-      Animated.timing(shakeAnim, { toValue: -10, duration: 80, useNativeDriver: true }),
-      Animated.timing(shakeAnim, { toValue: 8, duration: 80, useNativeDriver: true }),
-      Animated.timing(shakeAnim, { toValue: 0, duration: 80, useNativeDriver: true }),
-    ]).start();
-  };
-
   return (
-    <View style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor="#080c14" />
-
-      {/* Back button */}
-      <TouchableOpacity
-        style={styles.backBtn}
-        onPress={() => (router.canGoBack() ? router.back() : router.replace('/(auth)/login'))}
-      >
-        <Text style={styles.backBtnText}>← Back</Text>
+    <View style={[styles.screen, { paddingTop: insets.top + space.sm }]}>
+      <StatusBar barStyle="dark-content" backgroundColor={c.bgApp} />
+      <TouchableOpacity style={styles.back} onPress={() => (router.canGoBack() ? router.back() : router.replace('/(auth)/login'))}>
+        <Text style={styles.backText}>← Back</Text>
       </TouchableOpacity>
 
-      {/* Success overlay */}
-      <Animated.View
-        style={[styles.successOverlay, { transform: [{ scale: successScale }] }]}
-        pointerEvents="none"
-      >
-        <Text style={styles.successEmoji}>✅</Text>
-        <Text style={styles.successText}>Verified!</Text>
-      </Animated.View>
+      <View style={styles.body}>
+        <Text style={styles.h1}>Enter the code</Text>
+        <Text style={styles.sub}>We sent a 6-digit code to{'\n'}<Text style={styles.phone}>+91 {phone}</Text></Text>
 
-      <View style={styles.content}>
-        {/* Header */}
-        <View style={styles.iconCircle}>
-          <Text style={styles.iconEmoji}>📱</Text>
-        </View>
-        <Text style={styles.title}>Enter OTP</Text>
-        <Text style={styles.subtitle}>
-          We sent a 6-digit code to{'\n'}
-          <Text style={styles.phoneHighlight}>+91 {phone}</Text>
-        </Text>
-
-        {/* OTP boxes */}
-        <Animated.View
-          style={[styles.otpRow, { transform: [{ translateX: shakeAnim }] }]}
-        >
-          {Array(OTP_LENGTH)
-            .fill(0)
-            .map((_, i) => (
-              <TextInput
-                key={i}
-                ref={(el) => { inputs.current[i] = el; }}
-                style={[
-                  styles.otpBox,
-                  otp[i] ? styles.otpBoxFilled : null,
-                  error ? styles.otpBoxError : null,
-                ]}
-                value={otp[i]}
-                onChangeText={(v) => handleChange(v, i)}
-                onKeyPress={(e) => handleKeyPress(e, i)}
-                keyboardType="number-pad"
-                maxLength={1}
-                selectTextOnFocus
-                caretHidden
-              />
-            ))}
+        <Animated.View style={[styles.otpRow, { transform: [{ translateX: shake }] }]}>
+          {Array(OTP_LENGTH).fill(0).map((_, i) => (
+            <TextInput
+              key={i}
+              ref={(el) => { inputs.current[i] = el; }}
+              style={[styles.box, otp[i] ? styles.boxFilled : null, error ? styles.boxError : null]}
+              value={otp[i]}
+              onChangeText={(v) => handleChange(v, i)}
+              onKeyPress={(e) => handleKey(e, i)}
+              keyboardType="number-pad" maxLength={1} selectTextOnFocus caretHidden
+            />
+          ))}
         </Animated.View>
+        {error ? <Text style={styles.error}>{error}</Text> : null}
 
-        {error ? <Text style={styles.errorText}>{error}</Text> : null}
-
-        {/* Verify button */}
         <TouchableOpacity
-          style={[styles.verifyBtn, isVerifying && styles.verifyBtnLoading]}
-          onPress={handleVerify}
-          disabled={isVerifying || otp.some((d) => !d)}
-          activeOpacity={0.8}
+          style={[styles.verifyBtn, (isVerifying || otp.some((d) => !d)) && styles.disabled]}
+          onPress={handleVerify} disabled={isVerifying || otp.some((d) => !d)} activeOpacity={0.9}
         >
-          <Text style={styles.verifyBtnText}>
-            {isVerifying ? 'Verifying…' : 'Verify & Continue →'}
-          </Text>
+          <Text style={styles.verifyText}>{isVerifying ? 'Verifying…' : 'Verify & continue'}</Text>
         </TouchableOpacity>
 
-        {/* Resend */}
         <View style={styles.resendRow}>
-          <Text style={styles.resendLabel}>Didn't receive it? </Text>
+          <Text style={styles.resendLabel}>Didn't get it? </Text>
           <TouchableOpacity onPress={handleResend} disabled={countdown > 0}>
-            <Text style={[styles.resendLink, countdown > 0 && styles.resendLinkDisabled]}>
-              {countdown > 0 ? `Resend in ${countdown}s` : 'Resend OTP'}
+            <Text style={[styles.resendLink, countdown > 0 && styles.resendDisabled]}>
+              {countdown > 0 ? `Resend in ${countdown}s` : 'Resend code'}
             </Text>
           </TouchableOpacity>
         </View>
@@ -204,155 +127,23 @@ export default function OtpScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#080c14',
-  },
-  backBtn: {
-    position: 'absolute',
-    top: 56,
-    left: 24,
-    zIndex: 10,
-  },
-  backBtnText: {
-    color: '#10b981',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  successOverlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: '#080c14',
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 100,
-  },
-  successEmoji: {
-    fontSize: 72,
-    marginBottom: 16,
-  },
-  successText: {
-    fontSize: 32,
-    fontWeight: '900',
-    color: '#10b981',
-  },
-  content: {
-    flex: 1,
-    paddingHorizontal: 24,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  iconCircle: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-    backgroundColor: 'rgba(16,185,129,0.12)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 20,
-    borderWidth: 1,
-    borderColor: 'rgba(16,185,129,0.2)',
-  },
-  iconEmoji: {
-    fontSize: 32,
-  },
-  title: {
-    fontSize: 30,
-    fontWeight: '900',
-    color: '#ffffff',
-    marginBottom: 10,
-    letterSpacing: -0.5,
-  },
-  subtitle: {
-    fontSize: 15,
-    color: '#6b7280',
-    textAlign: 'center',
-    lineHeight: 22,
-    marginBottom: 24,
-  },
-  phoneHighlight: {
-    color: '#10b981',
-    fontWeight: '700',
-  },
-  autofillBadge: {
-    backgroundColor: 'rgba(16,185,129,0.1)',
-    borderRadius: 20,
-    paddingHorizontal: 14,
-    paddingVertical: 6,
-    marginBottom: 20,
-    borderWidth: 1,
-    borderColor: 'rgba(16,185,129,0.2)',
-  },
-  autofillText: {
-    color: '#10b981',
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  otpRow: {
-    flexDirection: 'row',
-    gap: 10,
-    marginBottom: 20,
-  },
-  otpBox: {
-    width: 46,
-    height: 56,
-    backgroundColor: '#121b2d',
-    borderRadius: 12,
-    textAlign: 'center',
-    fontSize: 22,
-    fontWeight: '800',
-    color: '#ffffff',
-    borderWidth: 2,
-    borderColor: '#1f2d47',
-  },
-  otpBoxFilled: {
-    borderColor: '#10b981',
-    backgroundColor: 'rgba(16,185,129,0.08)',
-  },
-  otpBoxError: {
-    borderColor: '#ef4444',
-  },
-  errorText: {
-    color: '#ef4444',
-    fontSize: 13,
-    marginBottom: 16,
-    textAlign: 'center',
-  },
-  verifyBtn: {
-    backgroundColor: '#10b981',
-    borderRadius: 14,
-    paddingVertical: 17,
-    paddingHorizontal: 48,
-    alignItems: 'center',
-    marginBottom: 20,
-    width: '100%',
-  },
-  verifyBtnLoading: {
-    opacity: 0.7,
-  },
-  verifyBtnText: {
-    color: '#ffffff',
-    fontSize: 17,
-    fontWeight: '700',
-    letterSpacing: 0.3,
-  },
-  resendRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  resendLabel: {
-    color: '#6b7280',
-    fontSize: 14,
-  },
-  resendLink: {
-    color: '#10b981',
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  resendLinkDisabled: {
-    color: '#4b5563',
-  },
+  screen: { flex: 1, backgroundColor: c.bgApp, paddingHorizontal: space.xl },
+  back: { paddingVertical: 8 },
+  backText: { fontFamily: font.sansSemibold, fontSize: 15, color: c.textSecondary },
+  body: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingBottom: 60 },
+  h1: { fontFamily: font.sansExtrabold, fontSize: 28, color: c.textPrimary, letterSpacing: -0.6 },
+  sub: { fontFamily: font.sans, fontSize: 14.5, color: c.textTertiary, textAlign: 'center', lineHeight: 22, marginTop: 8, marginBottom: 28 },
+  phone: { fontFamily: font.monoBold, color: c.textPrimary },
+  otpRow: { flexDirection: 'row', gap: 10 },
+  box: { width: 46, height: 56, backgroundColor: c.surfaceCard, borderRadius: radius.md, textAlign: 'center', fontFamily: font.monoBold, fontSize: 22, color: c.textPrimary, borderWidth: 1.5, borderColor: c.borderDefault },
+  boxFilled: { borderColor: c.textPrimary },
+  boxError: { borderColor: c.danger },
+  error: { fontFamily: font.sansMedium, color: c.danger, fontSize: 13, marginTop: 14 },
+  verifyBtn: { backgroundColor: c.actionPrimary, borderRadius: radius.md, height: 52, paddingHorizontal: 40, alignItems: 'center', justifyContent: 'center', marginTop: 28, alignSelf: 'stretch' },
+  disabled: { opacity: 0.4 },
+  verifyText: { fontFamily: font.sansBold, fontSize: 16, color: c.actionPrimaryText },
+  resendRow: { flexDirection: 'row', alignItems: 'center', marginTop: 20 },
+  resendLabel: { fontFamily: font.sans, fontSize: 14, color: c.textTertiary },
+  resendLink: { fontFamily: font.sansBold, fontSize: 14, color: c.textAccent },
+  resendDisabled: { color: c.textDisabled },
 });
