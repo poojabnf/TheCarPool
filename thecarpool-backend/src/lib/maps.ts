@@ -17,29 +17,37 @@ export interface PlaceResult {
 }
 
 /**
- * Look up real places by free-text query via the Google Places Text Search API.
- * Returns results with coordinates in a single call (so the client gets usable
- * lat/lng immediately). Returns null on any failure (no key, REQUEST_DENIED,
- * network error) so callers can fall back to the local dataset.
+ * Look up real places by free-text query via the Google Places API (New)
+ * `places:searchText`. Returns results with coordinates in a single call, so
+ * the client gets usable lat/lng immediately. Returns null on any failure (no
+ * key, API not enabled, network error) so callers can fall back to the local
+ * dataset.
+ *
+ * The legacy Text Search web service is deprecated and rejected for new
+ * projects, hence the v1 endpoint + field mask below.
  */
 export async function searchPlaces(query: string): Promise<PlaceResult[] | null> {
   if (!isMapsConfigured()) return null;
   try {
-    const url =
-      'https://maps.googleapis.com/maps/api/place/textsearch/json' +
-      `?query=${encodeURIComponent(query)}&region=in&key=${process.env.GOOGLE_MAPS_API_KEY}`;
-    const res = await fetch(url);
-    if (!res.ok) return null;
+    const res = await fetch('https://places.googleapis.com/v1/places:searchText', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Goog-Api-Key': process.env.GOOGLE_MAPS_API_KEY as string,
+        'X-Goog-FieldMask': 'places.id,places.displayName,places.formattedAddress,places.location',
+      },
+      body: JSON.stringify({ textQuery: query, regionCode: 'IN' }),
+    });
+    if (!res.ok) return null; // 403 = API not enabled / key restricted -> fallback
     const data: any = await res.json();
-    // OK / ZERO_RESULTS are usable; anything else (REQUEST_DENIED, OVER_QUERY_LIMIT)
-    // means the key lacks Places API — signal a fallback.
-    if (data.status !== 'OK' && data.status !== 'ZERO_RESULTS') return null;
-    return (data.results || []).slice(0, 8).map((r: any) => ({
-      place_name: r.name,
-      address: r.formatted_address || '',
-      latitude: r.geometry?.location?.lat ?? 0,
-      longitude: r.geometry?.location?.lng ?? 0,
-      place_id: r.place_id,
+    const places = data.places;
+    if (!Array.isArray(places)) return null;
+    return places.slice(0, 8).map((p: any) => ({
+      place_name: p.displayName?.text || p.formattedAddress || 'Unknown place',
+      address: p.formattedAddress || '',
+      latitude: p.location?.latitude ?? 0,
+      longitude: p.location?.longitude ?? 0,
+      place_id: p.id,
     }));
   } catch {
     return null;
