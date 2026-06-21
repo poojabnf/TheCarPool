@@ -2,6 +2,16 @@ import React, { useEffect } from 'react';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { StatusBar, View, ActivityIndicator } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import {
+  useFonts,
+  Manrope_400Regular,
+  Manrope_500Medium,
+  Manrope_600SemiBold,
+  Manrope_700Bold,
+  Manrope_800ExtraBold,
+} from '@expo-google-fonts/manrope';
+import { JetBrainsMono_500Medium, JetBrainsMono_700Bold } from '@expo-google-fonts/jetbrains-mono';
+import { c } from '../theme/tokens';
 import { useAuthStore } from './store/authStore';
 import { auth } from './services/firebase';
 import { registerForPushNotifications } from './services/notifications';
@@ -71,9 +81,9 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
   // Show splash/loading while Firebase checks persisted auth
   if (isAuthLoading) {
     return (
-      <View style={{ flex: 1, backgroundColor: '#080c14', alignItems: 'center', justifyContent: 'center' }}>
-        <StatusBar barStyle="light-content" backgroundColor="#080c14" />
-        <ActivityIndicator size="large" color="#10b981" />
+      <View style={{ flex: 1, backgroundColor: c.bgApp, alignItems: 'center', justifyContent: 'center' }}>
+        <StatusBar barStyle="dark-content" backgroundColor={c.bgApp} />
+        <ActivityIndicator size="large" color={c.accent} />
       </View>
     );
   }
@@ -82,11 +92,32 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
 }
 
 export default function RootLayout() {
+  const [fontsLoaded, fontError] = useFonts({
+    Manrope_400Regular,
+    Manrope_500Medium,
+    Manrope_600SemiBold,
+    Manrope_700Bold,
+    Manrope_800ExtraBold,
+    JetBrainsMono_500Medium,
+    JetBrainsMono_700Bold,
+  });
+
+  // Proceed once fonts resolve OR fail — never hard-block the app on font
+  // loading (an OTA font-asset failure must not brick the launch screen; RN
+  // falls back to the system font when a family is unavailable).
+  if (!fontsLoaded && !fontError) {
+    return (
+      <View style={{ flex: 1, backgroundColor: c.bgApp, alignItems: 'center', justifyContent: 'center' }}>
+        <ActivityIndicator size="large" color={c.accent} />
+      </View>
+    );
+  }
+
   return (
     <SafeAreaProvider>
-      <StatusBar barStyle="light-content" backgroundColor="#080c14" />
+      <StatusBar barStyle="dark-content" backgroundColor={c.bgApp} />
       <AuthGuard>
-        <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: '#080c14' } }}>
+        <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: c.bgApp } }}>
           <Stack.Screen name="(auth)" options={{ headerShown: false }} />
           <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
           <Stack.Screen name="onboarding" options={{ headerShown: false }} />
