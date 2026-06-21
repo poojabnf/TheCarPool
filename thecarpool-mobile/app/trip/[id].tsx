@@ -163,7 +163,10 @@ export default function TripScreen() {
         <Text style={styles.sosText}>🚨 TRIGGER EMERGENCY SOS</Text>
       </TouchableOpacity>
 
-      <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
+      <TouchableOpacity
+        style={styles.backBtn}
+        onPress={() => (router.canGoBack() ? router.back() : router.replace('/(tabs)'))}
+      >
         <Text style={styles.backText}>Return to Home</Text>
       </TouchableOpacity>
     </View>

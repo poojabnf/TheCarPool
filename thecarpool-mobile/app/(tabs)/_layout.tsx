@@ -1,5 +1,6 @@
 import { Tabs, useRouter } from 'expo-router';
 import { Platform, View, Text, StyleSheet } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Search, Car, User, Newspaper } from 'lucide-react-native';
 import { useAuthStore } from '../store/authStore';
 
@@ -14,6 +15,12 @@ function KycBadge() {
 export default function TabLayout() {
   const { kycStatus } = useAuthStore();
   const kycPending = kycStatus !== 'verified';
+  const insets = useSafeAreaInsets();
+
+  // Add the device's bottom safe-area inset so the bar sits above the Android
+  // gesture/nav bar (and the iOS home indicator) instead of being clipped.
+  const BAR_CONTENT_HEIGHT = 56;
+  const bottomInset = insets.bottom;
 
   return (
     <Tabs
@@ -23,9 +30,9 @@ export default function TabLayout() {
           backgroundColor: '#080c14',
           borderTopWidth: 1,
           borderTopColor: '#1f2d47',
-          height: Platform.OS === 'ios' ? 88 : 64,
-          paddingBottom: Platform.OS === 'ios' ? 28 : 10,
-          paddingTop: 10,
+          height: BAR_CONTENT_HEIGHT + bottomInset,
+          paddingBottom: bottomInset + (Platform.OS === 'android' ? 8 : 6),
+          paddingTop: 8,
         },
         tabBarActiveTintColor: '#10b981',
         tabBarInactiveTintColor: '#4b5563',

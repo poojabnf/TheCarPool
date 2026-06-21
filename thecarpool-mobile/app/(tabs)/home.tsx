@@ -23,8 +23,8 @@ export default function HomeScreen() {
   const userId = auth().currentUser?.uid ?? null;
   const { kycStatus } = useAuthStore();
   const kycVerified = kycStatus === 'verified';
-  const [origin, setOrigin] = useState('Sector 56, Gurgaon');
-  const [destination, setDestination] = useState('DLF Cyber City, Phase 3');
+  const [origin, setOrigin] = useState('');
+  const [destination, setDestination] = useState('');
   const [rides, setRides] = useState<Ride[]>([]);
   const [searching, setSearching] = useState(false);
 
@@ -77,31 +77,34 @@ export default function HomeScreen() {
         return;
       }
       const data = await res.json();
-      setRides(data);
+      setRides(Array.isArray(data) ? data : []);
 
-      if (!data.length) {
-        Alert.alert('No matches found', 'No active drivers matched your route direction. Showing local mocks.');
-        setRides([
-          { id: 1, driver_name: 'Amit Kumar (TCS Colleague)', seats_available: 3, price_split: 125.00, departure_time: '8:55 AM', pickup_deviation: 230 },
-          { id: 2, driver_name: 'Neha Sharma (Google Circle)', seats_available: 2, price_split: 130.00, departure_time: '8:40 AM', pickup_deviation: 410 }
-        ]);
+      if (!Array.isArray(data) || data.length === 0) {
+        Alert.alert('No matches found', 'No active drivers matched your route yet. Try a wider area or check back shortly.');
       }
     } catch (err) {
       console.log('Search error:', err);
-      // Fallback mocks
-      setRides([
-        { id: 1, driver_name: 'Amit Kumar (TCS Colleague)', seats_available: 3, price_split: 125.00, departure_time: '8:55 AM', pickup_deviation: 230 },
-        { id: 2, driver_name: 'Neha Sharma (Google Circle)', seats_available: 2, price_split: 130.00, departure_time: '8:40 AM', pickup_deviation: 410 }
-      ]);
+      setRides([]);
+      Alert.alert('Search Failed', 'Could not reach the server. Please check your connection and try again.');
     } finally {
       setSearching(false);
     }
   };
 
-  // Step 1 — tapping "Book" opens the confirmation modal (after the KYC gate).
+  // Step 1 — tapping "Book" opens the confirmation modal. We intentionally do
+  // NOT gate on KYC here so the rider can review the price/escrow first; the
+  // KYC requirement is enforced when they confirm.
   const bookRide = (ride: Ride) => {
-    // Verification gate — browsing/search is open, booking requires KYC.
+    setConfirmRide(ride);
+  };
+
+  // Step 2 — the modal confirms with its own (editable) source/destination + seats.
+  const confirmBooking = async (draft: BookingDraft) => {
+    const ride = confirmRide;
+    if (!ride) return;
+    // Enforce verification only at confirm time, after the price was shown.
     if (!kycVerified) {
+      setConfirmRide(null);
       Alert.alert(
         'Verification required',
         'Complete a quick verification (Aadhaar + PAN + selfie, ~2 mins) to book your ride.',
@@ -112,13 +115,6 @@ export default function HomeScreen() {
       );
       return;
     }
-    setConfirmRide(ride);
-  };
-
-  // Step 2 — the modal confirms with its own (editable) source/destination + seats.
-  const confirmBooking = async (draft: BookingDraft) => {
-    const ride = confirmRide;
-    if (!ride) return;
     setBooking(true);
     try {
       const res = await apiFetch('/api/bookings', {

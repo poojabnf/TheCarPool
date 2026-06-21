@@ -122,7 +122,10 @@ export default function OtpScreen() {
       <StatusBar barStyle="light-content" backgroundColor="#080c14" />
 
       {/* Back button */}
-      <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
+      <TouchableOpacity
+        style={styles.backBtn}
+        onPress={() => (router.canGoBack() ? router.back() : router.replace('/(auth)/login'))}
+      >
         <Text style={styles.backBtnText}>← Back</Text>
       </TouchableOpacity>
 
