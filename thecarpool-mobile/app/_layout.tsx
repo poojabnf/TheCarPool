@@ -1,6 +1,7 @@
 import React, { useEffect } from 'react';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { StatusBar, View, ActivityIndicator } from 'react-native';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { useAuthStore } from './store/authStore';
 import { auth } from './services/firebase';
 import { registerForPushNotifications } from './services/notifications';
@@ -82,7 +83,7 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
 
 export default function RootLayout() {
   return (
-    <>
+    <SafeAreaProvider>
       <StatusBar barStyle="light-content" backgroundColor="#080c14" />
       <AuthGuard>
         <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: '#080c14' } }}>
@@ -94,6 +95,6 @@ export default function RootLayout() {
           <Stack.Screen name="components/KycUploadModal" options={{ presentation: 'modal' }} />
         </Stack>
       </AuthGuard>
-    </>
+    </SafeAreaProvider>
   );
 }
