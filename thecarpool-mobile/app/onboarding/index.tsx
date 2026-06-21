@@ -308,7 +308,7 @@ function StepPan({ onNext }: { onNext: (data: any) => void }) {
         <Text style={styles.verifiedEmoji}>✅</Text>
         <Text style={styles.verifiedTitle}>PAN Verified!</Text>
         <Text style={styles.verifiedSub}>
-          Name on PAN: <Text style={{ color: '#10b981', fontWeight: '700' }}>{fetchedName}</Text>
+          Name on PAN: <Text style={{ color: '#0E8A5F', fontWeight: '700' }}>{fetchedName}</Text>
           {'\n'}PAN: {panFormatted}
         </Text>
         <TouchableOpacity
@@ -411,7 +411,7 @@ function StepSelfie({ onNext }: { onNext: () => void }) {
         {stage === 'scanning' && (
           <>
             <Text style={styles.cameraEmoji}>🔍</Text>
-            <Text style={[styles.cameraHint, { color: '#10b981' }]}>
+            <Text style={[styles.cameraHint, { color: '#0E8A5F' }]}>
               Checking liveness…{'\n'}Please blink twice
             </Text>
           </>
@@ -419,7 +419,7 @@ function StepSelfie({ onNext }: { onNext: () => void }) {
         {stage === 'done' && (
           <>
             <Text style={styles.cameraEmoji}>✅</Text>
-            <Text style={[styles.cameraHint, { color: '#10b981' }]}>
+            <Text style={[styles.cameraHint, { color: '#0E8A5F' }]}>
               98.4% match{'\n'}Liveness confirmed
             </Text>
           </>
@@ -434,7 +434,7 @@ function StepSelfie({ onNext }: { onNext: () => void }) {
               styles.cornerGuide,
               c.includes('T') ? { top: 20 } : { bottom: 20 },
               c.includes('L') ? { left: 30 } : { right: 30 },
-              stage === 'done' && { borderColor: '#10b981' },
+              stage === 'done' && { borderColor: '#0E8A5F' },
             ]}
           />
         ))}
@@ -458,7 +458,7 @@ function StepSelfie({ onNext }: { onNext: () => void }) {
         </TouchableOpacity>
       ) : (
         <TouchableOpacity
-          style={[styles.nextBtn, { width: '100%', backgroundColor: '#0d9668' }]}
+          style={[styles.nextBtn, { width: '100%', backgroundColor: '#0E8A5F' }]}
           onPress={onNext}
           activeOpacity={0.8}
         >
@@ -485,7 +485,7 @@ function Field({
       <TextInput
         style={styles.fieldInput}
         placeholder={placeholder}
-        placeholderTextColor="#4b5563"
+        placeholderTextColor="#97A1AB"
         value={value}
         onChangeText={onChangeText}
         keyboardType={keyboardType}
@@ -578,7 +578,7 @@ export default function OnboardingScreen() {
 
   return (
     <View style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor="#080c14" />
+      <StatusBar barStyle="dark-content" backgroundColor="#FAFBFC" />
 
       {/* Header */}
       <View style={styles.header}>
@@ -624,7 +624,7 @@ export default function OnboardingScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#080c14',
+    backgroundColor: '#FAFBFC',
   },
   header: {
     flexDirection: 'row',
@@ -635,16 +635,16 @@ const styles = StyleSheet.create({
     paddingBottom: 16,
   },
   headerTitle: {
-    color: '#ffffff',
+    color: '#141A20',
     fontSize: 16,
     fontWeight: '700',
   },
   skipText: {
-    color: '#6b7280',
+    color: '#6B7682',
     fontSize: 13,
   },
   stepCounter: {
-    color: '#10b981',
+    color: '#0E8A5F',
     fontSize: 13,
     fontWeight: '700',
   },
@@ -659,38 +659,38 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: '#121b2d',
+    backgroundColor: '#F4F6F8',
     borderWidth: 2,
-    borderColor: '#1f2d47',
+    borderColor: '#E2E6EA',
     alignItems: 'center',
     justifyContent: 'center',
   },
   stepDotActive: {
-    backgroundColor: '#10b981',
-    borderColor: '#10b981',
+    backgroundColor: '#0E8A5F',
+    borderColor: '#0E8A5F',
   },
   stepDotComplete: {
-    backgroundColor: '#064e3b',
-    borderColor: '#10b981',
+    backgroundColor: '#BCC4CC',
+    borderColor: '#0E8A5F',
   },
   stepDotNum: {
-    color: '#6b7280',
+    color: '#6B7682',
     fontSize: 13,
     fontWeight: '700',
   },
   stepDotCheckmark: {
-    color: '#10b981',
+    color: '#0E8A5F',
     fontSize: 14,
     fontWeight: '900',
   },
   progressLine: {
     flex: 1,
     height: 2,
-    backgroundColor: '#1f2d47',
+    backgroundColor: '#E2E6EA',
     marginHorizontal: 4,
   },
   progressLineComplete: {
-    backgroundColor: '#10b981',
+    backgroundColor: '#0E8A5F',
   },
   // Step label
   stepLabelRow: {
@@ -704,12 +704,12 @@ const styles = StyleSheet.create({
     fontSize: 32,
   },
   stepLabelText: {
-    color: '#ffffff',
+    color: '#141A20',
     fontSize: 18,
     fontWeight: '800',
   },
   stepLabelDesc: {
-    color: '#6b7280',
+    color: '#6B7682',
     fontSize: 12,
     marginTop: 2,
   },
@@ -722,13 +722,13 @@ const styles = StyleSheet.create({
   stepTitle: {
     fontSize: 24,
     fontWeight: '900',
-    color: '#ffffff',
+    color: '#141A20',
     marginBottom: 8,
     letterSpacing: -0.5,
   },
   stepSubtitle: {
     fontSize: 13,
-    color: '#6b7280',
+    color: '#6B7682',
     lineHeight: 20,
     marginBottom: 20,
   },
@@ -739,23 +739,23 @@ const styles = StyleSheet.create({
   fieldLabel: {
     fontSize: 11,
     fontWeight: '700',
-    color: '#9ca3af',
+    color: '#6B7682',
     textTransform: 'uppercase',
     letterSpacing: 0.5,
     marginBottom: 8,
   },
   fieldInput: {
-    backgroundColor: '#121b2d',
+    backgroundColor: '#F4F6F8',
     borderRadius: 12,
     paddingHorizontal: 16,
     paddingVertical: 14,
-    color: '#ffffff',
+    color: '#141A20',
     fontSize: 16,
     borderWidth: 1,
-    borderColor: '#1f2d47',
+    borderColor: '#E2E6EA',
   },
   fieldError: {
-    color: '#fbbf24',
+    color: '#C9851A',
     fontSize: 12,
     marginTop: -10,
     marginBottom: 12,
@@ -763,12 +763,12 @@ const styles = StyleSheet.create({
   // Info card
   infoCard: {
     flexDirection: 'row',
-    backgroundColor: '#0f1e35',
+    backgroundColor: '#FFFFFF',
     borderRadius: 10,
     padding: 12,
     marginBottom: 20,
     borderWidth: 1,
-    borderColor: '#1f2d47',
+    borderColor: '#E2E6EA',
     gap: 10,
     alignItems: 'flex-start',
   },
@@ -777,13 +777,13 @@ const styles = StyleSheet.create({
   },
   infoText: {
     flex: 1,
-    color: '#9ca3af',
+    color: '#6B7682',
     fontSize: 12,
     lineHeight: 18,
   },
   // Buttons
   nextBtn: {
-    backgroundColor: '#10b981',
+    backgroundColor: '#0E8A5F',
     borderRadius: 14,
     paddingVertical: 16,
     alignItems: 'center',
@@ -791,7 +791,7 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   nextBtnDisabled: {
-    backgroundColor: '#064e3b',
+    backgroundColor: '#BCC4CC',
     opacity: 0.5,
   },
   nextBtnText: {
@@ -813,11 +813,11 @@ const styles = StyleSheet.create({
   verifiedTitle: {
     fontSize: 28,
     fontWeight: '900',
-    color: '#10b981',
+    color: '#0E8A5F',
     marginBottom: 12,
   },
   verifiedSub: {
-    color: '#9ca3af',
+    color: '#6B7682',
     fontSize: 14,
     textAlign: 'center',
     lineHeight: 22,
@@ -827,10 +827,10 @@ const styles = StyleSheet.create({
   cameraBox: {
     width: 240,
     height: 280,
-    backgroundColor: '#0f1e35',
+    backgroundColor: '#FFFFFF',
     borderRadius: 20,
     borderWidth: 2,
-    borderColor: '#1f2d47',
+    borderColor: '#E2E6EA',
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 24,
@@ -842,7 +842,7 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   cameraHint: {
-    color: '#9ca3af',
+    color: '#6B7682',
     fontSize: 14,
     textAlign: 'center',
     lineHeight: 20,
@@ -853,30 +853,30 @@ const styles = StyleSheet.create({
     height: 180,
     borderRadius: 70,
     borderWidth: 2,
-    borderColor: 'rgba(16,185,129,0.3)',
+    borderColor: 'rgba(14,138,95,0.3)',
     borderStyle: 'dashed',
   },
   cornerGuide: {
     position: 'absolute',
     width: 20,
     height: 20,
-    borderColor: '#10b981',
+    borderColor: '#0E8A5F',
     borderWidth: 2,
   },
   roleCard: {
     flexDirection: 'row',
-    backgroundColor: '#0f1e35',
+    backgroundColor: '#FFFFFF',
     borderRadius: 16,
     padding: 20,
     marginBottom: 16,
     borderWidth: 2,
-    borderColor: '#1f2d47',
+    borderColor: '#E2E6EA',
     alignItems: 'center',
     gap: 16,
   },
   roleCardActive: {
-    borderColor: '#10b981',
-    backgroundColor: 'rgba(16,185,129,0.1)',
+    borderColor: '#0E8A5F',
+    backgroundColor: 'rgba(14,138,95,0.1)',
   },
   roleIcon: {
     fontSize: 40,
@@ -885,13 +885,13 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   roleTitle: {
-    color: '#ffffff',
+    color: '#141A20',
     fontSize: 18,
     fontWeight: '800',
     marginBottom: 4,
   },
   roleDesc: {
-    color: '#9ca3af',
+    color: '#6B7682',
     fontSize: 13,
     lineHeight: 18,
   },
