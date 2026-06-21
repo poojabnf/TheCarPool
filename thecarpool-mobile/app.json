@@ -44,7 +44,7 @@
         "backgroundColor": "#ffffff"
       },
       "package": "com.thecarpool.app",
-      "versionCode": 125,
+      "versionCode": 126,
       "googleServicesFile": "./google-services.json",
       "config": {
         "googleMaps": {
