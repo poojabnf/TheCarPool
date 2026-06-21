@@ -88,35 +88,25 @@ export default function HomeScreen() {
     } finally { setSearching(false); }
   };
 
-  const bookRide = async (ride: Ride) => {
-    if (!kycVerified) {
-      Alert.alert('Verification required', 'Complete a quick verification (~2 mins) to book.', [
-        { text: 'Not now', style: 'cancel' },
-        { text: 'Verify now', onPress: () => router.push('/onboarding') },
-      ]);
+  // Open Confirm & pay (fare shown before the KYC gate; confirm screen books).
+  const bookRide = (ride: Ride) => {
+    if (!originCoords || !destCoords) {
+      Alert.alert('Select locations', 'Pick a pickup and destination from the suggestions.');
       return;
     }
-    if (!originCoords || !destCoords) return;
-    try {
-      const res = await apiFetch('/api/bookings', {
-        method: 'POST',
-        body: JSON.stringify({
-          ride_id: ride.id, rider_id: userId, seats_booked: seats,
-          pickup_lng: originCoords.lng, pickup_lat: originCoords.lat,
-          drop_lng: destCoords.lng, drop_lat: destCoords.lat,
-        }),
-      });
-      if (!res.ok) {
-        const e = await res.json().catch(() => ({}));
-        Alert.alert('Booking failed', e.error || `Server error (${res.status}).`);
-        return;
-      }
-      const b = await res.json();
-      Alert.alert('Seat locked ✓', `Booking #${b.id || b.booking_id || ''} — fare held in escrow.`,
-        [{ text: 'View trip', onPress: () => router.push(`/trip/${b.ride_id || ride.id}`) }]);
-    } catch {
-      Alert.alert('Booking failed', 'Network error. Please try again.');
-    }
+    router.push({
+      pathname: '/confirm',
+      params: {
+        ride_id: String(ride.id),
+        driver_name: ride.driver_name,
+        vehicle: `${ride.vehicle_type || 'Car'}${ride.ac_available ? ' · AC' : ''}`,
+        price_split: String(ride.price_split),
+        seats: String(seats),
+        pickup_lat: String(originCoords.lat), pickup_lng: String(originCoords.lng),
+        drop_lat: String(destCoords.lat), drop_lng: String(destCoords.lng),
+        origin, destination,
+      },
+    });
   };
 
   const Suggestions = ({ items, onPick }: { items: any[]; onPick: (s: any) => void }) =>
