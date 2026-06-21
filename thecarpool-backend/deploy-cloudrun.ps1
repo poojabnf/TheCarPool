@@ -30,7 +30,7 @@ gcloud run deploy $SERVICE `
   --session-affinity `
   --timeout 3600 `
   --cpu 1 --memory 512Mi `
-  --min-instances 0 --max-instances 5 `
+  --min-instances 1 --max-instances 5 `
   --set-env-vars "NODE_ENV=production,GOOGLE_MAPS_API_KEY=AIzaSyBTkNesFuUVR-8u9FNOh4RmsuZn28DT5cM"
 
 # 3) After it prints the Service URL (https://thecarpool-backend-xxxx.a.run.app):
