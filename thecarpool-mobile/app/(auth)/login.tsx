@@ -15,10 +15,7 @@ import {
 import { useRouter } from 'expo-router';
 import auth, { FirebaseAuthTypes } from '@react-native-firebase/auth';
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
-// NOTE: Apple Sign-In (expo-apple-authentication) is intentionally NOT imported
-// here — it is a native module absent from the 1.2.5 binary, so importing it
-// would crash this screen when delivered via OTA. Re-add it together with a
-// native `eas build` (the handler/button live in git history at commit 6eaa31e).
+import * as AppleAuthentication from 'expo-apple-authentication';
 
 GoogleSignin.configure({
   webClientId: '953521578640-rl68r8pde1odshskmaguaokjht4qbqic.apps.googleusercontent.com',
@@ -62,6 +59,8 @@ export default function LoginScreen() {
   const [phone, setPhone] = useState('');
   const [isSending, setIsSending] = useState(false);
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
+  const [isAppleLoading, setIsAppleLoading] = useState(false);
+  const [appleAvailable, setAppleAvailable] = useState(false);
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(30)).current;
 
@@ -70,6 +69,13 @@ export default function LoginScreen() {
       Animated.timing(fadeAnim, { toValue: 1, duration: 800, useNativeDriver: true }),
       Animated.timing(slideAnim, { toValue: 0, duration: 600, useNativeDriver: true }),
     ]).start();
+  }, []);
+
+  // Sign in with Apple is iOS 13+ only.
+  React.useEffect(() => {
+    if (Platform.OS === 'ios') {
+      AppleAuthentication.isAvailableAsync().then(setAppleAvailable).catch(() => setAppleAvailable(false));
+    }
   }, []);
 
   // ── Firebase Phone Auth ──────────────────────────────────────
@@ -119,6 +125,31 @@ export default function LoginScreen() {
       console.error('Google sign-in error:', error);
       if (error?.code !== 'SIGN_IN_CANCELLED') {
         Alert.alert('Google Sign-In Failed', error?.message ?? 'Please try again.');
+      }
+    }
+  };
+
+  // ── Firebase Apple Auth (iOS) ────────────────────────────────
+  const handleAppleSignIn = async () => {
+    setIsAppleLoading(true);
+    try {
+      const credential = await AppleAuthentication.signInAsync({
+        requestedScopes: [
+          AppleAuthentication.AppleAuthenticationScope.FULL_NAME,
+          AppleAuthentication.AppleAuthenticationScope.EMAIL,
+        ],
+      });
+      if (!credential.identityToken) {
+        throw new Error('Apple Sign-In returned no identity token.');
+      }
+      const appleCredential = auth.AppleAuthProvider.credential(credential.identityToken);
+      await auth().signInWithCredential(appleCredential);
+      // onAuthStateChanged in _layout.tsx handles redirect.
+    } catch (error: any) {
+      setIsAppleLoading(false);
+      if (error?.code !== 'ERR_REQUEST_CANCELED') {
+        console.error('Apple sign-in error:', error);
+        Alert.alert('Apple Sign-In Failed', error?.message ?? 'Please try again.');
       }
     }
   };
@@ -205,6 +236,25 @@ export default function LoginScreen() {
           )}
         </TouchableOpacity>
 
+        {/* Sign in with Apple — iOS only */}
+        {appleAvailable && (
+          <TouchableOpacity
+            style={[styles.appleBtn, isAppleLoading && styles.googleBtnLoading]}
+            onPress={handleAppleSignIn}
+            disabled={isAppleLoading}
+            activeOpacity={0.8}
+          >
+            {isAppleLoading ? (
+              <ActivityIndicator color="#ffffff" />
+            ) : (
+              <>
+                <Text style={styles.appleIcon}></Text>
+                <Text style={styles.appleBtnText}>Continue with Apple</Text>
+              </>
+            )}
+          </TouchableOpacity>
+        )}
+
         <Text style={styles.legal}>
           By continuing, you agree to our{' '}
           <Text style={styles.legalLink}>Terms & Conditions</Text> and{' '}
@@ -252,6 +302,9 @@ const styles = StyleSheet.create({
   googleBtnLoading: { opacity: 0.7 },
   googleIcon: { fontSize: 18, fontWeight: '900', color: '#4285F4' },
   googleBtnText: { color: '#111827', fontSize: 16, fontWeight: '600' },
+  appleBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#000000', borderRadius: 14, paddingVertical: 16, marginBottom: 24, gap: 10, borderWidth: 1, borderColor: '#1f2d47' },
+  appleIcon: { fontSize: 18, color: '#ffffff', marginTop: -2 },
+  appleBtnText: { color: '#ffffff', fontSize: 16, fontWeight: '600' },
   legal: { textAlign: 'center', color: '#4b5563', fontSize: 11, lineHeight: 16 },
   legalLink: { color: '#10b981', textDecorationLine: 'underline' },
 });
