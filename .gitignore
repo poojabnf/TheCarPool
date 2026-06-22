@@ -40,3 +40,4 @@ graphify-out/
 *.sqlite
 *.sqlite-shm
 *.sqlite-wal
+screenshots/
