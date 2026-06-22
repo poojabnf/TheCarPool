@@ -1,5 +1,6 @@
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
+import { randomUUID } from 'crypto';
 import { db } from '../server';
 import { requireAuth } from '../middleware/auth';
 import { parseOrReply } from '../lib/validate';
@@ -66,7 +67,7 @@ export async function bookingRoutes(fastify: FastifyInstance) {
       });
     }
 
-    const bookingId = 'booking_' + Math.random().toString(36).substring(7);
+    const bookingId = 'booking_' + randomUUID();
 
     try {
       const result = await db.runTransaction(async (transaction) => {
@@ -355,6 +356,83 @@ export async function bookingRoutes(fastify: FastifyInstance) {
     } catch (err: any) {
       fastify.log.error(err, 'Failed to fetch booking');
       return reply.code(500).send({ error: 'Failed to fetch booking.' });
+    }
+  });
+
+  // ── PATCH /:id/cancel — rider cancels booking ─────────────────────────────
+  fastify.patch('/:id/cancel', { preHandler: [requireAuth] }, async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const uid = String(request.user!.id);
+
+    try {
+      const bookingRef = db.collection('bookings').doc(id);
+      const bookingDoc = await bookingRef.get();
+      if (!bookingDoc.exists) {
+        return reply.code(404).send({ error: 'Booking not found.' });
+      }
+
+      const b = bookingDoc.data()!;
+      if (String(b.rider_id) !== uid) {
+        return reply.code(403).send({ error: 'Forbidden: you can only cancel your own bookings.' });
+      }
+
+      if (b.escrow_status === 'SETTLED' || b.escrow_status === 'CANCELLED') {
+        return reply.code(400).send({ error: `Cannot cancel booking. Escrow status is already ${b.escrow_status}.` });
+      }
+
+      const rideRef = db.collection('rides').doc(String(b.ride_id));
+      const rideDoc = await rideRef.get();
+      if (!rideDoc.exists) {
+        return reply.code(404).send({ error: 'Associated ride not found.' });
+      }
+
+      const ride = rideDoc.data()!;
+      if (ride.status === 'COMPLETED') {
+        return reply.code(400).send({ error: 'Cannot cancel booking on a completed ride.' });
+      }
+
+      const fareAmount = Number(ride.price_split || 0) * Number(b.seats_booked || 1);
+
+      await db.runTransaction(async (tx) => {
+        // Refetch booking inside transaction
+        const freshBookingDoc = await tx.get(bookingRef);
+        const freshB = freshBookingDoc.data()!;
+        if (freshB.escrow_status !== 'HELD') {
+          throw new Error('ALREADY_PROCESSED');
+        }
+
+        // Refetch ride inside transaction
+        const freshRideDoc = await tx.get(rideRef);
+        const freshRide = freshRideDoc.data()!;
+
+        // 1. Update ride seats
+        tx.update(rideRef, {
+          seats_available: (freshRide.seats_available || 0) + freshB.seats_booked,
+        });
+
+        // 2. Update booking escrow status to CANCELLED
+        tx.update(bookingRef, {
+          escrow_status: 'CANCELLED',
+          cancelled_at: new Date().toISOString(),
+        });
+
+        // 3. Refund the rider's wallet since funds were locked in escrow
+        const walletRef = db.collection('wallets').doc(uid);
+        const walletDoc = await tx.get(walletRef);
+        const cur = walletDoc.exists ? walletDoc.data()! : { available_wallet_balance: 0, escrow_locked_balance: 0, currency: 'INR' };
+        tx.set(walletRef, {
+          ...cur,
+          available_wallet_balance: (cur.available_wallet_balance || 0) + fareAmount,
+        }, { merge: true });
+      });
+
+      return reply.send({ status: 'BOOKING_CANCELLED', booking_id: id, refunded_amount: fareAmount });
+    } catch (err: any) {
+      fastify.log.error(err, 'Failed to cancel booking');
+      if (err.message === 'ALREADY_PROCESSED') {
+        return reply.code(400).send({ error: 'Booking has already been processed.' });
+      }
+      return reply.code(500).send({ error: 'Failed to cancel booking.' });
     }
   });
 }

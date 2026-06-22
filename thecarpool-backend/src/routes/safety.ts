@@ -382,8 +382,10 @@ export async function safetyRoutes(fastify: FastifyInstance) {
       const classifiedDeletes = classifieds.docs.map((doc: any) => doc.ref.delete());
 
       // Execute all Firestore deletes in parallel
+      const walletRef = db.collection('wallets').doc(String(user_id));
       await Promise.all([
         userDocRef.delete(),
+        walletRef.delete(),
         ...driverRideDeletes,
         ...bookingDeletes,
         ...classifiedDeletes,

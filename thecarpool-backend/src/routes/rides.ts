@@ -1,4 +1,5 @@
 import { FastifyInstance } from 'fastify';
+import { randomUUID } from 'crypto';
 import { db, redisClient } from '../server';
 import { requireAuth } from '../middleware/auth';
 
@@ -192,7 +193,7 @@ export async function rideRoutes(fastify: FastifyInstance) {
         }
       }
 
-      const rideId = 'ride_' + Math.random().toString(36).substring(7);
+      const rideId = 'ride_' + randomUUID();
       const newRide = {
         id: rideId,
         driver_id: String(resolvedDriverId),
@@ -506,7 +507,7 @@ export async function rideRoutes(fastify: FastifyInstance) {
         }
       }
 
-      const id = 'recurring_' + Math.random().toString(36).substring(7);
+      const id = 'recurring_' + randomUUID();
       const newRecurringRide = {
         id,
         driver_id: String(driver_id),

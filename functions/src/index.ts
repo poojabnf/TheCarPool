@@ -1,4 +1,5 @@
 import { onSchedule } from 'firebase-functions/v2/scheduler';
+import { auth } from 'firebase-functions/v1';
 import { logger } from 'firebase-functions';
 import * as admin from 'firebase-admin';
 
@@ -164,17 +165,44 @@ export const resetCorporateBudgets = onSchedule(
   },
 );
 
-
 /**
- * Recurring ride instantiation.
- *
- * Runs every day just after midnight (Asia/Kolkata) and materialises a
- * concrete `rides` document for each `recurring_rides` template whose
- * `days_of_week` includes today. Doc ids are deterministic
- * (`ride_recurring_<templateId>_<YYYYMMDD>`) so re-runs are idempotent and
- * never create duplicates.
- *
- * Template shape (see backend POST /api/rides/recurring):
- *   { id, driver_id, route_coords, seats_total, price_split,
- *     departure_time_of_day: "HH:MM", days_of_week: number[] (0=Sun), vehicle_type }
+ * Clean up Firestore data when a user account is deleted from Firebase Auth.
  */
+export const onUserDeleted = auth.user().onDelete(async (user) => {
+  const uid = user.uid;
+  if (!uid) {
+    logger.warn('onUserDeleted: No uid found.');
+    return;
+  }
+  logger.info(`onUserDeleted: Cleaning up data for deleted user ${uid}`);
+
+  try {
+    const userDocRef = db.collection('users').doc(uid);
+    const walletRef = db.collection('wallets').doc(uid);
+
+    // Delete user's rides as a driver
+    const driverRides = await db.collection('rides').where('driver_id', '==', uid).get();
+    const driverRideDeletes = driverRides.docs.map((doc) => doc.ref.delete());
+
+    // Delete user's bookings
+    const bookings = await db.collection('bookings').where('rider_id', '==', uid).get();
+    const bookingDeletes = bookings.docs.map((doc) => doc.ref.delete());
+
+    // Delete user's classifieds
+    const classifieds = await db.collection('classifieds').where('author_id', '==', uid).get();
+    const classifiedDeletes = classifieds.docs.map((doc) => doc.ref.delete());
+
+    // Execute all Firestore deletes in parallel
+    await Promise.all([
+      userDocRef.delete(),
+      walletRef.delete(),
+      ...driverRideDeletes,
+      ...bookingDeletes,
+      ...classifiedDeletes,
+    ]);
+
+    logger.info(`onUserDeleted: Successfully cleaned up all data for user ${uid}`);
+  } catch (err: any) {
+    logger.error(`onUserDeleted: Failed to clean up data for user ${uid}`, err);
+  }
+});

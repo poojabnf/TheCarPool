@@ -26,6 +26,7 @@ export default function WalletScreen() {
   const [amount, setAmount] = useState('');
   const [method, setMethod] = useState<string>('upi');
   const [paying, setPaying] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
 
   const load = useCallback(async () => {
     if (!uid) { setLoading(false); return; }

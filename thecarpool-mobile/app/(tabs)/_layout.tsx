@@ -64,7 +64,6 @@ export default function TabLayout() {
       {/* Routes kept but not shown as tabs (reached from Home/Rides hubs). */}
       <Tabs.Screen name="driver" options={{ href: null }} />
       <Tabs.Screen name="classifieds" options={{ href: null }} />
-      <Tabs.Screen name="home" options={{ href: null }} />
       <Tabs.Screen name="kyc" options={{ href: null }} />
     </Tabs>
   );

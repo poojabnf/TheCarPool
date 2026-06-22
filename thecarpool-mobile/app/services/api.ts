@@ -15,9 +15,15 @@ export const API_URL =
 
 /**
  * fetch wrapper that attaches the current user's Firebase ID token so the
- * backend's requireAuth middleware can authenticate the request.
+ * backend's requireAuth middleware can authenticate the request,
+ * with built-in timeout (default 10s) and retry logic (default 2 retries).
  */
-export async function apiFetch(path: string, init: RequestInit = {}): Promise<Response> {
+export async function apiFetch(
+  path: string,
+  init: RequestInit = {},
+  options: { timeoutMs?: number; retries?: number } = {}
+): Promise<Response> {
+  const { timeoutMs = 10000, retries = 2 } = options;
   const headers = new Headers(init.headers || {});
 
   const user = auth().currentUser;
@@ -30,5 +36,37 @@ export async function apiFetch(path: string, init: RequestInit = {}): Promise<Re
   }
 
   const url = path.startsWith('http') ? path : `${API_URL}${path}`;
-  return fetch(url, { ...init, headers });
+
+  let attempt = 0;
+  while (true) {
+    attempt++;
+    const controller = new AbortController();
+    const id = setTimeout(() => controller.abort(), timeoutMs);
+
+    try {
+      const res = await fetch(url, {
+        ...init,
+        headers,
+        signal: controller.signal,
+      });
+      clearTimeout(id);
+
+      // If it is a transient server error (502, 503, 504) and we have retries left
+      if (res.status >= 502 && res.status <= 504 && attempt <= retries) {
+        await new Promise((resolve) => setTimeout(resolve, attempt * 1000));
+        continue;
+      }
+
+      return res;
+    } catch (err: any) {
+      clearTimeout(id);
+
+      // If it is a network error or abort, and we have retries left, retry
+      if (attempt <= retries) {
+        await new Promise((resolve) => setTimeout(resolve, attempt * 1000));
+        continue;
+      }
+      throw err;
+    }
+  }
 }

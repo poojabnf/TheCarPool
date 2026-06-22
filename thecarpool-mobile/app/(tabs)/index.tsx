@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView, Alert, ActivityIndicator,
 } from 'react-native';
@@ -55,14 +55,28 @@ export default function HomeScreen() {
   const [rides, setRides] = useState<Ride[] | null>(null);
   const [searching, setSearching] = useState(false);
 
-  const searchGeo = async (q: string, set: (s: any[]) => void) => {
+  const originTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const destTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (originTimeoutRef.current) clearTimeout(originTimeoutRef.current);
+      if (destTimeoutRef.current) clearTimeout(destTimeoutRef.current);
+    };
+  }, []);
+
+  const searchGeo = async (q: string, set: (s: any[]) => void, timeoutRef: React.MutableRefObject<any>) => {
+    if (timeoutRef.current) clearTimeout(timeoutRef.current);
     if (q.trim().length < 3) { set([]); return; }
-    try {
-      const res = await apiFetch(`/api/geo/search?query=${encodeURIComponent(q)}`);
-      if (!res.ok) { set([]); return; }
-      const data = await res.json();
-      set(data.results || data.suggestions || (Array.isArray(data) ? data : []));
-    } catch { set([]); }
+
+    timeoutRef.current = setTimeout(async () => {
+      try {
+        const res = await apiFetch(`/api/geo/search?query=${encodeURIComponent(q)}`);
+        if (!res.ok) { set([]); return; }
+        const data = await res.json();
+        set(data.results || data.suggestions || (Array.isArray(data) ? data : []));
+      } catch { set([]); }
+    }, 300);
   };
 
   const findRides = async () => {
@@ -146,7 +160,7 @@ export default function HomeScreen() {
           <Circle color={c.go} size={11} strokeWidth={3} fill={c.go} />
           <TextInput
             style={styles.input} value={origin}
-            onChangeText={(t) => { setOrigin(t); setOriginCoords(null); searchGeo(t, setOriginSug); }}
+            onChangeText={(t) => { setOrigin(t); setOriginCoords(null); searchGeo(t, setOriginSug, originTimeoutRef); }}
             placeholder="From — pickup point" placeholderTextColor={c.textDisabled}
           />
         </View>
@@ -158,7 +172,7 @@ export default function HomeScreen() {
           <MapPin color={c.danger} size={14} strokeWidth={2.4} />
           <TextInput
             style={styles.input} value={destination}
-            onChangeText={(t) => { setDestination(t); setDestCoords(null); searchGeo(t, setDestSug); }}
+            onChangeText={(t) => { setDestination(t); setDestCoords(null); searchGeo(t, setDestSug, destTimeoutRef); }}
             placeholder="To — destination" placeholderTextColor={c.textDisabled}
           />
         </View>

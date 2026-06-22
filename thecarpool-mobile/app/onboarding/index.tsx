@@ -423,7 +423,7 @@ function StepSelfie({ onNext }: { onNext: () => void }) {
         style={[styles.cameraBox, stage === 'scanning' && { transform: [{ scale: pulseAnim }] }]}
       >
         {stage === 'scanning' && permission?.granted && (
-          <CameraView style={StyleSheet.absoluteFillObject} facing="front" />
+          <CameraView style={StyleSheet.absoluteFill} facing="front" />
         )}
         {stage === 'idle' && (
           <>

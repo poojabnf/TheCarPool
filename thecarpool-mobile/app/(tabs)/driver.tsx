@@ -56,6 +56,16 @@ export default function DriverInterface() {
   const socketRef = useRef<ReturnType<typeof io> | null>(null);
   const telemetryIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
+  const originTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const destTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (originTimeoutRef.current) clearTimeout(originTimeoutRef.current);
+      if (destTimeoutRef.current) clearTimeout(destTimeoutRef.current);
+    };
+  }, []);
+
   // Ride posting form states
   const [showPostModal, setShowPostModal] = useState(false);
   const [source, setSource] = useState('');
@@ -145,16 +155,20 @@ export default function DriverInterface() {
     }
   };
 
-  const searchGeo = async (q: string, setSuggestions: (s: any[]) => void) => {
+  const searchGeo = async (q: string, setSuggestions: (s: any[]) => void, timeoutRef: React.MutableRefObject<any>) => {
+    if (timeoutRef.current) clearTimeout(timeoutRef.current);
     if (q.trim().length < 3) { setSuggestions([]); return; }
-    try {
-      const res = await apiFetch(`/api/geo/search?query=${encodeURIComponent(q)}`);
-      if (!res.ok) { setSuggestions([]); return; }
-      const data = await res.json();
-      setSuggestions(data.results || data.suggestions || (Array.isArray(data) ? data : []));
-    } catch {
-      setSuggestions([]);
-    }
+
+    timeoutRef.current = setTimeout(async () => {
+      try {
+        const res = await apiFetch(`/api/geo/search?query=${encodeURIComponent(q)}`);
+        if (!res.ok) { setSuggestions([]); return; }
+        const data = await res.json();
+        setSuggestions(data.results || data.suggestions || (Array.isArray(data) ? data : []));
+      } catch {
+        setSuggestions([]);
+      }
+    }, 300);
   };
 
   const handlePostRide = async () => {
@@ -344,7 +358,7 @@ export default function DriverInterface() {
                 placeholder="Where do you start from?"
                 placeholderTextColor={colors.inputPlaceholder}
                 value={source}
-                onChangeText={(t) => { setSource(t); setSourceCoords(null); searchGeo(t, setSourceSug); }}
+                onChangeText={(t) => { setSource(t); setSourceCoords(null); searchGeo(t, setSourceSug, originTimeoutRef); }}
               />
               {sourceSug.length > 0 && (
                 <View style={styles.suggBox}>
@@ -368,7 +382,7 @@ export default function DriverInterface() {
                 placeholder="e.g. DLF Cyber City Building 10"
                 placeholderTextColor={colors.inputPlaceholder}
                 value={destination}
-                onChangeText={(t) => { setDestination(t); setDestCoords(null); searchGeo(t, setDestSug); }}
+                onChangeText={(t) => { setDestination(t); setDestCoords(null); searchGeo(t, setDestSug, destTimeoutRef); }}
               />
               {destSug.length > 0 && (
                 <View style={styles.suggBox}>
