@@ -36,6 +36,25 @@ function initials(name?: string) {
   return name.trim().split(/\s+/).slice(0, 2).map((p) => p[0]?.toUpperCase()).join('');
 }
 
+// Module-level so it keeps a stable component identity across keystrokes —
+// otherwise React remounts it on every render and Android drops the
+// async-populated suggestion list (iOS tolerates it).
+function Suggestions({ items, onPick }: { items: any[]; onPick: (s: any) => void }) {
+  if (!items || items.length === 0) return null;
+  return (
+    <View style={styles.suggBox}>
+      {items.slice(0, 5).map((s, i) => (
+        <TouchableOpacity key={i} style={styles.suggItem} onPress={() => onPick(s)}>
+          <MapPin color={c.textDisabled} size={14} />
+          <Text style={styles.suggText} numberOfLines={1}>
+            {s.place_name}{s.state_name ? `, ${s.state_name}` : ''}
+          </Text>
+        </TouchableOpacity>
+      ))}
+    </View>
+  );
+}
+
 export default function HomeScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -122,20 +141,6 @@ export default function HomeScreen() {
       },
     });
   };
-
-  const Suggestions = ({ items, onPick }: { items: any[]; onPick: (s: any) => void }) =>
-    items.length === 0 ? null : (
-      <View style={styles.suggBox}>
-        {items.slice(0, 5).map((s, i) => (
-          <TouchableOpacity key={i} style={styles.suggItem} onPress={() => onPick(s)}>
-            <MapPin color={c.textDisabled} size={14} />
-            <Text style={styles.suggText} numberOfLines={1}>
-              {s.place_name}{s.state_name ? `, ${s.state_name}` : ''}
-            </Text>
-          </TouchableOpacity>
-        ))}
-      </View>
-    );
 
   return (
     <ScrollView
