@@ -59,7 +59,13 @@ export default function ConfirmPay() {
         return;
       }
       const b = await res.json();
-      router.replace(`/trip/${b.ride_id || p.ride_id}`);
+      const rideId = b.ride_id || b.id || p.ride_id;
+      if (!rideId) {
+        Alert.alert('Booking confirmed!', `Your seat is locked. Booking ref: ${b.id || 'N/A'}`);
+        router.replace('/(tabs)');
+        return;
+      }
+      router.replace(`/trip/${rideId}`);
     } catch {
       Alert.alert('Booking failed', 'Network error. Please try again.');
     } finally { setPaying(false); }
@@ -120,9 +126,8 @@ export default function ConfirmPay() {
           <View style={styles.payIcon}><Text style={{ fontSize: 16 }}>📲</Text></View>
           <View style={{ flex: 1 }}>
             <Text style={styles.payTitle}>UPI · Razorpay</Text>
-            <Text style={styles.payVpa}>{upiVpa}</Text>
+            <Text style={styles.payVpa}>Secured escrow — released after your ride</Text>
           </View>
-          <Text style={styles.change}>Change</Text>
         </View>
       </View>
 

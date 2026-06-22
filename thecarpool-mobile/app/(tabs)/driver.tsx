@@ -190,6 +190,8 @@ export default function DriverInterface() {
           music_allowed: musicAllowed,
           smoking_allowed: smokingAllowed,
           chattiness,
+          is_recurring: isRecurring,
+          recurring_days: isRecurring ? selectedDays : [],
         }),
       });
       if (!res.ok) {

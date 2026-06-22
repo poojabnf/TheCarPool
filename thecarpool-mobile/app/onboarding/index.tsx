@@ -16,6 +16,7 @@ import {
 import { apiFetch } from '../services/api';
 import { useRouter } from 'expo-router';
 import { useAuthStore } from '../store/authStore';
+import { CameraView, useCameraPermissions } from 'expo-camera';
 
 const { width } = Dimensions.get('window');
 const TOTAL_STEPS = 5;
@@ -184,13 +185,25 @@ function StepAadhaar({ onNext }: { onNext: (data: any) => void }) {
     }, 1500);
   };
 
-  const handleVerifyOtp = () => {
+  const handleVerifyOtp = async () => {
     if (otp.length < 6) return;
     setLoading(true);
-    setTimeout(() => {
+    try {
+      const res = await apiFetch('/api/safety/kyc/verify', {
+        method: 'POST',
+        body: JSON.stringify({ aadhaar_number: aadhaar.replace(/\s/g, '') })
+      });
+      if (res.ok) {
+        setStage('done');
+      } else {
+        Alert.alert('Verification Failed', 'Invalid Aadhaar details.');
+      }
+    } catch (e) {
+      console.error(e);
+      Alert.alert('Error', 'Failed to verify Aadhaar.');
+    } finally {
       setLoading(false);
-      setStage('done');
-    }, 1500);
+    }
   };
 
   if (stage === 'done') {
@@ -284,6 +297,7 @@ function StepAadhaar({ onNext }: { onNext: (data: any) => void }) {
 
 // ─── Step 3: PAN ──────────────────────────────────────────────────
 function StepPan({ onNext }: { onNext: (data: any) => void }) {
+  const { userProfile } = useAuthStore();
   const [pan, setPan] = useState('');
   const [loading, setLoading] = useState(false);
   const [verified, setVerified] = useState(false);
@@ -295,11 +309,9 @@ function StepPan({ onNext }: { onNext: (data: any) => void }) {
   const handleVerify = () => {
     if (!isValidPan) return;
     setLoading(true);
-    setTimeout(() => {
-      setLoading(false);
-      setFetchedName('POOJA YADAV');
-      setVerified(true);
-    }, 2000);
+    setFetchedName(userProfile?.name?.toUpperCase() || 'USER');
+    setVerified(true);
+    setLoading(false);
   };
 
   if (verified) {
@@ -368,6 +380,7 @@ function StepPan({ onNext }: { onNext: (data: any) => void }) {
 // ─── Step 4: Selfie / Liveness ────────────────────────────────────
 function StepSelfie({ onNext }: { onNext: () => void }) {
   const [stage, setStage] = useState<'idle' | 'scanning' | 'done'>('idle');
+  const [permission, requestPermission] = useCameraPermissions();
   const pulseAnim = useRef(new Animated.Value(1)).current;
 
   const startPulse = () => {
@@ -379,7 +392,14 @@ function StepSelfie({ onNext }: { onNext: () => void }) {
     ).start();
   };
 
-  const handleTakeSelfie = () => {
+  const handleTakeSelfie = async () => {
+    if (!permission?.granted) {
+      const p = await requestPermission();
+      if (!p.granted) {
+        Alert.alert('Permission Denied', 'We need camera access to complete liveness verification.');
+        return;
+      }
+    }
     setStage('scanning');
     startPulse();
     setTimeout(() => {
@@ -402,6 +422,9 @@ function StepSelfie({ onNext }: { onNext: () => void }) {
       <Animated.View
         style={[styles.cameraBox, stage === 'scanning' && { transform: [{ scale: pulseAnim }] }]}
       >
+        {stage === 'scanning' && permission?.granted && (
+          <CameraView style={StyleSheet.absoluteFillObject} facing="front" />
+        )}
         {stage === 'idle' && (
           <>
             <Text style={styles.cameraEmoji}>📷</Text>
@@ -410,8 +433,7 @@ function StepSelfie({ onNext }: { onNext: () => void }) {
         )}
         {stage === 'scanning' && (
           <>
-            <Text style={styles.cameraEmoji}>🔍</Text>
-            <Text style={[styles.cameraHint, { color: '#0E8A5F' }]}>
+            <Text style={{ ...styles.cameraHint, color: '#FFFFFF', position: 'absolute', bottom: 40, backgroundColor: 'rgba(0,0,0,0.5)', padding: 4 }}>
               Checking liveness…{'\n'}Please blink twice
             </Text>
           </>

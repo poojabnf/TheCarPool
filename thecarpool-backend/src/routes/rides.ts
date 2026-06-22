@@ -136,6 +136,21 @@ export async function rideRoutes(fastify: FastifyInstance) {
     }
 
     try {
+      const userDoc = await db.collection('users').doc(uid).get();
+      const userData = userDoc.data();
+      if (userData?.kyc_status !== 'VERIFIED') {
+        return reply.code(403).send({
+          error: 'VERIFICATION_REQUIRED',
+          message: 'Complete identity verification to offer a ride.',
+        });
+      }
+      if (userData?.kyc_simulated === true) {
+        return reply.code(403).send({
+          error: 'REAL_VERIFICATION_REQUIRED',
+          message: 'A simulated KYC check is insufficient for driver privileges.',
+        });
+      }
+
       // Resolve the caller's driver profile, auto-provisioning one on first
       // offer. Any KYC-verified user may become a driver; we never provision a
       // profile for a different user's id.
@@ -145,13 +160,6 @@ export async function rideRoutes(fastify: FastifyInstance) {
       if (!driverDoc.exists) {
         if (requestedDriverId !== uid) {
           return reply.code(403).send({ error: 'Forbidden: You do not own this driver profile.' });
-        }
-        const userDoc = await db.collection('users').doc(uid).get();
-        if (userDoc.data()?.kyc_status !== 'VERIFIED') {
-          return reply.code(403).send({
-            error: 'VERIFICATION_REQUIRED',
-            message: 'Complete identity verification to offer a ride.',
-          });
         }
         // Provision a driver profile keyed on the user's uid.
         await db.collection('drivers').doc(uid).set({
@@ -542,6 +550,59 @@ export async function rideRoutes(fastify: FastifyInstance) {
     } catch (err: any) {
       fastify.log.error('Failed to fetch recurring rides:', err);
       return reply.code(500).send({ error: 'Failed to fetch recurring rides.' });
+    }
+  });
+
+  // ── PATCH /:id/status — driver moves ride through lifecycle ──────────────
+  // Valid transitions: SCHEDULED → STARTED → COMPLETED | CANCELLED
+  // On COMPLETED, all HELD escrow bookings are auto-settled to the driver.
+  fastify.patch('/:id/status', { preHandler: [requireAuth] }, async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const { status } = request.body as { status: string };
+    const uid = String(request.user!.id);
+
+    const VALID = ['STARTED', 'COMPLETED', 'CANCELLED'];
+    if (!VALID.includes(status)) {
+      return reply.code(400).send({ error: `Invalid status. Must be one of: ${VALID.join(', ')}` });
+    }
+
+    try {
+      const rideRef = db.collection('rides').doc(id);
+      const rideDoc = await rideRef.get();
+      if (!rideDoc.exists) return reply.code(404).send({ error: 'Ride not found.' });
+
+      const ride = rideDoc.data()!;
+      // Only the driver who owns this ride may update its status
+      if (String(ride.driver_uid ?? ride.driver_id) !== uid) {
+        return reply.code(403).send({ error: 'Forbidden: only the ride driver can update status.' });
+      }
+
+      await rideRef.update({ status, updated_at: new Date().toISOString() });
+
+      // On completion, auto-settle all HELD escrow bookings for this ride
+      if (status === 'COMPLETED') {
+        const bookingsSnap = await db.collection('bookings')
+          .where('ride_id', '==', id)
+          .where('escrow_status', '==', 'HELD')
+          .get();
+
+        const batch = db.batch();
+        bookingsSnap.docs.forEach((doc) => {
+          batch.update(doc.ref, {
+            escrow_status: 'SETTLED',
+            payment_status: 'RELEASED',
+            settled_at: new Date().toISOString(),
+          });
+        });
+        if (!bookingsSnap.empty) await batch.commit();
+
+        fastify.log.info({ ride_id: id, settled: bookingsSnap.size }, 'Auto-settled escrow on ride completion');
+      }
+
+      return reply.send({ id, status, updated: true });
+    } catch (err: any) {
+      fastify.log.error(err, 'Failed to update ride status');
+      return reply.code(500).send({ error: 'Failed to update ride status.' });
     }
   });
 }

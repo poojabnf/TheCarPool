@@ -18,12 +18,63 @@ export async function sustainabilityRoutes(fastify: FastifyInstance) {
 
   // 1. Carbon Offset Dashboard & Leaderboards (Features 38 & 44)
   fastify.get('/leaderboard', async (request, reply) => {
-    // Return top fuel and carbon savers in the tech park
-    return reply.send([
-      { rank: 1, name: 'Vikram Singh (Google)', co2_saved_kg: 84.5, matches: 22, points: 845 },
-      { rank: 2, name: 'Priyanka Sen (TCS)', co2_saved_kg: 72.1, matches: 18, points: 721 },
-      { rank: 3, name: 'Rahul Sharma (Infosys)', co2_saved_kg: 68.0, matches: 19, points: 680 }
-    ]);
+    try {
+      const bookingsSnap = await db.collection('bookings')
+        .where('status', '==', 'COMPLETED')
+        .get();
+
+      const userMap: Record<string, { totalKm: number; count: number }> = {};
+      for (const doc of bookingsSnap.docs) {
+        const data = doc.data();
+        const riderId = String(data.rider_id);
+        const km = Number(data.distance_km || 0);
+        if (!userMap[riderId]) {
+          userMap[riderId] = { totalKm: 0, count: 0 };
+        }
+        userMap[riderId].totalKm += km;
+        userMap[riderId].count += 1;
+      }
+
+      const leaderboard: Array<{ rank: number; name: string; co2_saved_kg: number; matches: number; points: number }> = [];
+      const userIds = Object.keys(userMap);
+
+      for (const uid of userIds) {
+        const userDoc = await db.collection('users').doc(uid).get();
+        const name = userDoc.exists ? (userDoc.data()?.name || `Commuter ${uid.slice(0, 4)}`) : `Commuter ${uid.slice(0, 4)}`;
+        const company = userDoc.exists ? userDoc.data()?.company_domain?.split('.')[0] : '';
+        const companyStr = company ? ` (${company.toUpperCase()})` : '';
+        
+        const km = userMap[uid].totalKm;
+        const co2 = parseFloat((km * 2.3).toFixed(1));
+        const pts = Math.round(co2 * 10);
+        
+        leaderboard.push({
+          rank: 0,
+          name: `${name}${companyStr}`,
+          co2_saved_kg: co2,
+          matches: userMap[uid].count,
+          points: pts
+        });
+      }
+
+      leaderboard.sort((a, b) => b.points - a.points);
+      leaderboard.forEach((item, index) => {
+        item.rank = index + 1;
+      });
+
+      if (leaderboard.length === 0) {
+        return reply.send([
+          { rank: 1, name: 'Vikram Singh (GOOGLE)', co2_saved_kg: 84.5, matches: 22, points: 845 },
+          { rank: 2, name: 'Priyanka Sen (TCS)', co2_saved_kg: 72.1, matches: 18, points: 721 },
+          { rank: 3, name: 'Rahul Sharma (INFOSYS)', co2_saved_kg: 68.0, matches: 19, points: 680 }
+        ]);
+      }
+
+      return reply.send(leaderboard.slice(0, 10));
+    } catch (err: any) {
+      fastify.log.error(err, 'Failed to fetch leaderboard');
+      return reply.code(500).send({ error: 'Failed to retrieve sustainability leaderboard.' });
+    }
   });
 
   // 2. ESG Enterprise Portals (Feature 39)

@@ -72,7 +72,7 @@ export default function WalletScreen() {
     <ScrollView
       style={styles.screen}
       contentContainerStyle={{ padding: space.xl, paddingTop: insets.top + space.lg, paddingBottom: 40 }}
-      refreshControl={<RefreshControl refreshing={false} onRefresh={load} tintColor={c.textTertiary} />}
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load().finally(() => setRefreshing(false)); }} tintColor={c.textTertiary} />}
     >
       <Text style={styles.h1}>Wallet</Text>
 
@@ -87,7 +87,15 @@ export default function WalletScreen() {
             <ArrowDownLeft color={c.actionPrimaryText} size={16} strokeWidth={2.4} />
             <Text style={styles.actionPrimaryText}>Add money</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={[styles.actionBtn, styles.actionSecondary]} activeOpacity={0.85}>
+          <TouchableOpacity
+            style={[styles.actionBtn, styles.actionSecondary]}
+            activeOpacity={0.85}
+            onPress={() => Alert.alert(
+              'Withdraw',
+              'Funds are released to your UPI after escrow settles (when your ride completes). Contact support@thecarpool.in to request an early withdrawal.',
+              [{ text: 'OK' }]
+            )}
+          >
             <ArrowUpRight color={c.textPrimary} size={16} strokeWidth={2.4} />
             <Text style={styles.actionSecondaryText}>Withdraw</Text>
           </TouchableOpacity>

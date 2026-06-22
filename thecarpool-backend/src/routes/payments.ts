@@ -245,6 +245,15 @@ export async function paymentRoutes(fastify: FastifyInstance) {
     const { upi_payout_id, amount, booking_id } = body;
     const uid = request.user!.id;
 
+    const userDoc = await db.collection('users').doc(String(uid)).get();
+    const userData = userDoc.data();
+    if (userData?.kyc_status !== 'VERIFIED') {
+      return reply.code(403).send({ error: 'Complete identity verification to request a payout.' });
+    }
+    if (userData?.kyc_simulated === true) {
+      return reply.code(403).send({ error: 'A simulated KYC check is insufficient for wallet payouts.' });
+    }
+
     if (!isRazorpayXConfigured()) {
       return reply.code(503).send({ error: 'Instant payouts are not configured on this server.' });
     }
@@ -398,7 +407,7 @@ export async function paymentRoutes(fastify: FastifyInstance) {
     try {
       const bookingsSnap = await db.collection('bookings')
         .where('rider_id', '==', String(user_id))
-        .where('status', '==', 'COMPLETED')
+        .where('escrow_status', '==', 'SETTLED')
         .get();
 
       let totalKm = 0;

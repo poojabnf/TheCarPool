@@ -276,10 +276,12 @@ export async function safetyRoutes(fastify: FastifyInstance) {
     }
 
     try {
-      // Load the ride's planned waypoints from Firestore
+      // Load the ride's planned route from Firestore.
+      // Field is stored as route_coords; waypoints is kept as legacy fallback.
       const rideDoc = ride_id ? await db.collection('rides').doc(String(ride_id)).get() : null;
+      const rideData = rideDoc?.exists ? rideDoc.data() : null;
       const waypoints: Array<{ lat: number; lng: number }> =
-        rideDoc?.exists ? (rideDoc.data()?.waypoints || []) : [];
+        rideData?.route_coords || rideData?.waypoints || [];
 
       if (waypoints.length < 2) {
         // No route stored — return NORMAL so we don't false-alarm

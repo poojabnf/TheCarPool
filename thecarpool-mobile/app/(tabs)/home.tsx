@@ -83,7 +83,7 @@ export default function HomeScreen() {
         Alert.alert('No matches found', 'No active drivers matched your route yet. Try a wider area or check back shortly.');
       }
     } catch (err) {
-      console.log('Search error:', err);
+      // Search error is non-fatal — empty results shown to user
       setRides([]);
       Alert.alert('Search Failed', 'Could not reach the server. Please check your connection and try again.');
     } finally {
@@ -154,7 +154,7 @@ export default function HomeScreen() {
         [{ text: 'View Trip', onPress: () => router.push(`/trip/${result.ride_id || ride.id}`) }]
       );
     } catch (err: any) {
-      console.log('Booking error:', err);
+      // Booking error handled by Alert above
       Alert.alert('Booking Failed', 'Network error. Please check your connection and try again.');
     } finally {
       setBooking(false);

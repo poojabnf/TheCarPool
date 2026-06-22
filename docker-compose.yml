@@ -2,7 +2,8 @@ version: '3.8'
 
 services:
   # NOTE: PostgreSQL was removed — the database was migrated to Firestore.
-  # Only Redis (cache) and MinIO (local S3 emulator) remain for local dev.
+  # MinIO was removed — Firebase Storage is used for all object storage needs.
+  # Only Redis (cache) remains for local dev.
   redis:
     image: redis:7.0-alpine
     container_name: thecarpool-cache
@@ -12,20 +13,5 @@ services:
       - redis_data:/data
     restart: unless-stopped
 
-  minio:
-    image: minio/minio:latest
-    container_name: thecarpool-s3
-    environment:
-      MINIO_ROOT_USER: minioadmin
-      MINIO_ROOT_PASSWORD: minioadminpassword
-    ports:
-      - "9000:9000"
-      - "9001:9001"
-    command: server /data --console-address ":9001"
-    volumes:
-      - minio_data:/data
-    restart: unless-stopped
-
 volumes:
   redis_data:
-  minio_data:

@@ -286,4 +286,75 @@ export async function bookingRoutes(fastify: FastifyInstance) {
       return reply.code(500).send({ error: 'Failed to generate sustainability savings report.' });
     }
   });
+
+  // ── GET /mine — rider's own booking list ─────────────────────────────────
+  fastify.get('/mine', { preHandler: [requireAuth] }, async (request, reply) => {
+    const uid = String(request.user!.id);
+    try {
+      const snap = await db.collection('bookings')
+        .where('rider_id', '==', uid)
+        .orderBy('created_at', 'desc')
+        .limit(50)
+        .get();
+
+      const bookings = await Promise.all(snap.docs.map(async (doc) => {
+        const b = doc.data();
+        // Enrich with ride details for display
+        let ride: any = null;
+        try {
+          const rideDoc = await db.collection('rides').doc(String(b.ride_id)).get();
+          if (rideDoc.exists) ride = rideDoc.data();
+        } catch { /* ride enrichment is best-effort */ }
+
+        return {
+          id: doc.id,
+          ride_id: b.ride_id,
+          seats_booked: b.seats_booked,
+          payment_status: b.payment_status,
+          escrow_status: b.escrow_status,
+          created_at: b.created_at,
+          pickup_point: b.pickup_point,
+          drop_point: b.drop_point,
+          // Ride snapshot fields
+          departure_time: ride?.departure_time ?? null,
+          driver_name: ride?.driver_name ?? null,
+          vehicle: ride?.vehicle ?? null,
+          vehicle_plate: ride?.vehicle_plate ?? null,
+          ride_status: ride?.status ?? null,
+          price_split: ride?.price_split ?? null,
+        };
+      }));
+
+      return reply.send({ bookings });
+    } catch (err: any) {
+      fastify.log.error(err, 'Failed to list bookings for rider');
+      return reply.code(500).send({ error: 'Failed to fetch your bookings.' });
+    }
+  });
+
+  // ── GET /:id — single booking detail ────────────────────────────────────
+  fastify.get('/:id', { preHandler: [requireAuth] }, async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const uid = String(request.user!.id);
+    try {
+      const doc = await db.collection('bookings').doc(id).get();
+      if (!doc.exists) return reply.code(404).send({ error: 'Booking not found.' });
+
+      const b = doc.data()!;
+      // Only the rider or driver of the associated ride can view
+      if (String(b.rider_id) !== uid) {
+        // Allow driver too — check via ride doc
+        const rideDoc = await db.collection('rides').doc(String(b.ride_id)).get();
+        const driverUid = rideDoc.exists ? String(rideDoc.data()?.driver_uid ?? '') : '';
+        if (driverUid !== uid) {
+          return reply.code(403).send({ error: 'Forbidden: you are not a participant of this booking.' });
+        }
+      }
+
+      return reply.send({ id: doc.id, ...b });
+    } catch (err: any) {
+      fastify.log.error(err, 'Failed to fetch booking');
+      return reply.code(500).send({ error: 'Failed to fetch booking.' });
+    }
+  });
 }

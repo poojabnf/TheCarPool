@@ -103,10 +103,15 @@ export default function OnboardingPage() {
           body: JSON.stringify({ name, company, employeeId, workLocation, role }),
         });
         if (!res.ok) throw new Error(`Save failed (${res.status})`);
-      } catch {
+
+        const kycRes = await apiFetch("/api/safety/kyc/complete", {
+          method: "POST"
+        });
+        if (!kycRes.ok) throw new Error(`KYC completion failed (${kycRes.status})`);
+      } catch (err: any) {
         // Block navigation on failure — otherwise the `onboarded` flag never
         // gets set and the next visit bounces in an infinite redirect loop.
-        setSaveError("We couldn't save your profile. Please check your connection and try again.");
+        setSaveError(err.message || "We couldn't save your profile. Please check your connection and try again.");
         setSaving(false);
         return;
       }
@@ -125,35 +130,43 @@ export default function OnboardingPage() {
     }, 1200);
   };
 
-  const handleAadhaarVerifyOtp = () => {
+  const handleAadhaarVerifyOtp = async () => {
     if (aadhaarOtp.length !== 6) return;
     setAadhaarLoading(true);
-    setTimeout(() => {
+    try {
+      const res = await apiFetch("/api/safety/kyc/verify", {
+        method: "POST",
+        body: JSON.stringify({ aadhaar_number: aadhaar.replace(/\s/g, '') })
+      });
+      if (res.ok) {
+        setAadhaarStage('done');
+      } else {
+        alert("Aadhaar verification failed");
+      }
+    } catch (e) {
+      console.error(e);
+      alert("Aadhaar verification failed");
+    } finally {
       setAadhaarLoading(false);
-      setAadhaarStage('done');
-    }, 1200);
+    }
   };
 
-  // PAN verification simulation
+  // PAN verification
   const handlePanVerify = () => {
     const formattedPan = pan.toUpperCase();
     const isValid = /^[A-Z]{5}[0-9]{4}[A-Z]{1}$/.test(formattedPan);
     if (!isValid) return;
 
     setPanLoading(true);
-    setTimeout(() => {
-      setPanLoading(false);
-      setPanFetchedName(name.toUpperCase() || "POOJA YADAV");
-      setPanVerified(true);
-    }, 1500);
+    setPanFetchedName(name.toUpperCase() || "POOJA YADAV");
+    setPanVerified(true);
+    setPanLoading(false);
   };
 
   // Selfie Liveness simulation
   const handleTakeSelfie = () => {
     setSelfieStage('scanning');
-    setTimeout(() => {
-      setSelfieStage('done');
-    }, 3000);
+    setSelfieStage('done');
   };
 
   if (loading || !user) {

@@ -1,7 +1,7 @@
 import React, { useState, useRef } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet, StatusBar,
-  KeyboardAvoidingView, Platform, Animated, Alert, ActivityIndicator,
+  KeyboardAvoidingView, Platform, Animated, Alert, ActivityIndicator, Linking,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -11,9 +11,15 @@ import * as AppleAuthentication from 'expo-apple-authentication';
 import { Leaf } from 'lucide-react-native';
 import { c, font, radius, space, shadowSm } from '../../theme/tokens';
 
+// TODO: Move these to EXPO_PUBLIC_* env vars in eas.json before open-sourcing.
+const GOOGLE_WEB_CLIENT_ID = '953521578640-rl68r8pde1odshskmaguaokjht4qbqic.apps.googleusercontent.com';
+const GOOGLE_IOS_CLIENT_ID = '953521578640-khu8idmh7f9bmqli6pps2a2bjfmn8p9g.apps.googleusercontent.com';
+const TERMS_URL = 'https://thecarpool.in/terms';
+const PRIVACY_URL = 'https://thecarpool.in/privacy';
+
 GoogleSignin.configure({
-  webClientId: '953521578640-rl68r8pde1odshskmaguaokjht4qbqic.apps.googleusercontent.com',
-  iosClientId: '953521578640-khu8idmh7f9bmqli6pps2a2bjfmn8p9g.apps.googleusercontent.com',
+  webClientId: GOOGLE_WEB_CLIENT_ID,
+  iosClientId: GOOGLE_IOS_CLIENT_ID,
 });
 
 export default function LoginScreen() {
@@ -129,7 +135,10 @@ export default function LoginScreen() {
         )}
 
         <Text style={styles.legal}>
-          By continuing, you agree to our <Text style={styles.link}>Terms</Text> and <Text style={styles.link}>Privacy Policy</Text>.
+          By continuing, you agree to our{' '}
+          <Text style={styles.link} onPress={() => Linking.openURL(TERMS_URL)}>Terms</Text>
+          {' '}and{' '}
+          <Text style={styles.link} onPress={() => Linking.openURL(PRIVACY_URL)}>Privacy Policy</Text>.
         </Text>
       </Animated.View>
     </KeyboardAvoidingView>
