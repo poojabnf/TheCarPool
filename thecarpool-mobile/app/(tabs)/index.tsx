@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import {
-  View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView, Alert, ActivityIndicator,
+  View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView, Alert, ActivityIndicator, Image,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -155,7 +155,9 @@ export default function HomeScreen() {
           <Text style={styles.name}>{name}</Text>
         </View>
         <TouchableOpacity style={styles.avatar} onPress={() => router.push('/(tabs)/account')} activeOpacity={0.8}>
-          <Text style={styles.avatarText}>{initials(userProfile?.name)}</Text>
+          {userProfile?.photoUrl
+            ? <Image source={{ uri: userProfile.photoUrl }} style={styles.avatarImg} />
+            : <Text style={styles.avatarText}>{initials(userProfile?.name)}</Text>}
         </TouchableOpacity>
       </View>
 
@@ -279,6 +281,7 @@ const styles = StyleSheet.create({
   greeting: { fontFamily: font.sansMedium, fontSize: 13, color: c.textTertiary },
   name: { fontFamily: font.sansExtrabold, fontSize: 22, color: c.textPrimary, letterSpacing: -0.4 },
   avatar: { width: 42, height: 42, borderRadius: radius.pill, backgroundColor: c.textPrimary, alignItems: 'center', justifyContent: 'center' },
+  avatarImg: { width: 42, height: 42, borderRadius: radius.pill },
   avatarText: { fontFamily: font.sansBold, fontSize: 14, color: '#fff' },
 
   card: { backgroundColor: c.surfaceCard, borderRadius: radius.lg, padding: space.lg, borderWidth: 1, borderColor: c.borderSubtle, ...shadowSm },

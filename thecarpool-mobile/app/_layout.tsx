@@ -42,7 +42,7 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
               setKycStatus('pending');
             }
             // Rehydrate profile fields if present
-            if (data.name || data.company) {
+            if (data.name || data.company || data.photo_url) {
               setUserProfile({
                 name: data.name,
                 phone: user.phoneNumber || '',
@@ -51,6 +51,7 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
                 employeeId: data.employeeId,
                 workLocation: data.workLocation,
                 role: data.role,
+                photoUrl: data.photo_url,
               });
             }
           }

@@ -70,6 +70,13 @@
       "@react-native-firebase/auth",
       "@react-native-google-signin/google-signin",
       [
+        "expo-image-picker",
+        {
+          "photosPermission": "TheCarPool uses your photos so you can set a profile picture.",
+          "cameraPermission": "TheCarPool uses the camera so you can take a profile picture."
+        }
+      ],
+      [
         "expo-build-properties",
         {
           "ios": {

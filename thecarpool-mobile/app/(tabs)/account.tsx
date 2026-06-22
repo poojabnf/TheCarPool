@@ -1,13 +1,14 @@
 import React, { useState, useEffect } from 'react';
-import { StyleSheet, View, Text, TouchableOpacity, ScrollView, Switch, Alert, Linking, ActivityIndicator } from 'react-native';
+import { StyleSheet, View, Text, TouchableOpacity, ScrollView, Switch, Alert, Linking, ActivityIndicator, Image } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
-  CreditCard, Settings, HelpCircle, ChevronRight, LogOut, Newspaper, ShieldCheck, Leaf, Receipt,
+  CreditCard, Settings, HelpCircle, ChevronRight, LogOut, Newspaper, ShieldCheck, Leaf, Receipt, Camera,
 } from 'lucide-react-native';
 import { auth } from '../services/firebase';
 import { apiFetch } from '../services/api';
 import { useAuthStore } from '../store/authStore';
+import { chooseAndUploadAvatar } from '../services/avatar';
 import { c, font, radius, space, shadowSm } from '../../theme/tokens';
 
 const SUPPORT_EMAIL = 'support@thecarpool.in';
@@ -29,7 +30,7 @@ function initials(name?: string | null) {
 export default function AccountInterface() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { kycStatus, userProfile } = useAuthStore();
+  const { kycStatus, userProfile, setUserProfile } = useAuthStore();
   const [view, setView] = useState<'menu' | 'settings' | 'help' | 'history'>('menu');
   const [notifications, setNotifications] = useState(true);
   const [openFaq, setOpenFaq] = useState<number | null>(null);
@@ -155,7 +156,16 @@ export default function AccountInterface() {
       <Text style={styles.h1}>You</Text>
 
       <View style={styles.profile}>
-        <View style={styles.avatar}><Text style={styles.avatarText}>{initials(name)}</Text></View>
+        <TouchableOpacity
+          style={styles.avatar}
+          activeOpacity={0.85}
+          onPress={() => chooseAndUploadAvatar((url) => setUserProfile({ photoUrl: url }))}
+        >
+          {userProfile?.photoUrl
+            ? <Image source={{ uri: userProfile.photoUrl }} style={styles.avatarImg} />
+            : <Text style={styles.avatarText}>{initials(name)}</Text>}
+          <View style={styles.cameraBadge}><Camera color="#fff" size={11} strokeWidth={2.4} /></View>
+        </TouchableOpacity>
         <View style={{ flex: 1 }}>
           <Text style={styles.name}>{name}</Text>
           {!!contact && <Text style={styles.contact}>{contact}</Text>}
@@ -216,7 +226,9 @@ const styles = StyleSheet.create({
 
   profile: { flexDirection: 'row', alignItems: 'center', gap: space.md, marginBottom: space.lg },
   avatar: { width: 60, height: 60, borderRadius: radius.pill, backgroundColor: c.textPrimary, alignItems: 'center', justifyContent: 'center' },
+  avatarImg: { width: 60, height: 60, borderRadius: radius.pill },
   avatarText: { fontFamily: font.sansBold, fontSize: 20, color: '#fff' },
+  cameraBadge: { position: 'absolute', bottom: -2, right: -2, width: 22, height: 22, borderRadius: 11, backgroundColor: c.go, alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: c.bgApp },
   name: { fontFamily: font.sansBold, fontSize: 19, color: c.textPrimary },
   contact: { fontFamily: font.sans, fontSize: 13, color: c.textTertiary, marginTop: 1 },
   kycChip: { flexDirection: 'row', alignItems: 'center', gap: 4, alignSelf: 'flex-start', borderRadius: radius.pill, paddingHorizontal: 9, paddingVertical: 4, marginTop: 8 },

@@ -14,6 +14,7 @@ export interface UserProfile {
   panNumber?: string;
   selfieVerified?: boolean;
   role?: 'rider' | 'partner';
+  photoUrl?: string;
 }
 
 interface AuthState {

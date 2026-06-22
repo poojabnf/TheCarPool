@@ -1,6 +1,8 @@
 import { FastifyInstance } from 'fastify';
-import { db } from '../server';
+import { db, storage } from '../server';
 import { requireAuth, requireAdmin } from '../middleware/auth';
+
+const AVATAR_URL_TTL_MS = 7 * 24 * 60 * 60 * 1000; // signed read URLs last 7 days; refreshed on /me + upload
 
 interface ProfileBody {
   name?: string;
@@ -32,10 +34,53 @@ export async function userRoutes(fastify: FastifyInstance) {
         return reply.send({ id: uid, onboarded: false, profile: null });
       }
       const data = doc.data()!;
-      return reply.send({ id: uid, onboarded: data.onboarded === true, ...data });
+      // Refresh the avatar's signed read URL so it never goes stale.
+      let photo_url = data.photo_url;
+      if (data.avatar_path) {
+        try {
+          const [url] = await storage.bucket().file(data.avatar_path).getSignedUrl({
+            version: 'v4', action: 'read', expires: Date.now() + AVATAR_URL_TTL_MS,
+          });
+          photo_url = url;
+        } catch { /* fall back to the stored URL */ }
+      }
+      return reply.send({ id: uid, onboarded: data.onboarded === true, ...data, photo_url });
     } catch (err: any) {
       fastify.log.error(err, 'Failed to load user profile');
       return reply.code(500).send({ error: 'Failed to load profile.' });
+    }
+  });
+
+  // Upload / replace the user's profile photo (base64 JPEG/PNG from the app's
+  // camera or gallery). Stored in Storage; a fresh signed read URL is returned.
+  fastify.post('/photo', { preHandler: [requireAuth] }, async (request, reply) => {
+    const uid = request.user!.id;
+    const { image_base64, content_type } = (request.body as { image_base64?: string; content_type?: string }) || {};
+    if (!image_base64) {
+      return reply.code(400).send({ error: 'image_base64 is required.' });
+    }
+    try {
+      const buffer = Buffer.from(image_base64, 'base64');
+      if (buffer.length > 6 * 1024 * 1024) {
+        return reply.code(413).send({ error: 'Image too large (max 6MB).' });
+      }
+      const file = storage.bucket().file(`users/${uid}/avatar.jpg`);
+      await file.save(buffer, {
+        contentType: content_type || 'image/jpeg',
+        resumable: false,
+        metadata: { cacheControl: 'private, max-age=0' },
+      });
+      const [photo_url] = await file.getSignedUrl({
+        version: 'v4', action: 'read', expires: Date.now() + AVATAR_URL_TTL_MS,
+      });
+      await db.collection('users').doc(uid).set(
+        { avatar_path: file.name, photo_url, photo_updated_at: new Date().toISOString() },
+        { merge: true }
+      );
+      return reply.send({ photo_url });
+    } catch (err: any) {
+      fastify.log.error(err, 'Avatar upload failed');
+      return reply.code(500).send({ error: 'Failed to upload photo.' });
     }
   });
 
