@@ -165,12 +165,10 @@ function BookingCard({ b, onPress }: { b: Booking; onPress: () => void }) {
           <Text style={styles.price}>₹{(b.price_split * b.seats_booked).toFixed(0)} escrow</Text>
         )}
       </View>
-    </TouchableCard>
+    </TouchableOpacity>
   );
 }
 
-// Alias for JSX closing tag
-const TouchableCard = TouchableOpacity;
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: c.bgApp, paddingHorizontal: space.xl },
