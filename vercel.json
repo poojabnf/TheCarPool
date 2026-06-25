@@ -1,0 +1,6 @@
+{
+  "framework": "nextjs",
+  "installCommand": "cd thecarpool-web && npm install",
+  "buildCommand": "cd thecarpool-web && npm run build",
+  "outputDirectory": "thecarpool-web/.next"
+}
