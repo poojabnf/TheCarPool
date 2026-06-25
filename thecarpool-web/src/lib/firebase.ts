@@ -12,10 +12,13 @@ const required = [
   'NEXT_PUBLIC_FIREBASE_APP_ID',
 ] as const;
 
-for (const key of required) {
-  if (!process.env[key]) {
-    throw new Error(`Missing required environment variable: ${key}`);
-  }
+// Warn (don't throw) on missing config. Throwing at module-evaluation time
+// breaks `next build` static prerendering for pages that don't even use
+// Firebase (e.g. /support, /privacy). Firebase-dependent pages will still
+// surface a clear auth error at runtime if these aren't configured.
+const missing = required.filter((key) => !process.env[key]);
+if (missing.length > 0) {
+  console.warn(`[firebase] Missing env vars (set them in Vercel): ${missing.join(', ')}`);
 }
 
 const firebaseConfig = {
