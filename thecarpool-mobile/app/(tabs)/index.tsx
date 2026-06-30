@@ -312,7 +312,7 @@ const styles = StyleSheet.create({
   driverDiscText: { fontFamily: font.sansBold, fontSize: 14, color: c.textSecondary },
   driverName: { fontFamily: font.sansBold, fontSize: 15.5, color: c.textPrimary },
   vehicle: { fontFamily: font.sans, fontSize: 12.5, color: c.textTertiary, marginTop: 1 },
-  fare: { fontFamily: font.monoBold, fontSize: 19, color: c.textPrimary },
+  fare: { fontFamily: font.monoBold, fontSize: 19, color: c.textPrimary, letterSpacing: -0.4 },
   perSeat: { fontFamily: font.sans, fontSize: 11, color: c.textTertiary },
   badgeRow: { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginTop: space.md },
   badge: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: c.surfaceSunken, borderRadius: radius.pill, paddingHorizontal: 8, paddingVertical: 4 },
@@ -329,6 +329,6 @@ const styles = StyleSheet.create({
   co2Card: { flexDirection: 'row', alignItems: 'center', gap: space.md, backgroundColor: c.goSoft, borderRadius: radius.lg, padding: space.lg, marginTop: space.md },
   co2Icon: { width: 44, height: 44, borderRadius: radius.md, backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center' },
   co2Label: { fontFamily: font.sansMedium, fontSize: 12.5, color: c.goStrong },
-  co2Value: { fontFamily: font.monoBold, fontSize: 20, color: c.textPrimary, marginTop: 2 },
+  co2Value: { fontFamily: font.monoBold, fontSize: 20, color: c.textPrimary, marginTop: 2, letterSpacing: -0.5 },
   co2Unit: { fontFamily: font.sans, fontSize: 12.5, color: c.textTertiary },
 });

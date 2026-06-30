@@ -1,6 +1,6 @@
 import React, { useEffect } from 'react';
 import { Stack, useRouter, useSegments } from 'expo-router';
-import { StatusBar, View, ActivityIndicator } from 'react-native';
+import { StatusBar, View, ActivityIndicator, Text as RNText, TextInput as RNTextInput } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import {
   useFonts,
@@ -16,6 +16,15 @@ import { useAuthStore } from './store/authStore';
 import { auth } from './services/firebase';
 import { registerForPushNotifications } from './services/notifications';
 import { apiFetch } from './services/api';
+
+// Cap Dynamic Type scaling app-wide. Text still scales for accessibility, but
+// is bounded to 1.3x so very large system-font settings can't overflow the
+// fixed-height controls (buttons, inputs), the tab bar, or fare rows. Runs once
+// at import; individual components can still override per-element.
+const TextDefaults = RNText as unknown as { defaultProps?: { maxFontSizeMultiplier?: number } };
+TextDefaults.defaultProps = { ...(TextDefaults.defaultProps || {}), maxFontSizeMultiplier: 1.3 };
+const InputDefaults = RNTextInput as unknown as { defaultProps?: { maxFontSizeMultiplier?: number } };
+InputDefaults.defaultProps = { ...(InputDefaults.defaultProps || {}), maxFontSizeMultiplier: 1.3 };
 
 function AuthGuard({ children }: { children: React.ReactNode }) {
   const { isLoggedIn, isAuthLoading, setFirebaseUser, setKycStatus, setUserProfile } = useAuthStore();

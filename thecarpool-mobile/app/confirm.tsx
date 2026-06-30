@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Alert, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Alert, ActivityIndicator, ScrollView } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import auth from '@react-native-firebase/auth';
@@ -81,7 +81,12 @@ export default function ConfirmPay() {
         <View style={{ width: 40 }} />
       </View>
 
-      <View style={{ paddingHorizontal: space.xl }}>
+      <ScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={{ paddingHorizontal: space.xl, paddingBottom: 120 }}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+      >
         {/* Driver + route */}
         <View style={styles.card}>
           <View style={styles.driverRow}>
@@ -129,7 +134,7 @@ export default function ConfirmPay() {
             <Text style={styles.payVpa}>Secured escrow — released after your ride</Text>
           </View>
         </View>
-      </View>
+      </ScrollView>
 
       {/* Pay button */}
       <View style={[styles.footer, { paddingBottom: insets.bottom + space.md }]}>
@@ -176,7 +181,7 @@ const styles = StyleSheet.create({
   rowValue: { fontFamily: font.mono, fontSize: 14, color: c.textPrimary },
   totalDivider: { height: 1, backgroundColor: c.borderSubtle, marginVertical: 8 },
   totalLabel: { fontFamily: font.sansBold, fontSize: 16, color: c.textPrimary },
-  totalValue: { fontFamily: font.monoBold, fontSize: 18, color: c.textPrimary },
+  totalValue: { fontFamily: font.monoBold, fontSize: 18, color: c.textPrimary, letterSpacing: -0.4 },
   escrow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: space.sm, backgroundColor: c.accentSoft, borderRadius: radius.sm, padding: space.sm },
   escrowText: { flex: 1, fontFamily: font.sansMedium, fontSize: 11.5, color: c.textAccent },
 
