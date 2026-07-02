@@ -68,6 +68,7 @@ export async function bookingRoutes(fastify: FastifyInstance) {
     }
 
     const bookingId = 'booking_' + randomUUID();
+    const riderGender = riderDoc.data()?.gender;
 
     try {
       const result = await db.runTransaction(async (transaction) => {
@@ -81,6 +82,11 @@ export async function bookingRoutes(fastify: FastifyInstance) {
         const ride = rideDoc.data()!;
         if (ride.status !== 'SCHEDULED') {
           throw new Error('NOT_OPEN');
+        }
+
+        // Women-only rides are bookable only by female riders (server-enforced).
+        if (ride.women_only && riderGender !== 'FEMALE') {
+          throw new Error('WOMEN_ONLY');
         }
 
         if (ride.seats_available < seats_booked) {
@@ -140,6 +146,9 @@ export async function bookingRoutes(fastify: FastifyInstance) {
       }
       if (err.message === 'NO_SEATS') {
         return reply.code(400).send({ error: 'Insufficient seats available.' });
+      }
+      if (err.message === 'WOMEN_ONLY') {
+        return reply.code(403).send({ error: 'WOMEN_ONLY', message: 'This ride is reserved for women riders.' });
       }
       fastify.log.error('Booking transaction aborted:', err);
       return reply.code(500).send({ error: 'Failed to complete escrow booking.' });

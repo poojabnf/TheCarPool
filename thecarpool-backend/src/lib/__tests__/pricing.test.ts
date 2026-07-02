@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+// Jest is the project test runner; describe/it/expect are globals.
 import { calculateSplit, suggestPricing, fuelSavings } from '../pricing';
 
 describe('calculateSplit', () => {

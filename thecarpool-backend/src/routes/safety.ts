@@ -328,6 +328,18 @@ export async function safetyRoutes(fastify: FastifyInstance) {
   });
 
   // 7. Safety Circle Auto-Share contacts (Feature 28)
+  // List the caller's emergency contacts (Safety Center).
+  fastify.get('/safety/contacts', { preHandler: [requireAuth] }, async (request, reply) => {
+    try {
+      const snap = await db.collection('users').doc(request.user!.id).collection('safety_contacts').get();
+      const contacts = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      return reply.send({ contacts });
+    } catch (err: any) {
+      fastify.log.error(err, 'Failed to list safety contacts');
+      return reply.code(500).send({ error: 'Failed to list safety contacts.' });
+    }
+  });
+
   fastify.post('/safety/contacts', { preHandler: [requireAuth] }, async (request, reply) => {
     const { contact_name, contact_phone } = request.body as any;
     const uid = request.user!.id;

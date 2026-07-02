@@ -14,6 +14,7 @@ interface CreateRideBody {
   smoking_allowed?: boolean;
   chattiness?: 'QUIET' | 'MEDIUM' | 'TALKATIVE';
   ac_available?: boolean;
+  women_only?: boolean;
 }
 
 interface SearchRideBody {
@@ -31,6 +32,7 @@ interface SearchRideBody {
   smoking_allowed?: boolean;
   chattiness?: 'QUIET' | 'MEDIUM' | 'TALKATIVE' | 'ANY';
   ac_available?: boolean;
+  women_only?: boolean; // women-safety mode: women-only rides or women drivers
 }
 
 // Helpers for robust ID resolution (handling formats like "1" and "user_1")
@@ -64,6 +66,15 @@ async function getDriverDoc(driverId: string | number) {
     }
   }
   return doc;
+}
+
+// Trust level from real ride/rating history: Gold (25+ rated trips, 4.5+),
+// Silver (10+, 4.0+), Bronze (1+ rated trip), New otherwise.
+function trustLevel(ratingCount: number, ratingAvg: number): 'GOLD' | 'SILVER' | 'BRONZE' | 'NEW' {
+  if (ratingCount >= 25 && ratingAvg >= 4.5) return 'GOLD';
+  if (ratingCount >= 10 && ratingAvg >= 4.0) return 'SILVER';
+  if (ratingCount >= 1) return 'BRONZE';
+  return 'NEW';
 }
 
 function haversineDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
@@ -120,7 +131,7 @@ export async function rideRoutes(fastify: FastifyInstance) {
     const {
       driver_id, route_geojson, seats_total, price_split, departure_time,
       vehicle_type = 'CAR', music_allowed = true, smoking_allowed = false,
-      chattiness = 'MEDIUM', ac_available = true
+      chattiness = 'MEDIUM', ac_available = true, women_only = false
     } = request.body as CreateRideBody;
 
     const uid = String(request.user!.id);
@@ -149,6 +160,14 @@ export async function rideRoutes(fastify: FastifyInstance) {
         return reply.code(403).send({
           error: 'REAL_VERIFICATION_REQUIRED',
           message: 'A simulated KYC check is insufficient for driver privileges.',
+        });
+      }
+
+      // Women-only rides can only be offered by verified female drivers.
+      if (women_only && userData?.gender !== 'FEMALE') {
+        return reply.code(403).send({
+          error: 'WOMEN_ONLY_DRIVER_REQUIRED',
+          message: 'Only female drivers can offer women-only rides.',
         });
       }
 
@@ -208,6 +227,7 @@ export async function rideRoutes(fastify: FastifyInstance) {
         smoking_allowed,
         chattiness,
         ac_available,
+        women_only: Boolean(women_only),
         status: 'SCHEDULED',
         created_at: new Date().toISOString()
       };
@@ -223,11 +243,23 @@ export async function rideRoutes(fastify: FastifyInstance) {
   // 2. Spatial carpool matching search query with dynamic filters and Redis caching
   fastify.post('/search', { preHandler: [requireAuth] }, async (request, reply) => {
     const body = request.body as SearchRideBody;
-    const { 
+    const {
       pickup_lng, pickup_lat, drop_lng, drop_lat, max_detour_meters = 1500,
       gender_preference, company_domain, society_name, ev_only = false,
-      vehicle_type = 'ANY', music_allowed, smoking_allowed, chattiness = 'ANY', ac_available
+      vehicle_type = 'ANY', music_allowed, smoking_allowed, chattiness = 'ANY', ac_available,
+      women_only = false
     } = body;
+
+    // Searcher's gender gates women-only rides both ways: the women-safety
+    // toggle requires it, and women-only rides are hidden from other users.
+    const searcherDoc = await db.collection('users').doc(String(request.user!.id)).get();
+    const searcherGender = searcherDoc.data()?.gender;
+    if (women_only && searcherGender !== 'FEMALE') {
+      return reply.code(403).send({
+        error: 'WOMEN_ONLY_MODE_RESTRICTED',
+        message: 'Women-safety mode is available to female riders. Set your gender in your profile.',
+      });
+    }
 
     // Validate bounds
     if (pickup_lat > 90 || pickup_lat < -90 || drop_lat > 90 || drop_lat < -90 || pickup_lng > 180 || pickup_lng < -180 || drop_lng > 180 || drop_lng < -180) {
@@ -235,7 +267,7 @@ export async function rideRoutes(fastify: FastifyInstance) {
     }
 
     // Build Cache Key securely
-    const cacheKey = `search:${pickup_lng},${pickup_lat},${drop_lng},${drop_lat},${max_detour_meters},${gender_preference || 'ANY'},${company_domain || 'NONE'},${society_name || 'NONE'},${ev_only},${vehicle_type},${music_allowed ?? 'ANY'},${smoking_allowed ?? 'ANY'},${chattiness},${ac_available ?? 'ANY'}`;
+    const cacheKey = `search:${pickup_lng},${pickup_lat},${drop_lng},${drop_lat},${max_detour_meters},${gender_preference || 'ANY'},${company_domain || 'NONE'},${society_name || 'NONE'},${ev_only},${vehicle_type},${music_allowed ?? 'ANY'},${smoking_allowed ?? 'ANY'},${chattiness},${ac_available ?? 'ANY'},${women_only},${searcherGender || 'UNKNOWN'}`;
     
     try {
       // 1. Check Redis Cache
@@ -281,6 +313,14 @@ export async function rideRoutes(fastify: FastifyInstance) {
         const user = userDoc.data()!;
 
         // Apply filters:
+        // Women-only rides are visible only to female searchers.
+        if (ride.women_only && searcherGender !== 'FEMALE') {
+          continue;
+        }
+        // Women-safety mode: only women-only rides or rides driven by women.
+        if (women_only && !(ride.women_only || user.gender === 'FEMALE')) {
+          continue;
+        }
         if (gender_preference && gender_preference !== 'ANY' && user.gender !== gender_preference) {
           continue;
         }
@@ -354,12 +394,18 @@ export async function rideRoutes(fastify: FastifyInstance) {
             smoking_allowed: ride.smoking_allowed,
             chattiness: ride.chattiness,
             ac_available: ride.ac_available,
+            women_only: ride.women_only || false,
             driver_name: user.name || 'Anonymous',
             driver_company: user.company_domain || null,
             driver_society: user.society_name || null,
             linkedin_profile_url: user.linkedin_profile_url || null,
             linkedin_connections: user.linkedin_connections || 0,
             is_ev: driver.is_ev || false,
+            // Real reputation data — drives rating display + trust badges.
+            driver_rating: user.rating_avg ? parseFloat(user.rating_avg.toFixed(2)) : null,
+            driver_rating_count: user.rating_count || 0,
+            driver_trust_level: trustLevel(user.rating_count || 0, user.rating_avg || 0),
+            driver_kyc_verified: user.kyc_status === 'VERIFIED' && user.kyc_simulated !== true,
             pickup_deviation: parseFloat(minPickupDist.toFixed(2)),
             drop_deviation: parseFloat(minDropDist.toFixed(2))
           });

@@ -195,6 +195,7 @@ export default function AccountInterface() {
         <MenuRow icon={<Newspaper color={c.textSecondary} size={20} />} title="Classifieds" sub="Community marketplace" onPress={() => router.push('/(tabs)/classifieds')} last />
       </View>
       <View style={styles.group}>
+        <MenuRow icon={<ShieldCheck color={c.textSecondary} size={20} />} title="Safety Centre" sub="SOS, trip sharing, emergency contacts" onPress={() => router.push('/safety-center')} />
         <MenuRow icon={<Settings color={c.textSecondary} size={20} />} title="Settings" sub="Notifications, privacy, account" onPress={() => setView('settings')} />
         <MenuRow icon={<HelpCircle color={c.textSecondary} size={20} />} title="Help & support" sub="FAQs, contact us" onPress={() => setView('help')} last />
       </View>

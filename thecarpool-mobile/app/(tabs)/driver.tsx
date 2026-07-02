@@ -83,6 +83,7 @@ export default function DriverInterface() {
   const [acAvailable, setAcAvailable] = useState(true);
   const [musicAllowed, setMusicAllowed] = useState(true);
   const [smokingAllowed, setSmokingAllowed] = useState(false);
+  const [womenOnlyRide, setWomenOnlyRide] = useState(false);
   const [chattiness, setChattiness] = useState<'QUIET' | 'MEDIUM' | 'TALKATIVE'>('MEDIUM');
   const [suggestedPrice, setSuggestedPrice] = useState<number | null>(null);
   const [customPrice, setCustomPrice] = useState('');
@@ -204,6 +205,7 @@ export default function DriverInterface() {
           music_allowed: musicAllowed,
           smoking_allowed: smokingAllowed,
           chattiness,
+          women_only: womenOnlyRide,
           is_recurring: isRecurring,
           recurring_days: isRecurring ? selectedDays : [],
         }),
@@ -221,7 +223,7 @@ export default function DriverInterface() {
           );
           return;
         }
-        Alert.alert('Failed to Post Ride', err.error || `Server error ${res.status}`);
+        Alert.alert('Failed to Post Ride', err.message || err.error || `Server error ${res.status}`);
         return;
       }
       const ride = await res.json();
@@ -545,9 +547,18 @@ export default function DriverInterface() {
 
             <View style={styles.prefSwitchRow}>
               <Text style={styles.prefLabel}>Smoking Allowed</Text>
-              <Switch 
-                value={smokingAllowed} 
+              <Switch
+                value={smokingAllowed}
                 onValueChange={setSmokingAllowed}
+                trackColor={{ false: colors.cardBorder, true: colors.success }}
+              />
+            </View>
+
+            <View style={styles.prefSwitchRow}>
+              <Text style={styles.prefLabel}>♀ Women-only ride</Text>
+              <Switch
+                value={womenOnlyRide}
+                onValueChange={setWomenOnlyRide}
                 trackColor={{ false: colors.cardBorder, true: colors.success }}
               />
             </View>

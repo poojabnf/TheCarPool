@@ -75,6 +75,39 @@ export default function TripScreen() {
     } catch { /* user dismissed */ }
   };
 
+  // ── Post-trip rating ─────────────────────────────────────────
+  const [showRating, setShowRating] = useState(false);
+  const [stars, setStars] = useState(0);
+  const [feltSafe, setFeltSafe] = useState<boolean | null>(null);
+  const [submittingRating, setSubmittingRating] = useState(false);
+
+  const submitRating = async () => {
+    if (stars === 0) { Alert.alert('Rate your trip', 'Tap a star rating first.'); return; }
+    setSubmittingRating(true);
+    try {
+      await apiFetch('/api/safety/ratings/submit', {
+        method: 'POST',
+        body: JSON.stringify({
+          ride_id: id,
+          ratee_id: ride?.driver_uid || ride?.driver_id || 'unknown',
+          rating_score: stars,
+          feedback: feltSafe === null ? undefined : (feltSafe ? 'felt_safe' : 'felt_unsafe'),
+        }),
+      });
+      // A "felt unsafe" answer routes to the safety team regardless of rating.
+      if (feltSafe === false) {
+        Alert.alert('Thank you', 'Your safety feedback has been flagged to our safety team. We take this seriously.');
+      } else {
+        Alert.alert('Thank you!', 'Your rating helps keep the community trustworthy.');
+      }
+      router.replace('/(tabs)');
+    } catch {
+      Alert.alert('Could not submit', 'Please try again.');
+    } finally {
+      setSubmittingRating(false);
+    }
+  };
+
   return (
     <View style={styles.screen}>
       {/* Map */}
@@ -125,16 +158,52 @@ export default function TripScreen() {
           </View>
         </View>
 
-        <View style={styles.actions}>
-          <TouchableOpacity style={styles.sos} onPress={triggerSOS} activeOpacity={0.9}>
-            <ShieldAlert color="#fff" size={18} strokeWidth={2.4} />
-            <Text style={styles.sosText}>SOS</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.share} onPress={shareTrip} activeOpacity={0.9}>
-            <Share2 color={c.textPrimary} size={17} strokeWidth={2.2} />
-            <Text style={styles.shareText}>Share live trip</Text>
-          </TouchableOpacity>
-        </View>
+        {!showRating ? (
+          <>
+            <View style={styles.actions}>
+              <TouchableOpacity style={styles.sos} onPress={triggerSOS} activeOpacity={0.9}>
+                <ShieldAlert color="#fff" size={18} strokeWidth={2.4} />
+                <Text style={styles.sosText}>SOS</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.share} onPress={shareTrip} activeOpacity={0.9}>
+                <Share2 color={c.textPrimary} size={17} strokeWidth={2.2} />
+                <Text style={styles.shareText}>Share live trip</Text>
+              </TouchableOpacity>
+            </View>
+            <TouchableOpacity style={styles.endTrip} onPress={() => setShowRating(true)}>
+              <Text style={styles.endTripText}>End trip & rate</Text>
+            </TouchableOpacity>
+          </>
+        ) : (
+          <View>
+            <Text style={styles.rateTitle}>How was your ride?</Text>
+            <View style={styles.starsRow}>
+              {[1, 2, 3, 4, 5].map((n) => (
+                <TouchableOpacity key={n} onPress={() => setStars(n)}>
+                  <Text style={[styles.star, n <= stars && styles.starOn]}>★</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+            <Text style={styles.rateSub}>Did you feel safe on this trip?</Text>
+            <View style={styles.safeRow}>
+              <TouchableOpacity
+                style={[styles.safeBtn, feltSafe === true && styles.safeBtnOn]}
+                onPress={() => setFeltSafe(true)}
+              >
+                <Text style={[styles.safeBtnText, feltSafe === true && { color: '#fff' }]}>Yes, felt safe</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.safeBtn, feltSafe === false && styles.safeBtnDanger]}
+                onPress={() => setFeltSafe(false)}
+              >
+                <Text style={[styles.safeBtnText, feltSafe === false && { color: '#fff' }]}>No</Text>
+              </TouchableOpacity>
+            </View>
+            <TouchableOpacity style={styles.submitRating} onPress={submitRating} disabled={submittingRating} activeOpacity={0.9}>
+              <Text style={styles.submitRatingText}>{submittingRating ? 'Submitting…' : 'Submit rating'}</Text>
+            </TouchableOpacity>
+          </View>
+        )}
       </View>
     </View>
   );
@@ -173,6 +242,22 @@ const styles = StyleSheet.create({
   sosText: { fontFamily: font.sansExtrabold, fontSize: 16, color: '#fff', letterSpacing: 0.5 },
   share: { flex: 1, flexDirection: 'row', gap: 8, alignItems: 'center', justifyContent: 'center', backgroundColor: c.surfaceCard, height: 52, borderRadius: radius.md, borderWidth: 1, borderColor: c.borderStrong },
   shareText: { fontFamily: font.sansBold, fontSize: 14.5, color: c.textPrimary },
+
+  endTrip: { alignItems: 'center', paddingVertical: space.md },
+  endTripText: { fontFamily: font.sansSemibold, fontSize: 13.5, color: c.textTertiary, textDecorationLine: 'underline' },
+
+  rateTitle: { fontFamily: font.sansBold, fontSize: 18, color: c.textPrimary, textAlign: 'center', marginBottom: space.sm },
+  starsRow: { flexDirection: 'row', justifyContent: 'center', gap: 10, marginBottom: space.md },
+  star: { fontSize: 36, color: c.borderStrong },
+  starOn: { color: '#f59e0b' },
+  rateSub: { fontFamily: font.sansMedium, fontSize: 13.5, color: c.textSecondary, textAlign: 'center', marginBottom: space.sm },
+  safeRow: { flexDirection: 'row', gap: space.sm, marginBottom: space.md },
+  safeBtn: { flex: 1, height: 44, alignItems: 'center', justifyContent: 'center', borderRadius: radius.md, borderWidth: 1, borderColor: c.borderStrong, backgroundColor: c.surfaceCard },
+  safeBtnOn: { backgroundColor: c.go, borderColor: c.go },
+  safeBtnDanger: { backgroundColor: c.danger, borderColor: c.danger },
+  safeBtnText: { fontFamily: font.sansSemibold, fontSize: 13.5, color: c.textPrimary },
+  submitRating: { height: 52, alignItems: 'center', justifyContent: 'center', backgroundColor: c.textPrimary, borderRadius: radius.md },
+  submitRatingText: { fontFamily: font.sansBold, fontSize: 15, color: c.bgBase },
 });
 
 // shadowLg is a style object in tokens; wrap so it can sit inside StyleSheet.create above.

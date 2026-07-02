@@ -111,9 +111,17 @@ export default function HomeScreen() {
           pickup_lng: originCoords.lng, pickup_lat: originCoords.lat,
           drop_lng: destCoords.lng, drop_lat: destCoords.lat,
           max_detour_meters: 1500,
-          gender_preference: womenOnly ? 'FEMALE' : 'ANY',
+          // Women-safety mode: backend returns women-only rides + women drivers,
+          // and enforces that the searcher is female.
+          women_only: womenOnly,
         }),
       });
+      if (res.status === 403 && womenOnly) {
+        const err = await res.json().catch(() => null);
+        Alert.alert('Women-safety mode', err?.message || 'Set your gender to Female in your profile to use women-safety mode.');
+        setRides([]);
+        return;
+      }
       const data = res.ok ? await res.json() : [];
       setRides(Array.isArray(data) ? data : []);
     } catch {
@@ -222,9 +230,13 @@ export default function HomeScreen() {
               <View style={styles.rideTop}>
                 <View style={styles.driverDisc}><Text style={styles.driverDiscText}>{initials(ride.driver_name)}</Text></View>
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.driverName}>{ride.driver_name}</Text>
+                  <Text style={styles.driverName}>
+                    {ride.driver_name}
+                    {(ride as any).driver_rating ? `  ★ ${(ride as any).driver_rating}` : ''}
+                  </Text>
                   <Text style={styles.vehicle}>
                     {(ride.vehicle_type || 'Car')}{ride.is_ev ? ' · EV' : ''}{ride.ac_available ? ' · AC' : ''}
+                    {(ride as any).driver_rating_count ? ` · ${(ride as any).driver_rating_count} rated trips` : ''}
                   </Text>
                 </View>
                 <View style={{ alignItems: 'flex-end' }}>
@@ -233,9 +245,16 @@ export default function HomeScreen() {
                 </View>
               </View>
               <View style={styles.badgeRow}>
-                <View style={styles.badge}><BadgeCheck color={c.goStrong} size={12} strokeWidth={2.4} /><Text style={styles.badgeText}>Verified</Text></View>
+                {(ride as any).driver_kyc_verified && <View style={styles.badge}><BadgeCheck color={c.goStrong} size={12} strokeWidth={2.4} /><Text style={styles.badgeText}>Verified</Text></View>}
+                {['GOLD', 'SILVER', 'BRONZE'].includes((ride as any).driver_trust_level) && (
+                  <View style={styles.badge}>
+                    <Text style={styles.badgeText}>
+                      {(ride as any).driver_trust_level === 'GOLD' ? '🥇 Gold' : (ride as any).driver_trust_level === 'SILVER' ? '🥈 Silver' : '🥉 Bronze'}
+                    </Text>
+                  </View>
+                )}
                 {ride.ac_available && <View style={styles.badge}><Wind color={c.info} size={12} strokeWidth={2.4} /><Text style={styles.badgeText}>AC</Text></View>}
-                {womenOnly && <View style={styles.badge}><Venus color={c.textAccent} size={12} strokeWidth={2.4} /><Text style={styles.badgeText}>Women only</Text></View>}
+                {(ride as any).women_only && <View style={styles.badge}><Venus color={c.textAccent} size={12} strokeWidth={2.4} /><Text style={styles.badgeText}>Women only</Text></View>}
                 {ride.pickup_deviation != null && <Text style={styles.detour}>{Math.round(ride.pickup_deviation)}m detour</Text>}
               </View>
               <TouchableOpacity style={styles.bookBtn} onPress={() => bookRide(ride)} activeOpacity={0.9}>

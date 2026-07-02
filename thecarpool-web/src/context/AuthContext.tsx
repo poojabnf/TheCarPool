@@ -3,7 +3,7 @@
 import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
 import { 
   User, 
-  onAuthStateChanged, 
+  onIdTokenChanged,
   signInWithPopup, 
   GoogleAuthProvider, 
   signOut as firebaseSignOut,
@@ -36,15 +36,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const recaptchaRef = useRef<RecaptchaVerifier | null>(null);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+    // onIdTokenChanged fires on sign-in/out AND hourly token refreshes, so the
+    // __session cookie (verified server-side in proxy.ts) never goes stale.
+    const unsubscribe = onIdTokenChanged(auth, async (currentUser) => {
       setUser(currentUser);
       setLoading(false);
       // Tag Sentry events with the signed-in user (no-op if Sentry has no DSN).
       if (currentUser) {
         setSentryUser(currentUser.uid, currentUser.email ?? undefined);
+        const token = await currentUser.getIdToken();
+        document.cookie = `__session=${token}; path=/; max-age=3300; SameSite=Lax; Secure`;
         document.cookie = 'firebase_authenticated=1; path=/; max-age=3600; SameSite=Lax';
       } else {
         clearSentryUser();
+        document.cookie = '__session=; path=/; max-age=0; SameSite=Lax';
         document.cookie = 'firebase_authenticated=; path=/; max-age=0; SameSite=Lax';
       }
     });
@@ -66,6 +71,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const signOut = async () => {
+    document.cookie = '__session=; path=/; max-age=0; SameSite=Lax';
     document.cookie = 'firebase_authenticated=; path=/; max-age=0; SameSite=Lax';
     clearSentryUser();
     await firebaseSignOut(auth);
@@ -87,6 +93,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     // 3. Clear any local onboarding state and auth cookies
     localStorage.removeItem(`thecarpool_onboarded_${uid}`);
+    document.cookie = '__session=; path=/; max-age=0; SameSite=Lax';
     document.cookie = 'firebase_authenticated=; path=/; max-age=0; SameSite=Lax';
     clearSentryUser();
   };
