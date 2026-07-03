@@ -84,6 +84,9 @@ export default function DriverInterface() {
   const [musicAllowed, setMusicAllowed] = useState(true);
   const [smokingAllowed, setSmokingAllowed] = useState(false);
   const [womenOnlyRide, setWomenOnlyRide] = useState(false);
+  // Later-phase modes: daily commute (default), intercity, or event carpooling.
+  const [rideType, setRideType] = useState<'COMMUTE' | 'INTERCITY' | 'EVENT'>('COMMUTE');
+  const [eventTag, setEventTag] = useState('');
   const [chattiness, setChattiness] = useState<'QUIET' | 'MEDIUM' | 'TALKATIVE'>('MEDIUM');
   const [suggestedPrice, setSuggestedPrice] = useState<number | null>(null);
   const [customPrice, setCustomPrice] = useState('');
@@ -206,6 +209,8 @@ export default function DriverInterface() {
           smoking_allowed: smokingAllowed,
           chattiness,
           women_only: womenOnlyRide,
+          ride_type: rideType,
+          ...(rideType === 'EVENT' && eventTag.trim() ? { event_tag: eventTag.trim() } : {}),
           is_recurring: isRecurring,
           recurring_days: isRecurring ? selectedDays : [],
         }),
@@ -561,6 +566,36 @@ export default function DriverInterface() {
                 onValueChange={setWomenOnlyRide}
                 trackColor={{ false: colors.cardBorder, true: colors.success }}
               />
+            </View>
+
+            <View style={styles.formGroup}>
+              <Text style={styles.formLabel}>Ride Type</Text>
+              <View style={styles.chatSelectRow}>
+                {(['COMMUTE', 'INTERCITY', 'EVENT'] as const).map(mode => {
+                  const active = rideType === mode;
+                  return (
+                    <TouchableOpacity
+                      key={mode}
+                      style={[styles.chatBtn, active && styles.chatBtnActive]}
+                      onPress={() => setRideType(mode)}
+                    >
+                      <Text style={[styles.chatBtnText, active && styles.chatBtnTextActive]}>
+                        {mode === 'COMMUTE' ? 'Commute' : mode === 'INTERCITY' ? 'Intercity' : 'Event'}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+              {rideType === 'EVENT' && (
+                <TextInput
+                  style={styles.formInput}
+                  placeholder='Event tag, e.g. "sunburn-2026"'
+                  placeholderTextColor="#6b7280"
+                  value={eventTag}
+                  onChangeText={setEventTag}
+                  autoCapitalize="none"
+                />
+              )}
             </View>
 
             <View style={styles.formGroup}>

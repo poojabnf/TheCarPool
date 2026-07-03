@@ -77,6 +77,64 @@ export async function sustainabilityRoutes(fastify: FastifyInstance) {
     }
   });
 
+  // 1b. Commute streaks (roadmap Phase 2, community/retention wedge).
+  // Day-based streak over the caller's completed bookings: today/yesterday
+  // anchors the current streak so an evening commute doesn't reset at midnight.
+  fastify.get('/streaks/:user_id', { preHandler: [requireAuth] }, async (request, reply) => {
+    const { user_id } = request.params as { user_id: string };
+    if (String(request.user!.id) !== String(user_id) && request.user!.role !== 'ADMIN') {
+      return reply.code(403).send({ error: 'Forbidden: you can only view your own streaks.' });
+    }
+
+    try {
+      const snap = await db.collection('bookings')
+        .where('rider_id', '==', String(user_id))
+        .where('status', '==', 'COMPLETED')
+        .get();
+
+      // Distinct ride days, newest first.
+      const days = [...new Set(
+        snap.docs
+          .map((d) => String(d.data().completed_at || d.data().created_at || '').slice(0, 10))
+          .filter((s) => /^\d{4}-\d{2}-\d{2}$/.test(s))
+      )].sort().reverse();
+
+      const DAY_MS = 24 * 60 * 60 * 1000;
+      const toDay = (s: string) => Math.floor(new Date(`${s}T00:00:00Z`).getTime() / DAY_MS);
+      const todayNum = Math.floor(Date.now() / DAY_MS);
+
+      let current = 0;
+      if (days.length && todayNum - toDay(days[0]) <= 1) {
+        current = 1;
+        for (let i = 1; i < days.length; i++) {
+          if (toDay(days[i - 1]) - toDay(days[i]) === 1) current++;
+          else break;
+        }
+      }
+
+      let longest = days.length ? 1 : 0;
+      let run = 1;
+      for (let i = 1; i < days.length; i++) {
+        run = toDay(days[i - 1]) - toDay(days[i]) === 1 ? run + 1 : 1;
+        if (run > longest) longest = run;
+      }
+
+      const totalKm = snap.docs.reduce((sum, d) => sum + Number(d.data().distance_km || 0), 0);
+      return reply.send({
+        user_id,
+        current_streak_days: current,
+        longest_streak_days: longest,
+        total_completed_rides: snap.size,
+        active_days: days.length,
+        co2_saved_kg: parseFloat((totalKm * 2.3).toFixed(1)),
+        points: Math.round(totalKm * 23),
+      });
+    } catch (err: any) {
+      fastify.log.error(err, 'Streak computation failed');
+      return reply.code(500).send({ error: 'Failed to compute streaks.' });
+    }
+  });
+
   // 2. ESG Enterprise Portals (Feature 39)
   fastify.get('/esg-report/:company_domain', { preHandler: [requireAuth] }, async (request, reply) => {
     const { company_domain } = request.params as { company_domain: string };

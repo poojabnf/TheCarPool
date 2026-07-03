@@ -1,9 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Alert, ActivityIndicator, ScrollView } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import auth from '@react-native-firebase/auth';
-import { Lock, ChevronLeft, Circle, MapPin } from 'lucide-react-native';
+import { Lock, ChevronLeft, Circle, MapPin, Footprints } from 'lucide-react-native';
 import { apiFetch } from './services/api';
 import { useAuthStore } from './store/authStore';
 import { c, font, radius, space, shadowSm } from '../theme/tokens';
@@ -24,6 +24,27 @@ export default function ConfirmPay() {
   const { kycStatus, userProfile } = useAuthStore();
   const uid = auth().currentUser?.uid ?? null;
   const [paying, setPaying] = useState(false);
+
+  // Meeting-point suggestions: points on the driver's existing route within
+  // walking distance — pick one and the driver doesn't detour at all.
+  type MeetingPoint = { label: string; latitude: number; longitude: number; walk_meters: number; walk_minutes: number };
+  const [meetingPoints, setMeetingPoints] = useState<MeetingPoint[]>([]);
+  const [chosenMp, setChosenMp] = useState<number | null>(null);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await apiFetch('/api/geo/meeting-points', {
+          method: 'POST',
+          body: JSON.stringify({ ride_id: p.ride_id, lat: Number(p.pickup_lat), lng: Number(p.pickup_lng) }),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setMeetingPoints(data.meeting_points || []);
+        }
+      } catch { /* suggestions are optional */ }
+    })();
+  }, [p.ride_id]);
 
   const seats = Math.max(1, parseInt(p.seats || '1', 10));
   const pricePerSeat = parseFloat(p.price_split || '0');
@@ -49,7 +70,9 @@ export default function ConfirmPay() {
         method: 'POST',
         body: JSON.stringify({
           ride_id: p.ride_id, rider_id: uid, seats_booked: seats,
-          pickup_lng: Number(p.pickup_lng), pickup_lat: Number(p.pickup_lat),
+          // Book at the chosen meeting point (zero driver detour) when picked.
+          pickup_lng: chosenMp !== null ? meetingPoints[chosenMp].longitude : Number(p.pickup_lng),
+          pickup_lat: chosenMp !== null ? meetingPoints[chosenMp].latitude : Number(p.pickup_lat),
           drop_lng: Number(p.drop_lng), drop_lat: Number(p.drop_lat),
         }),
       });
@@ -109,6 +132,31 @@ export default function ConfirmPay() {
             </View>
           </View>
         </View>
+
+        {/* Meeting-point suggestions */}
+        {meetingPoints.length > 0 && (
+          <View style={styles.card}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+              <Footprints color={c.textSecondary} size={16} strokeWidth={2.2} />
+              <Text style={styles.mpTitle}>Walk a little, ride sooner</Text>
+            </View>
+            <Text style={styles.mpSub}>Meet the driver on their route — no detour, faster pickup.</Text>
+            {meetingPoints.map((mp, i) => (
+              <TouchableOpacity
+                key={i}
+                style={[styles.mpRow, chosenMp === i && styles.mpRowOn]}
+                onPress={() => setChosenMp(chosenMp === i ? null : i)}
+                activeOpacity={0.85}
+              >
+                <Text style={[styles.mpLabel, chosenMp === i && { color: c.goStrong }]}>{mp.label}</Text>
+                <Text style={styles.mpWalk}>{mp.walk_minutes} min walk · {mp.walk_meters}m</Text>
+              </TouchableOpacity>
+            ))}
+            <Text style={styles.mpHint}>
+              {chosenMp !== null ? '✓ Pickup set to this meeting point' : 'Optional — skip for door pickup'}
+            </Text>
+          </View>
+        )}
 
         {/* Fare breakdown */}
         <View style={styles.card}>
@@ -175,6 +223,18 @@ const styles = StyleSheet.create({
   routeLine: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   routeConnector: { width: 1, height: 16, backgroundColor: c.borderStrong, marginLeft: 5, marginVertical: 2 },
   routeText: { flex: 1, fontFamily: font.sansMedium, fontSize: 14, color: c.textPrimary },
+
+  mpTitle: { fontFamily: font.sansBold, fontSize: 14.5, color: c.textPrimary },
+  mpSub: { fontFamily: font.sans, fontSize: 12, color: c.textTertiary, marginBottom: space.sm },
+  mpRow: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    borderWidth: 1, borderColor: c.borderSubtle, borderRadius: radius.sm,
+    paddingHorizontal: 12, paddingVertical: 10, marginTop: 6, backgroundColor: c.surfaceSunken,
+  },
+  mpRowOn: { borderColor: c.go, backgroundColor: c.goSoft },
+  mpLabel: { fontFamily: font.sansSemibold, fontSize: 13, color: c.textPrimary },
+  mpWalk: { fontFamily: font.mono, fontSize: 12, color: c.textTertiary },
+  mpHint: { fontFamily: font.sans, fontSize: 11.5, color: c.textTertiary, marginTop: 8, textAlign: 'center' },
 
   row: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 6 },
   rowLabel: { fontFamily: font.sans, fontSize: 14, color: c.textSecondary },

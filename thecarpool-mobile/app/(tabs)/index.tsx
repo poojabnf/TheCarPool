@@ -8,7 +8,13 @@ import auth from '@react-native-firebase/auth';
 import { MapPin, Circle, Search, BadgeCheck, Wind, Venus, Users, Leaf } from 'lucide-react-native';
 import { apiFetch } from '../services/api';
 import { useAuthStore } from '../store/authStore';
+import { useI18n } from '../services/i18n';
 import { c, font, radius, space, shadowSm, brass } from '../../theme/tokens';
+
+// Offline-cached search (roadmap Phase 1, session-scoped): module-level so it
+// survives tab switches. A persistent cache needs AsyncStorage, which is a
+// native module — deferred to the next store build to stay OTA-compatible.
+let lastSearch: { key: string; rides: Ride[] } | null = null;
 
 interface Ride {
   id: string | number;
@@ -24,11 +30,11 @@ interface Ride {
 
 type Coords = { lat: number; lng: number };
 
-function greeting() {
+function greetingKey(): 'good_morning' | 'good_afternoon' | 'good_evening' {
   const h = new Date().getHours();
-  if (h < 12) return 'Good morning';
-  if (h < 17) return 'Good afternoon';
-  return 'Good evening';
+  if (h < 12) return 'good_morning';
+  if (h < 17) return 'good_afternoon';
+  return 'good_evening';
 }
 
 function initials(name?: string) {
@@ -73,6 +79,8 @@ export default function HomeScreen() {
   const [womenOnly, setWomenOnly] = useState(false);
   const [rides, setRides] = useState<Ride[] | null>(null);
   const [searching, setSearching] = useState(false);
+  const [showingCached, setShowingCached] = useState(false);
+  const { t } = useI18n();
 
   const originTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const destTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -123,9 +131,20 @@ export default function HomeScreen() {
         return;
       }
       const data = res.ok ? await res.json() : [];
-      setRides(Array.isArray(data) ? data : []);
+      const list = Array.isArray(data) ? data : [];
+      setRides(list);
+      setShowingCached(false);
+      if (res.ok) {
+        lastSearch = { key: `${originCoords.lat},${originCoords.lng}>${destCoords.lat},${destCoords.lng}`, rides: list };
+      }
     } catch {
-      setRides([]);
+      // Network failure — fall back to the last successful results if any.
+      if (lastSearch) {
+        setRides(lastSearch.rides);
+        setShowingCached(true);
+      } else {
+        setRides([]);
+      }
     } finally { setSearching(false); }
   };
 
@@ -159,7 +178,7 @@ export default function HomeScreen() {
       {/* Greeting */}
       <View style={styles.header}>
         <View>
-          <Text style={styles.greeting}>{greeting()}</Text>
+          <Text style={styles.greeting}>{t(greetingKey())}</Text>
           <Text style={styles.name}>{name}</Text>
         </View>
         <TouchableOpacity style={styles.avatar} onPress={() => router.push('/(tabs)/account')} activeOpacity={0.8}>
@@ -176,7 +195,7 @@ export default function HomeScreen() {
           <TextInput
             style={styles.input} value={origin}
             onChangeText={(t) => { setOrigin(t); setOriginCoords(null); searchGeo(t, setOriginSug, originTimeoutRef); }}
-            placeholder="From — pickup point" placeholderTextColor={c.textDisabled}
+            placeholder={t('from_pickup')} placeholderTextColor={c.textDisabled}
           />
         </View>
         <Suggestions items={originSug} onPick={(s) => {
@@ -188,7 +207,7 @@ export default function HomeScreen() {
           <TextInput
             style={styles.input} value={destination}
             onChangeText={(t) => { setDestination(t); setDestCoords(null); searchGeo(t, setDestSug, destTimeoutRef); }}
-            placeholder="To — destination" placeholderTextColor={c.textDisabled}
+            placeholder={t('to_destination')} placeholderTextColor={c.textDisabled}
           />
         </View>
         <Suggestions items={destSug} onPick={(s) => {
@@ -208,23 +227,28 @@ export default function HomeScreen() {
             onPress={() => setWomenOnly((v) => !v)} activeOpacity={0.85}
           >
             <Venus color={womenOnly ? '#fff' : c.textAccent} size={14} strokeWidth={2.4} />
-            <Text style={[styles.womenChipText, womenOnly && { color: '#fff' }]}>Women only</Text>
+            <Text style={[styles.womenChipText, womenOnly && { color: '#fff' }]}>{t('women_only')}</Text>
           </TouchableOpacity>
         </View>
 
         <TouchableOpacity style={styles.findBtn} onPress={findRides} disabled={searching} activeOpacity={0.9}>
           {searching ? <ActivityIndicator color={c.actionPrimaryText} />
-            : <><Search color={c.actionPrimaryText} size={17} strokeWidth={2.4} /><Text style={styles.findBtnText}>Find shared rides</Text></>}
+            : <><Search color={c.actionPrimaryText} size={17} strokeWidth={2.4} /><Text style={styles.findBtnText}>{t('find_rides')}</Text></>}
         </TouchableOpacity>
       </View>
 
       {/* Results */}
       {rides !== null && (
         <View style={{ marginTop: space.xl }}>
+          {showingCached && (
+            <View style={styles.offlineBanner}>
+              <Text style={styles.offlineText}>{t('offline_results')}</Text>
+            </View>
+          )}
           <Text style={styles.sectionTitle}>
-            {rides.length > 0 ? `${rides.length} driver${rides.length > 1 ? 's' : ''} on your route` : 'No matches found'}
+            {rides.length > 0 ? t('drivers_on_route')(rides.length) : t('no_matches')}
           </Text>
-          {rides.length === 0 && <Text style={styles.muted}>Try a wider area, fewer filters, or check back shortly.</Text>}
+          {rides.length === 0 && <Text style={styles.muted}>{t('no_matches_hint')}</Text>}
           {rides.map((ride) => (
             <View key={String(ride.id)} style={styles.rideCard}>
               <View style={styles.rideTop}>
@@ -254,11 +278,13 @@ export default function HomeScreen() {
                   </View>
                 )}
                 {ride.ac_available && <View style={styles.badge}><Wind color={c.info} size={12} strokeWidth={2.4} /><Text style={styles.badgeText}>AC</Text></View>}
-                {(ride as any).women_only && <View style={styles.badge}><Venus color={c.textAccent} size={12} strokeWidth={2.4} /><Text style={styles.badgeText}>Women only</Text></View>}
+                {(ride as any).women_only && <View style={styles.badge}><Venus color={c.textAccent} size={12} strokeWidth={2.4} /><Text style={styles.badgeText}>{t('women_only')}</Text></View>}
+                {(ride as any).ride_type === 'INTERCITY' && <View style={styles.badge}><Text style={styles.badgeText}>🛣️ Intercity</Text></View>}
+                {(ride as any).ride_type === 'EVENT' && <View style={styles.badge}><Text style={styles.badgeText}>🎪 {(ride as any).event_tag || 'Event'}</Text></View>}
                 {ride.pickup_deviation != null && <Text style={styles.detour}>{Math.round(ride.pickup_deviation)}m detour</Text>}
               </View>
               <TouchableOpacity style={styles.bookBtn} onPress={() => bookRide(ride)} activeOpacity={0.9}>
-                <Text style={styles.bookBtnText}>Book this ride · ₹{Number(ride.price_split).toFixed(0)}</Text>
+                <Text style={styles.bookBtnText}>{t('book_ride')} · ₹{Number(ride.price_split).toFixed(0)}</Text>
               </TouchableOpacity>
             </View>
           ))}
@@ -268,7 +294,7 @@ export default function HomeScreen() {
       {/* Frequent routes + CO2 (shown before searching) */}
       {rides === null && (
         <>
-          <Text style={styles.sectionTitle}>Frequent routes</Text>
+          <Text style={styles.sectionTitle}>{t('frequent_routes')}</Text>
           {[
             { t: 'Morning commute', s: 'Home → Office · Mon–Fri' },
             { t: 'Evening return', s: 'Office → Home · 6:45 PM' },
@@ -322,6 +348,8 @@ const styles = StyleSheet.create({
   findBtn: { flexDirection: 'row', gap: 8, alignItems: 'center', justifyContent: 'center', backgroundColor: c.actionPrimary, height: 50, borderRadius: radius.md, marginTop: space.md },
   findBtnText: { fontFamily: font.sansBold, fontSize: 15.5, color: c.actionPrimaryText },
 
+  offlineBanner: { backgroundColor: c.accentSoft, borderRadius: radius.md, padding: space.md, borderWidth: 1, borderColor: brass[300] },
+  offlineText: { fontFamily: font.sansMedium, fontSize: 12.5, color: c.textAccent, textAlign: 'center' },
   sectionTitle: { fontFamily: font.sansBold, fontSize: 16, color: c.textPrimary, marginBottom: space.md, marginTop: space.lg },
   muted: { fontFamily: font.sans, fontSize: 13, color: c.textTertiary },
 

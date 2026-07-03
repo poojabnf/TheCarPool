@@ -9,6 +9,7 @@ import { auth } from '../services/firebase';
 import { apiFetch } from '../services/api';
 import { useAuthStore } from '../store/authStore';
 import { chooseAndUploadAvatar } from '../services/avatar';
+import { useI18n } from '../services/i18n';
 import { c, font, radius, space, shadowSm } from '../../theme/tokens';
 
 const SUPPORT_EMAIL = 'support@thecarpool.in';
@@ -36,6 +37,18 @@ export default function AccountInterface() {
   const [openFaq, setOpenFaq] = useState<number | null>(null);
   const [history, setHistory] = useState<any[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
+  const { t, lang, setLang } = useI18n();
+
+  // Commute streaks (roadmap Phase 2 — community wedge).
+  const [streaks, setStreaks] = useState<any | null>(null);
+  useEffect(() => {
+    const uid = auth().currentUser?.uid;
+    if (!uid) return;
+    apiFetch(`/api/sustainability/streaks/${uid}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then(setStreaks)
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     if (view !== 'history') return;
@@ -99,6 +112,26 @@ export default function AccountInterface() {
                   <Text style={styles.rowSub}>Ride matches, updates & alerts</Text>
                 </View>
                 <Switch value={notifications} onValueChange={toggleNotifications} trackColor={{ true: c.go, false: c.borderStrong }} thumbColor="#fff" />
+              </View>
+              <View style={styles.row}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.rowTitle}>{t('language')}</Text>
+                  <Text style={styles.rowSub}>English / हिंदी</Text>
+                </View>
+                <View style={{ flexDirection: 'row', gap: 8 }}>
+                  {(['en', 'hi'] as const).map((l) => (
+                    <TouchableOpacity
+                      key={l}
+                      style={[styles.langChip, lang === l && styles.langChipOn]}
+                      onPress={() => setLang(l)}
+                      activeOpacity={0.85}
+                    >
+                      <Text style={[styles.langChipText, lang === l && { color: '#fff' }]}>
+                        {l === 'en' ? 'EN' : 'हिं'}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
               </View>
               <TouchableOpacity style={styles.row} onPress={() => Linking.openURL(PRIVACY_URL)}>
                 <View style={{ flex: 1 }}><Text style={styles.rowTitle}>Privacy policy</Text><Text style={styles.rowSub}>How we handle your data</Text></View>
@@ -183,6 +216,24 @@ export default function AccountInterface() {
         </TouchableOpacity>
       )}
 
+      {/* Streaks */}
+      {streaks && streaks.total_completed_rides > 0 && (
+        <View style={styles.streakRow}>
+          <View style={styles.streakCell}>
+            <Text style={styles.streakValue}>🔥 {streaks.current_streak_days}</Text>
+            <Text style={styles.streakLabel}>day streak</Text>
+          </View>
+          <View style={styles.streakCell}>
+            <Text style={styles.streakValue}>{streaks.total_completed_rides}</Text>
+            <Text style={styles.streakLabel}>rides shared</Text>
+          </View>
+          <View style={styles.streakCell}>
+            <Text style={styles.streakValue}>{streaks.points}</Text>
+            <Text style={styles.streakLabel}>green points</Text>
+          </View>
+        </View>
+      )}
+
       {/* Impact */}
       <View style={styles.impact}>
         <View style={styles.impactIcon}><Leaf color={c.goStrong} size={18} strokeWidth={2.2} /></View>
@@ -263,6 +314,13 @@ const styles = StyleSheet.create({
   histRow: { flexDirection: 'row', alignItems: 'center', gap: space.md, backgroundColor: c.surfaceCard, padding: space.md, borderRadius: radius.md, marginBottom: space.sm, borderWidth: 1, borderColor: c.borderSubtle },
   histIcon: { width: 36, height: 36, borderRadius: radius.sm, backgroundColor: c.surfaceSunken, alignItems: 'center', justifyContent: 'center' },
   histAmount: { fontFamily: font.monoBold, fontSize: 14, color: c.textPrimary },
+  streakRow: { flexDirection: 'row', gap: space.sm, marginBottom: space.md },
+  streakCell: { flex: 1, backgroundColor: c.surfaceCard, borderRadius: radius.md, borderWidth: 1, borderColor: c.borderSubtle, alignItems: 'center', paddingVertical: space.md },
+  streakValue: { fontFamily: font.monoBold, fontSize: 17, color: c.textPrimary },
+  streakLabel: { fontFamily: font.sans, fontSize: 11, color: c.textTertiary, marginTop: 2 },
+  langChip: { paddingHorizontal: 14, paddingVertical: 7, borderRadius: radius.pill, borderWidth: 1, borderColor: c.borderStrong, backgroundColor: c.surfaceCard },
+  langChipOn: { backgroundColor: c.textPrimary, borderColor: c.textPrimary },
+  langChipText: { fontFamily: font.sansBold, fontSize: 13, color: c.textSecondary },
   dangerRow: { backgroundColor: c.dangerSoft, padding: space.md, borderRadius: radius.md, alignItems: 'center', marginTop: space.sm },
   dangerText: { fontFamily: font.sansBold, fontSize: 14.5, color: c.danger },
 

@@ -15,6 +15,10 @@ interface CreateRideBody {
   chattiness?: 'QUIET' | 'MEDIUM' | 'TALKATIVE';
   ac_available?: boolean;
   women_only?: boolean;
+  // Later-phase modes: daily commute (default), BlaBlaCar-style intercity,
+  // or event/festival carpooling with a shared tag riders search by.
+  ride_type?: 'COMMUTE' | 'INTERCITY' | 'EVENT';
+  event_tag?: string;
 }
 
 interface SearchRideBody {
@@ -33,6 +37,8 @@ interface SearchRideBody {
   chattiness?: 'QUIET' | 'MEDIUM' | 'TALKATIVE' | 'ANY';
   ac_available?: boolean;
   women_only?: boolean; // women-safety mode: women-only rides or women drivers
+  ride_type?: 'COMMUTE' | 'INTERCITY' | 'EVENT' | 'ANY';
+  event_tag?: string;
 }
 
 // Helpers for robust ID resolution (handling formats like "1" and "user_1")
@@ -131,8 +137,16 @@ export async function rideRoutes(fastify: FastifyInstance) {
     const {
       driver_id, route_geojson, seats_total, price_split, departure_time,
       vehicle_type = 'CAR', music_allowed = true, smoking_allowed = false,
-      chattiness = 'MEDIUM', ac_available = true, women_only = false
+      chattiness = 'MEDIUM', ac_available = true, women_only = false,
+      ride_type = 'COMMUTE', event_tag
     } = request.body as CreateRideBody;
+
+    if (!['COMMUTE', 'INTERCITY', 'EVENT'].includes(ride_type)) {
+      return reply.code(400).send({ error: 'ride_type must be COMMUTE, INTERCITY or EVENT.' });
+    }
+    if (ride_type === 'EVENT' && !(event_tag && String(event_tag).trim().length >= 2)) {
+      return reply.code(400).send({ error: 'EVENT rides need an event_tag (e.g. "sunburn-2026").' });
+    }
 
     const uid = String(request.user!.id);
     // The driver always offers under their own identity. A client-supplied
@@ -228,6 +242,8 @@ export async function rideRoutes(fastify: FastifyInstance) {
         chattiness,
         ac_available,
         women_only: Boolean(women_only),
+        ride_type,
+        event_tag: ride_type === 'EVENT' ? String(event_tag).trim().toLowerCase() : null,
         status: 'SCHEDULED',
         created_at: new Date().toISOString()
       };
@@ -247,7 +263,7 @@ export async function rideRoutes(fastify: FastifyInstance) {
       pickup_lng, pickup_lat, drop_lng, drop_lat, max_detour_meters = 1500,
       gender_preference, company_domain, society_name, ev_only = false,
       vehicle_type = 'ANY', music_allowed, smoking_allowed, chattiness = 'ANY', ac_available,
-      women_only = false
+      women_only = false, ride_type = 'ANY', event_tag
     } = body;
 
     // Searcher's gender gates women-only rides both ways: the women-safety
@@ -267,7 +283,7 @@ export async function rideRoutes(fastify: FastifyInstance) {
     }
 
     // Build Cache Key securely
-    const cacheKey = `search:${pickup_lng},${pickup_lat},${drop_lng},${drop_lat},${max_detour_meters},${gender_preference || 'ANY'},${company_domain || 'NONE'},${society_name || 'NONE'},${ev_only},${vehicle_type},${music_allowed ?? 'ANY'},${smoking_allowed ?? 'ANY'},${chattiness},${ac_available ?? 'ANY'},${women_only},${searcherGender || 'UNKNOWN'}`;
+    const cacheKey = `search:${pickup_lng},${pickup_lat},${drop_lng},${drop_lat},${max_detour_meters},${gender_preference || 'ANY'},${company_domain || 'NONE'},${society_name || 'NONE'},${ev_only},${vehicle_type},${music_allowed ?? 'ANY'},${smoking_allowed ?? 'ANY'},${chattiness},${ac_available ?? 'ANY'},${women_only},${searcherGender || 'UNKNOWN'},${ride_type},${event_tag || 'NONE'}`;
     
     try {
       // 1. Check Redis Cache
@@ -348,6 +364,14 @@ export async function rideRoutes(fastify: FastifyInstance) {
         if (ac_available !== undefined && ride.ac_available !== ac_available) {
           continue;
         }
+        // Ride-type filter: legacy rides without the field count as COMMUTE.
+        const effectiveType = ride.ride_type || 'COMMUTE';
+        if (ride_type && ride_type !== 'ANY' && effectiveType !== ride_type) {
+          continue;
+        }
+        if (event_tag && ride.event_tag !== String(event_tag).trim().toLowerCase()) {
+          continue;
+        }
 
         // Perform spatial matching detour calculations
         const route_coords = ride.route_coords || [];
@@ -395,6 +419,8 @@ export async function rideRoutes(fastify: FastifyInstance) {
             chattiness: ride.chattiness,
             ac_available: ride.ac_available,
             women_only: ride.women_only || false,
+            ride_type: ride.ride_type || 'COMMUTE',
+            event_tag: ride.event_tag || null,
             driver_name: user.name || 'Anonymous',
             driver_company: user.company_domain || null,
             driver_society: user.society_name || null,
@@ -412,8 +438,16 @@ export async function rideRoutes(fastify: FastifyInstance) {
         }
       }
 
-      // Sort matches by combined detour distance deviation ascending, then cap.
-      matchedResults.sort((a, b) => (a.pickup_deviation + a.drop_deviation) - (b.pickup_deviation + b.drop_deviation));
+      // Ratings-weighted matching: rank by detour distance, discounted by the
+      // driver's earned trust. A GOLD driver effectively "beats" an unrated one
+      // at up to 400m extra deviation — new users see high-trust matches first
+      // without high-detour rides jumping the queue entirely.
+      const TRUST_BONUS_METERS: Record<string, number> = { GOLD: 400, SILVER: 200, BRONZE: 75, NEW: 0 };
+      const matchScore = (r: any) =>
+        r.pickup_deviation + r.drop_deviation
+        - (TRUST_BONUS_METERS[r.driver_trust_level] || 0)
+        - (r.driver_kyc_verified ? 100 : 0);
+      matchedResults.sort((a, b) => matchScore(a) - matchScore(b));
       const resultLimit = Number((body as any).limit) > 0 ? Number((body as any).limit) : DEFAULT_RESULT_LIMIT;
       const limitedResults = matchedResults.slice(0, resultLimit);
 
