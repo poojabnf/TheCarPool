@@ -1,56 +1,65 @@
 <svg width="1024" height="500" viewBox="0 0 1024 500" xmlns="http://www.w3.org/2000/svg">
-  <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#065f46"/>
-      <stop offset="0.55" stop-color="#059669"/>
-      <stop offset="1" stop-color="#0d9488"/>
-    </linearGradient>
-    <linearGradient id="fade" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#ffffff" stop-opacity="0.10"/>
-      <stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
-    </linearGradient>
-  </defs>
+  <!-- TheCarPool Play Store feature graphic — brand badge + wordmark. -->
+  <rect width="1024" height="500" fill="#F4F9FC"/>
+  <path d="M0 500 Q400 380 1024 430 L1024 500 Z" fill="#E87722" opacity="0.12"/>
 
-  <!-- Background -->
-  <rect width="1024" height="500" fill="url(#bg)"/>
-  <rect width="1024" height="250" fill="url(#fade)"/>
-
-  <!-- Decorative route curve with pins -->
-  <path d="M 60 430 C 280 360, 360 200, 620 180 C 820 165, 900 120, 980 90"
-        fill="none" stroke="#ffffff" stroke-opacity="0.35" stroke-width="4"
-        stroke-dasharray="2 14" stroke-linecap="round"/>
-  <!-- start pin -->
-  <g transform="translate(60,430)">
-    <circle r="13" fill="#ffffff"/>
-    <circle r="5" fill="#059669"/>
+  <!-- Brand badge (from assets/brand/logo.svg), scaled into the left half -->
+  <g transform="translate(60,52) scale(0.387)">
+    <defs>
+      <clipPath id="inner"><circle cx="512" cy="512" r="396"/></clipPath>
+    </defs>
+    <circle cx="512" cy="512" r="470" fill="#2B6CB0"/>
+    <circle cx="512" cy="512" r="426" fill="#FFFFFF"/>
+    <circle cx="512" cy="512" r="396" fill="#45C4BC"/>
+    <g clip-path="url(#inner)">
+      <path d="M60 640 Q512 540 964 660 L964 960 L60 960 Z" fill="#EAF4F8"/>
+      <path d="M40 980 Q420 760 980 700 L980 790 Q470 830 130 1010 Z" fill="#E87722"/>
+      <path d="M300 872 Q560 780 900 750" fill="none" stroke="#FFFFFF" stroke-width="16" stroke-linecap="round" stroke-dasharray="52 44"/>
+      <g stroke="#FFFFFF" stroke-width="22" stroke-linejoin="round">
+        <path d="M240 560 Q244 500 300 488 L672 470 Q760 466 800 530 L830 560 Q862 566 862 606 L858 646 Q856 672 828 672 L262 672 Q236 672 236 644 Z" fill="#1E4E8C"/>
+      </g>
+      <path d="M700 492 Q756 492 788 542 L706 546 Z" fill="#8FC7E8"/>
+      <circle cx="352" cy="676" r="58" fill="#FFFFFF"/>
+      <circle cx="352" cy="676" r="34" fill="#1E4E8C"/>
+      <circle cx="712" cy="676" r="58" fill="#FFFFFF"/>
+      <circle cx="712" cy="676" r="34" fill="#1E4E8C"/>
+      <path d="M560 600 L640 600 L640 580 L688 612 L640 644 L640 624 L560 624 Z" fill="#45C4BC"/>
+      <g stroke="#FFFFFF" stroke-width="18" stroke-linejoin="round">
+        <circle cx="340" cy="360" r="62" fill="#3B82C4"/>
+        <path d="M268 500 Q268 420 340 420 Q412 420 412 500 L412 520 L268 520 Z" fill="#3B82C4"/>
+        <circle cx="500" cy="330" r="66" fill="#F08A24"/>
+        <path d="M424 486 Q424 402 500 402 Q576 402 576 486 L576 512 L424 512 Z" fill="#F08A24"/>
+        <circle cx="656" cy="360" r="62" fill="#7AB648"/>
+        <path d="M584 500 Q584 420 656 420 Q728 420 728 500 L728 516 L584 516 Z" fill="#7AB648"/>
+      </g>
+      <g stroke="#FFFFFF" stroke-width="12" stroke-linecap="round" fill="none">
+        <path d="M316 376 Q340 396 364 376"/>
+        <path d="M474 348 Q500 370 526 348"/>
+        <path d="M632 376 Q656 396 680 376"/>
+      </g>
+      <g fill="#FFFFFF">
+        <circle cx="318" cy="346" r="9"/><circle cx="362" cy="346" r="9"/>
+        <circle cx="476" cy="314" r="9"/><circle cx="524" cy="314" r="9"/>
+        <circle cx="634" cy="346" r="9"/><circle cx="678" cy="346" r="9"/>
+      </g>
+    </g>
   </g>
-  <!-- end pin -->
-  <g transform="translate(980,90)">
-    <path d="M0 -22 C 12 -22, 20 -13, 20 -2 C 20 12, 0 26, 0 26 C 0 26, -20 12, -20 -2 C -20 -13, -12 -22, 0 -22 Z" fill="#ffffff"/>
-    <circle cy="-2" r="7" fill="#0d9488"/>
-  </g>
 
-  <!-- Leaf mark -->
-  <g transform="translate(150,150)" opacity="0.9">
-    <circle r="54" fill="#ffffff" fill-opacity="0.12"/>
-    <path d="M -22 22 C -22 -14, 6 -28, 26 -26 C 28 -6, 14 22, -22 22 Z" fill="#ffffff"/>
-    <path d="M -14 16 C -2 4, 10 -8, 22 -20" stroke="#059669" stroke-width="3" fill="none" stroke-linecap="round"/>
-  </g>
+  <!-- Wordmark -->
+  <text x="490" y="235" font-family="Arial, Helvetica, sans-serif" font-size="76" font-weight="800">
+    <tspan fill="#3B82C4">THE</tspan><tspan fill="#1E4E8C">CarPool</tspan>
+  </text>
+  <text x="493" y="292" font-family="Arial, Helvetica, sans-serif" font-size="30" font-weight="600" fill="#5E7286" letter-spacing="2">SHARED RIDES. BETTER TOGETHER.</text>
 
-  <!-- Wordmark + tagline (centered) -->
-  <text x="512" y="250" text-anchor="middle"
-        font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="92" font-weight="800"
-        fill="#ffffff" letter-spacing="-1">TheCarPool</text>
-
-  <text x="512" y="312" text-anchor="middle"
-        font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="32" font-weight="500"
-        fill="#ffffff" fill-opacity="0.92">Share the ride. Split the cost. Travel greener.</text>
-
-  <!-- Pill subtitle -->
-  <g transform="translate(512,372)">
-    <rect x="-200" y="-22" width="400" height="44" rx="22" fill="#ffffff" fill-opacity="0.16"/>
-    <text x="0" y="7" text-anchor="middle"
-          font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="20" font-weight="600"
-          fill="#ffffff" letter-spacing="1">VERIFIED WORKPLACE CARPOOLING</text>
+  <!-- Trust chips -->
+  <g font-family="Arial, Helvetica, sans-serif" font-size="22" font-weight="600">
+    <rect x="493" y="330" width="200" height="46" rx="23" fill="#E6F1FB"/>
+    <text x="593" y="360" text-anchor="middle" fill="#1E4E8C">KYC verified</text>
+    <rect x="707" y="330" width="215" height="46" rx="23" fill="#E1F5EE"/>
+    <text x="814" y="360" text-anchor="middle" fill="#0F6E56">Women-only rides</text>
+    <rect x="493" y="390" width="170" height="46" rx="23" fill="#FAEEDA"/>
+    <text x="578" y="420" text-anchor="middle" fill="#854F0B">Live SOS</text>
+    <rect x="677" y="390" width="200" height="46" rx="23" fill="#FBEAF0"/>
+    <text x="777" y="420" text-anchor="middle" fill="#993556">Fare auto-split</text>
   </g>
 </svg>

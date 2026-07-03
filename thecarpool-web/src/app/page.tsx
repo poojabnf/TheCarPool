@@ -27,7 +27,7 @@ export default function TheCarPoolLanding() {
       {/* Navigation Bar */}
       <nav className="fixed top-0 w-full bg-white/80 dark:bg-slate-900/80 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 z-40 px-8 py-4 flex justify-between items-center">
         <div className="flex items-center space-x-2">
-          <div className="w-8 h-8 bg-teal-700 rounded-lg flex items-center justify-center text-white font-bold text-xl">T</div>
+          <img src="/logo.png" alt="TheCarPool logo" className="w-9 h-9" />
           <span className="text-xl font-black text-slate-800 dark:text-white tracking-tight">TheCar<span className="text-teal-700 dark:text-teal-500">Pool</span></span>
         </div>
         <div className="hidden md:flex space-x-8 font-semibold text-sm">

@@ -81,7 +81,7 @@ export default function AuthModal({ isOpen = true, onSuccess, onClose }: AuthMod
     <div style={overlay}>
       <div style={card}>
         <button onClick={onClose} style={closeBtn} aria-label="Close">✕</button>
-        <div style={logo}>🚗</div>
+        <div style={logo}><img src="/logo.png" alt="TheCarPool" width={64} height={64} style={{ display: 'block', margin: '0 auto' }} /></div>
         <h2 style={title}>Sign in to TheCarPool</h2>
         <p style={subtitle}>Join 50,000+ verified corporate commuters</p>
 
