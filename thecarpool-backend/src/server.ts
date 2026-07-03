@@ -15,6 +15,7 @@ import { paymentRoutes } from './routes/payments';
 import { classifiedRoutes } from './routes/classifieds';
 import { geoRoutes } from './routes/geo';
 import { userRoutes } from './routes/users';
+import { chatRoutes } from './routes/chat';
 import { setupTelemetrySocket } from './sockets/telemetry';
 import { initSentry, captureError } from './lib/sentry';
 
@@ -69,7 +70,7 @@ seedFirestoreIfEmpty().then(() => {
 
 // Attach Socket.IO to Fastify's underlying HTTP server so both the REST API
 // (handled by Fastify) and websockets share one port.
-const io = new SocketIOServer(fastify.server, {
+export const io = new SocketIOServer(fastify.server, {
   cors: {
     origin: allowedOrigins(),
   }
@@ -113,6 +114,7 @@ fastify.register(paymentRoutes, { prefix: '/api/payments' });
 fastify.register(classifiedRoutes, { prefix: '/api/classifieds' });
 fastify.register(geoRoutes, { prefix: '/api/geo' });
 fastify.register(userRoutes, { prefix: '/api/users' });
+fastify.register(chatRoutes, { prefix: '/api/chat' });
 
 // Health check endpoint
 fastify.get('/health', async () => {

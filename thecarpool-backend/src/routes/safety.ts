@@ -18,6 +18,10 @@ const KycVerifySchema = z.object({
   aadhaar_number: z.string().optional(),
   dl_number: z.string().optional(),
   vehicle_rc: z.string().optional(),
+  // Vehicle insurance (drivers): policy number + expiry. Stored for admin
+  // review; an expired policy is rejected outright.
+  insurance_policy_number: z.string().trim().min(5).max(40).optional(),
+  insurance_valid_till: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Use YYYY-MM-DD').optional(),
 });
 
 // In-memory SOS cooldown: at most one SOS per user per 60s. Prevents a
@@ -105,8 +109,13 @@ export async function safetyRoutes(fastify: FastifyInstance) {
   fastify.post('/kyc/verify', { preHandler: [requireAuth] }, async (request, reply) => {
     const parsed = parseOrReply(KycVerifySchema, request.body, reply);
     if (!parsed) return;
-    const { aadhaar_number, dl_number, vehicle_rc } = parsed;
+    const { aadhaar_number, dl_number, vehicle_rc, insurance_policy_number, insurance_valid_till } = parsed;
     const user_id = request.user!.id;
+
+    // Reject an already-expired insurance policy before touching the profile.
+    if (insurance_valid_till && new Date(insurance_valid_till) < new Date()) {
+      return reply.code(400).send({ status: 'FAILED', reason: 'Vehicle insurance has expired. Renew it before verification.' });
+    }
 
     try {
       // Verify against the configured KYC provider (UIDAI/VAHAN via Digio etc.).
@@ -119,11 +128,21 @@ export async function safetyRoutes(fastify: FastifyInstance) {
       }
 
       const simulated = Boolean((aadhaarResult as any).simulated || (dlResult as any).simulated);
-      await db.collection('users').doc(String(user_id)).update({
+      const update: Record<string, unknown> = {
         kyc_status: 'VERIFIED',
         kyc_verified_at: new Date().toISOString(),
         kyc_simulated: simulated, // flag so we know if real provider was used
-      });
+      };
+      // Vehicle documents (drivers): kept on the profile for admin review.
+      if (vehicle_rc || insurance_policy_number) {
+        update.vehicle_docs = {
+          ...(vehicle_rc ? { rc_number: vehicle_rc } : {}),
+          ...(insurance_policy_number ? { insurance_policy_number } : {}),
+          ...(insurance_valid_till ? { insurance_valid_till } : {}),
+          submitted_at: new Date().toISOString(),
+        };
+      }
+      await db.collection('users').doc(String(user_id)).update(update);
 
       return reply.send({
         status: 'VERIFIED',

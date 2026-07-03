@@ -2,6 +2,12 @@ import { Server as SocketIOServer, Socket } from 'socket.io';
 import * as admin from 'firebase-admin';
 import type { FastifyBaseLogger } from 'fastify';
 import { db } from '../server';
+import { sendPushToUser } from '../lib/fcm';
+
+// Route-deviation escalation: a single out-of-corridor ping can be GPS noise,
+// but this many consecutive breaches means the vehicle has genuinely left the
+// planned route — persist a safety alert and push-notify every booked rider.
+const BREACH_ESCALATION_THRESHOLD = 3;
 
 interface TelemetryPayload {
   userId: string;
@@ -45,6 +51,11 @@ export function setupTelemetrySocket(io: SocketIOServer, log: FastifyBaseLogger)
 
   io.on('connection', (socket: Socket) => {
     log.info({ socketId: socket.id, userId: (socket as any).userId }, 'Socket client connected');
+
+    // Per-connection deviation tracking (keyed by ride so a driver running
+    // back-to-back rides doesn't carry a stale count across trips).
+    const breachStreak = new Map<string, number>();
+    const escalatedRides = new Set<string>();
 
     // Join ride-specific room for broadcasts
     socket.on('ride:join', (rideId: number) => {
@@ -100,6 +111,7 @@ export function setupTelemetrySocket(io: SocketIOServer, log: FastifyBaseLogger)
               }
             }
 
+            const rideKey = String(rideId);
             if (!withinLimits && route_coords.length > 0) {
               // Dispatch geofence breach warning to riders and dashboard alert listeners
               io.to(`ride_${rideId}`).emit('safety:alert', {
@@ -107,6 +119,45 @@ export function setupTelemetrySocket(io: SocketIOServer, log: FastifyBaseLogger)
                 message: 'Warning: Driver has deviated from the planned route path by > 100 meters.',
                 coordinates: { lng, lat }
               });
+
+              // Escalate after sustained deviation: persist an auditable alert
+              // and push-notify every booked rider (once per ride per session).
+              const streak = (breachStreak.get(rideKey) || 0) + 1;
+              breachStreak.set(rideKey, streak);
+              if (streak >= BREACH_ESCALATION_THRESHOLD && !escalatedRides.has(rideKey)) {
+                escalatedRides.add(rideKey);
+                log.warn({ rideId, streak }, 'Sustained route deviation — escalating to safety alert');
+
+                await db.collection('safety_alerts').add({
+                  type: 'ROUTE_DEVIATION',
+                  ride_id: rideKey,
+                  driver_user_id: String(userId),
+                  coordinates: { lat, lng },
+                  consecutive_breaches: streak,
+                  created_at: new Date().toISOString(),
+                  status: 'OPEN',
+                });
+
+                const bookings = await db.collection('bookings')
+                  .where('ride_id', '==', rideKey)
+                  .get();
+                const riderUids = [...new Set(
+                  bookings.docs
+                    .filter((b) => b.data().status !== 'CANCELLED')
+                    .map((b) => String(b.data().rider_id))
+                )];
+                await Promise.allSettled(riderUids.map((rider) =>
+                  sendPushToUser(
+                    rider,
+                    '⚠️ Route deviation detected',
+                    'Your ride has left the planned route. Open the trip screen — use SOS if you feel unsafe.',
+                    { type: 'ROUTE_DEVIATION', ride_id: rideKey }
+                  )
+                ));
+              }
+            } else {
+              // Back inside the corridor — reset the streak (noise, brief detour).
+              breachStreak.delete(rideKey);
             }
           }
         }

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Alert, Image, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Alert, Image, ActivityIndicator, TextInput } from 'react-native';
 import { apiFetch } from '../services/api';
 
 export default function KycScreen() {
@@ -7,6 +7,9 @@ export default function KycScreen() {
   const [faceVerified, setFaceVerified] = useState(false);
   const [upiLinked, setUpiLinked] = useState(false);
   const [loading, setLoading] = useState<string | null>(null);
+  // Vehicle insurance (optional but recommended for drivers).
+  const [insurancePolicy, setInsurancePolicy] = useState('');
+  const [insuranceValidTill, setInsuranceValidTill] = useState(''); // YYYY-MM-DD
 
   // Request a signed upload URL from the backend, then (in a full build) PUT
   // the captured document bytes to it. Here we confirm the backend issues the
@@ -63,7 +66,12 @@ export default function KycScreen() {
     try {
       await apiFetch('/api/safety/kyc/verify', {
         method: 'POST',
-        body: JSON.stringify({ vehicle_rc: 'SUBMITTED', dl_number: 'PENDING_OCR' }),
+        body: JSON.stringify({
+          vehicle_rc: 'SUBMITTED',
+          dl_number: 'PENDING_OCR',
+          ...(insurancePolicy.trim().length >= 5 ? { insurance_policy_number: insurancePolicy.trim() } : {}),
+          ...(/^\d{4}-\d{2}-\d{2}$/.test(insuranceValidTill.trim()) ? { insurance_valid_till: insuranceValidTill.trim() } : {}),
+        }),
       });
     } catch {
       /* non-fatal — user sees the success UI; status syncs on retry */
@@ -115,6 +123,29 @@ export default function KycScreen() {
         <TouchableOpacity style={styles.actionBtn} onPress={handleUpiVerification} disabled={upiLinked || !!loading}>
           {loading === 'upi' ? <ActivityIndicator color="#fff" /> : <Text style={styles.actionBtnText}>{upiLinked ? 'Done' : 'Verify UPI ID'}</Text>}
         </TouchableOpacity>
+      </View>
+
+      {/* 4. Vehicle insurance (drivers) */}
+      <View style={styles.insuranceCard}>
+        <Text style={styles.stepTitle}>Vehicle Insurance (drivers)</Text>
+        <Text style={styles.stepDesc}>Policy number and expiry — reviewed by our safety team.</Text>
+        <TextInput
+          style={styles.input}
+          placeholder="Policy number"
+          placeholderTextColor="#6b7280"
+          value={insurancePolicy}
+          onChangeText={setInsurancePolicy}
+          autoCapitalize="characters"
+        />
+        <TextInput
+          style={styles.input}
+          placeholder="Valid till (YYYY-MM-DD)"
+          placeholderTextColor="#6b7280"
+          value={insuranceValidTill}
+          onChangeText={setInsuranceValidTill}
+          keyboardType="numbers-and-punctuation"
+          maxLength={10}
+        />
       </View>
 
       {rcScanned && faceVerified && upiLinked && (
@@ -198,6 +229,25 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 11,
     fontWeight: '700',
+  },
+  insuranceCard: {
+    backgroundColor: '#121b2d',
+    borderRadius: 12,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#1f2d47',
+    marginBottom: 16,
+  },
+  input: {
+    backgroundColor: '#0d1524',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#1f2d47',
+    color: '#fff',
+    fontSize: 13,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginTop: 10,
   },
   verifiedBox: {
     backgroundColor: 'rgba(16, 185, 129, 0.1)',

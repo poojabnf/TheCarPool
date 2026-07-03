@@ -4,7 +4,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import io from 'socket.io-client';
 import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
-import { ShieldAlert, Share2, MapPin } from 'lucide-react-native';
+import { ShieldAlert, Share2, MapPin, MessageCircle } from 'lucide-react-native';
 
 const MAP_PROVIDER = Platform.OS === 'android' ? PROVIDER_GOOGLE : undefined;
 import { auth } from '../services/firebase';
@@ -170,6 +170,10 @@ export default function TripScreen() {
                 <Text style={styles.shareText}>Share live trip</Text>
               </TouchableOpacity>
             </View>
+            <TouchableOpacity style={styles.chatBtn} onPress={() => router.push(`/chat/${id}`)} activeOpacity={0.9}>
+              <MessageCircle color={c.textPrimary} size={17} strokeWidth={2.2} />
+              <Text style={styles.shareText}>Message co-travellers</Text>
+            </TouchableOpacity>
             <TouchableOpacity style={styles.endTrip} onPress={() => setShowRating(true)}>
               <Text style={styles.endTripText}>End trip & rate</Text>
             </TouchableOpacity>
@@ -243,6 +247,11 @@ const styles = StyleSheet.create({
   share: { flex: 1, flexDirection: 'row', gap: 8, alignItems: 'center', justifyContent: 'center', backgroundColor: c.surfaceCard, height: 52, borderRadius: radius.md, borderWidth: 1, borderColor: c.borderStrong },
   shareText: { fontFamily: font.sansBold, fontSize: 14.5, color: c.textPrimary },
 
+  chatBtn: {
+    flexDirection: 'row', gap: 8, alignItems: 'center', justifyContent: 'center',
+    backgroundColor: c.surfaceCard, height: 48, borderRadius: radius.md,
+    borderWidth: 1, borderColor: c.borderStrong, marginTop: space.sm,
+  },
   endTrip: { alignItems: 'center', paddingVertical: space.md },
   endTripText: { fontFamily: font.sansSemibold, fontSize: 13.5, color: c.textTertiary, textDecorationLine: 'underline' },
 
