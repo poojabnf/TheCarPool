@@ -16,12 +16,6 @@ service firebase.storage {
       return request.auth != null && request.auth.token.admin == true;
     }
 
-    // Valid upload: image only, max 10 MB.
-    function isValidImage() {
-      return request.resource.size < 10 * 1024 * 1024
-        && request.resource.contentType.matches('image/.*');
-    }
-
     // Per-user KYC documents — owner only, images up to 10 MB.
     match /users/{uid}/kyc/{allPaths=**} {
       allow read: if isOwner(uid) || isAdmin();
