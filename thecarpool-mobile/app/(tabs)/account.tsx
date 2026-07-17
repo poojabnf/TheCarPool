@@ -41,6 +41,9 @@ export default function AccountInterface() {
 
   // Commute streaks (roadmap Phase 2 — community wedge).
   const [streaks, setStreaks] = useState<any | null>(null);
+  // Gender powers women-only rides — surfaced in Settings so the flagship
+  // safety feature is actually reachable.
+  const [gender, setGender] = useState<string | null>(null);
   useEffect(() => {
     const uid = auth().currentUser?.uid;
     if (!uid) return;
@@ -48,7 +51,19 @@ export default function AccountInterface() {
       .then((r) => (r.ok ? r.json() : null))
       .then(setStreaks)
       .catch(() => {});
+    apiFetch('/api/users/me')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => setGender(d?.gender ?? null))
+      .catch(() => {});
   }, []);
+
+  const updateGender = async (g: 'FEMALE' | 'MALE' | 'OTHER') => {
+    setGender(g);
+    try {
+      await apiFetch('/api/users/profile', { method: 'POST', body: JSON.stringify({ gender: g }) });
+      if (g === 'FEMALE') Alert.alert('Women-only rides unlocked', 'You can now use women-safety mode when searching, and offer women-only rides as a driver.');
+    } catch { /* best-effort; re-fetched next visit */ }
+  };
 
   useEffect(() => {
     if (view !== 'history') return;
@@ -112,6 +127,26 @@ export default function AccountInterface() {
                   <Text style={styles.rowSub}>Ride matches, updates & alerts</Text>
                 </View>
                 <Switch value={notifications} onValueChange={toggleNotifications} trackColor={{ true: c.go, false: c.borderStrong }} thumbColor="#fff" />
+              </View>
+              <View style={styles.row}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.rowTitle}>Gender</Text>
+                  <Text style={styles.rowSub}>Female unlocks women-only rides</Text>
+                </View>
+                <View style={{ flexDirection: 'row', gap: 6 }}>
+                  {(['FEMALE', 'MALE', 'OTHER'] as const).map((g) => (
+                    <TouchableOpacity
+                      key={g}
+                      style={[styles.langChip, gender === g && styles.langChipOn]}
+                      onPress={() => updateGender(g)}
+                      activeOpacity={0.85}
+                    >
+                      <Text style={[styles.langChipText, gender === g && { color: '#fff' }]}>
+                        {g === 'FEMALE' ? '♀' : g === 'MALE' ? '♂' : '⚧'}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
               </View>
               <View style={styles.row}>
                 <View style={{ flex: 1 }}>
@@ -243,7 +278,8 @@ export default function AccountInterface() {
       <View style={styles.group}>
         <MenuRow icon={<CreditCard color={c.textSecondary} size={20} />} title="Wallet & payments" sub="Balance, UPI, cards" onPress={() => router.push('/(tabs)/wallet')} />
         <MenuRow icon={<Receipt color={c.textSecondary} size={20} />} title="Booking history" sub="Your past rides & payments" onPress={() => setView('history')} />
-        <MenuRow icon={<Newspaper color={c.textSecondary} size={20} />} title="Classifieds" sub="Community marketplace" onPress={() => router.push('/(tabs)/classifieds')} last />
+        <MenuRow icon={<Newspaper color={c.textSecondary} size={20} />} title="Classifieds" sub="Community marketplace" onPress={() => router.push('/(tabs)/classifieds')} />
+        <MenuRow icon={<Leaf color={c.textSecondary} size={20} />} title="Green leaderboard" sub="Top CO₂ savers in the community" onPress={() => router.push('/leaderboard')} last />
       </View>
       <View style={styles.group}>
         <MenuRow icon={<ShieldCheck color={c.textSecondary} size={20} />} title="Safety Centre" sub="SOS, trip sharing, emergency contacts" onPress={() => router.push('/safety-center')} />

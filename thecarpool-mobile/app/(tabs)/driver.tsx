@@ -93,6 +93,64 @@ export default function DriverInterface() {
   const [customPrice, setCustomPrice] = useState('');
   const [activeRideId, setActiveRideId] = useState<string | null>(null);
 
+  // ── Real upcoming rides + passenger manifests (replaces the old mock card) ──
+  const [myRides, setMyRides] = useState<any[]>([]);
+  const [manifests, setManifests] = useState<Record<string, any>>({});
+  const [ridesLoading, setRidesLoading] = useState(false);
+
+  const loadMyRides = async () => {
+    setRidesLoading(true);
+    try {
+      const res = await apiFetch('/api/rides/mine');
+      if (!res.ok) { setMyRides([]); return; }
+      const all = await res.json();
+      const active = (Array.isArray(all) ? all : [])
+        .filter((r: any) => r.status === 'SCHEDULED' || r.status === 'STARTED')
+        .slice(0, 5);
+      setMyRides(active);
+      // Fetch each ride's passenger manifest (best-effort).
+      const entries = await Promise.all(active.map(async (r: any) => {
+        try {
+          const m = await apiFetch(`/api/bookings/for-ride/${r.id}`);
+          return m.ok ? [r.id, await m.json()] : [r.id, null];
+        } catch { return [r.id, null]; }
+      }));
+      setManifests(Object.fromEntries(entries));
+    } catch { setMyRides([]); }
+    finally { setRidesLoading(false); }
+  };
+  useEffect(() => { loadMyRides(); }, []);
+
+  // Driver moves the ride through its lifecycle; COMPLETED settles escrow.
+  const updateRideStatus = (rideId: string, status: 'STARTED' | 'COMPLETED') => {
+    const label = status === 'STARTED' ? 'Start this trip?' : 'Complete this trip?';
+    const detail = status === 'STARTED'
+      ? 'Passengers will see the ride as live and can track you.'
+      : 'Escrow for all passengers is released to your wallet.';
+    Alert.alert(label, detail, [
+      { text: 'Not yet', style: 'cancel' },
+      {
+        text: status === 'STARTED' ? 'Start trip' : 'Complete trip',
+        onPress: async () => {
+          try {
+            const res = await apiFetch(`/api/rides/${rideId}/status`, {
+              method: 'PATCH',
+              body: JSON.stringify({ status }),
+            });
+            if (res.ok) {
+              haptics.success();
+              if (status === 'STARTED') setActiveRideId(rideId);
+              loadMyRides();
+            } else {
+              const e = await res.json().catch(() => ({}));
+              Alert.alert('Could not update', e.error || `Server error (${res.status}).`);
+            }
+          } catch { Alert.alert('Could not update', 'Network error. Please try again.'); }
+        },
+      },
+    ]);
+  };
+
   // Calculate suggested pricing on the fly
   useEffect(() => {
     const dist = parseFloat(distanceKm);
@@ -324,29 +382,66 @@ export default function DriverInterface() {
             </TouchableOpacity>
 
             <Text style={styles.sectionTitle}>My Upcoming Rides</Text>
-            
-            <View style={styles.upcomingCard}>
-              <View style={styles.routeBox}>
-                <View style={{flexDirection: 'row', justifyContent: 'space-between'}}>
-                  <Text style={styles.routeTime}>Today, 18:30</Text>
-                  <View style={styles.badgeRow}>
-                    <Text style={styles.miniBadge}>CAR</Text>
-                    <Text style={styles.miniBadge}>RECURRING</Text>
+
+            {ridesLoading && myRides.length === 0 && <ActivityIndicator color={colors.success} style={{ marginTop: 12 }} />}
+            {!ridesLoading && myRides.length === 0 && (
+              <Text style={styles.noRidesText}>No active rides. Offer a ride to start earning.</Text>
+            )}
+            {myRides.map((r) => {
+              const m = manifests[r.id];
+              const seatsFilled = m ? m.seats_booked : (r.seats_total - r.seats_available);
+              const dep = new Date(r.departure_time);
+              return (
+                <View key={r.id} style={styles.upcomingCard}>
+                  <View style={styles.routeBox}>
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                      <Text style={styles.routeTime}>
+                        {dep.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })} · {dep.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
+                      </Text>
+                      <View style={styles.badgeRow}>
+                        <Text style={styles.miniBadge}>{r.vehicle_type || 'CAR'}</Text>
+                        {r.status === 'STARTED' && <Text style={[styles.miniBadge, { color: colors.success }]}>LIVE</Text>}
+                        {r.women_only && <Text style={styles.miniBadge}>♀ WOMEN</Text>}
+                      </View>
+                    </View>
+                    <Text style={styles.routeDest}>Ride #{String(r.id).replace('ride_', '').slice(0, 8)} · ₹{Number(r.price_split).toFixed(0)}/seat</Text>
+                  </View>
+
+                  {/* Passenger manifest */}
+                  <View style={styles.passengerBox}>
+                    <View style={{ flex: 1 }}>
+                      {m && m.passengers.length > 0 ? (
+                        m.passengers.map((p: any) => (
+                          <Text key={p.booking_id} style={styles.manifestRow}>
+                            {p.rider_name}{p.rider_rating ? ` ★${p.rider_rating}` : ''} · {p.seats_booked} seat{p.seats_booked > 1 ? 's' : ''}
+                          </Text>
+                        ))
+                      ) : (
+                        <Text style={styles.manifestRow}>No bookings yet</Text>
+                      )}
+                    </View>
+                    <Text style={styles.seatText}>{seatsFilled}/{r.seats_total} Seats Filled</Text>
+                  </View>
+
+                  {/* Lifecycle controls */}
+                  <View style={{ flexDirection: 'row', gap: 8, marginTop: 12 }}>
+                    {r.status === 'SCHEDULED' && (
+                      <TouchableOpacity style={styles.startBtn} onPress={() => updateRideStatus(r.id, 'STARTED')} activeOpacity={0.9}>
+                        <Text style={styles.startBtnText}>▶ Start trip</Text>
+                      </TouchableOpacity>
+                    )}
+                    {r.status === 'STARTED' && (
+                      <TouchableOpacity style={styles.completeBtn} onPress={() => updateRideStatus(r.id, 'COMPLETED')} activeOpacity={0.9}>
+                        <Text style={styles.startBtnText}>✓ Complete trip · release escrow</Text>
+                      </TouchableOpacity>
+                    )}
+                    <TouchableOpacity style={styles.chatMiniBtn} onPress={() => router.push(`/chat/${r.id}`)} activeOpacity={0.9}>
+                      <Text style={styles.chatMiniText}>💬</Text>
+                    </TouchableOpacity>
                   </View>
                 </View>
-                <Text style={styles.routeDest}>Sector 44 → Vasant Kunj</Text>
-              </View>
-              <View style={styles.passengerBox}>
-                <View style={styles.passengerAvatars}>
-                  <View style={[styles.avatarMini, { zIndex: 3, backgroundColor: colors.cardBorder }]} />
-                  <View style={[styles.avatarMini, { zIndex: 2, marginLeft: -10, backgroundColor: colors.cardBorder }]} />
-                  <View style={[styles.avatarMini, { zIndex: 1, marginLeft: -10, backgroundColor: colors.cardBorder, alignItems: 'center', justifyContent: 'center' }]}>
-                    <Text style={{fontSize: 10, color: colors.textMuted}}>+1</Text>
-                  </View>
-                </View>
-                <Text style={styles.seatText}>3/4 Seats Filled</Text>
-              </View>
-            </View>
+              );
+            })}
           </ScrollView>
         )}
 
@@ -723,6 +818,13 @@ const styles = StyleSheet.create({
   routeBox: { marginBottom: 16 },
   routeTime: { color: colors.primary, fontWeight: 'bold', marginBottom: 4 },
   routeDest: { fontSize: 18, fontWeight: 'bold', color: colors.text },
+  noRidesText: { color: colors.textMuted, fontSize: 13, marginTop: 8 },
+  manifestRow: { color: colors.textMuted, fontSize: 12, marginBottom: 2 },
+  startBtn: { flex: 1, backgroundColor: colors.success, borderRadius: 8, height: 42, alignItems: 'center', justifyContent: 'center' },
+  completeBtn: { flex: 1, backgroundColor: '#1E4E8C', borderRadius: 8, height: 42, alignItems: 'center', justifyContent: 'center' },
+  startBtnText: { color: '#fff', fontSize: 13, fontWeight: '700' },
+  chatMiniBtn: { width: 42, height: 42, borderRadius: 8, borderWidth: 1, borderColor: colors.cardBorder, alignItems: 'center', justifyContent: 'center' },
+  chatMiniText: { fontSize: 16 },
   passengerBox: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingTop: 16, borderTopWidth: 1, borderTopColor: colors.cardBorder },
   passengerAvatars: { flexDirection: 'row' },
   avatarMini: { width: 28, height: 28, borderRadius: 14, borderWidth: 2, borderColor: colors.card },

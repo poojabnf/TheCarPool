@@ -342,6 +342,53 @@ export async function bookingRoutes(fastify: FastifyInstance) {
     }
   });
 
+  // ── GET /for-ride/:ride_id — passenger manifest for the ride's driver ────
+  // Lets the driver see who booked, how many seats, and their pickup points.
+  fastify.get('/for-ride/:ride_id', { preHandler: [requireAuth] }, async (request, reply) => {
+    const { ride_id } = request.params as { ride_id: string };
+    const uid = String(request.user!.id);
+    try {
+      const rideDoc = await db.collection('rides').doc(ride_id).get();
+      if (!rideDoc.exists) return reply.code(404).send({ error: 'Ride not found.' });
+      const ride = rideDoc.data()!;
+      if (String(ride.driver_uid ?? ride.driver_id) !== uid) {
+        return reply.code(403).send({ error: 'Forbidden: only the ride driver can view its passengers.' });
+      }
+
+      const snap = await db.collection('bookings').where('ride_id', '==', ride_id).get();
+      const passengers = await Promise.all(
+        snap.docs
+          .filter((d) => d.data().status !== 'CANCELLED' && d.data().escrow_status !== 'REFUNDED')
+          .map(async (d) => {
+            const b = d.data();
+            let riderName = 'Rider';
+            let riderRating: number | null = null;
+            try {
+              const u = await db.collection('users').doc(String(b.rider_id)).get();
+              if (u.exists) {
+                riderName = u.data()!.full_name || u.data()!.name || 'Rider';
+                riderRating = u.data()!.rating_avg ? parseFloat(u.data()!.rating_avg.toFixed(1)) : null;
+              }
+            } catch { /* name enrichment is best-effort */ }
+            return {
+              booking_id: d.id,
+              rider_name: riderName,
+              rider_rating: riderRating,
+              seats_booked: b.seats_booked,
+              pickup_point: b.pickup_point ?? null,
+              escrow_status: b.escrow_status,
+            };
+          })
+      );
+
+      const seatsBooked = passengers.reduce((s, p) => s + Number(p.seats_booked || 0), 0);
+      return reply.send({ ride_id, passengers, seats_booked: seatsBooked, seats_total: ride.seats_total });
+    } catch (err: any) {
+      fastify.log.error(err, 'Failed to list ride passengers');
+      return reply.code(500).send({ error: 'Failed to fetch passengers.' });
+    }
+  });
+
   // ── GET /:id — single booking detail ────────────────────────────────────
   fastify.get('/:id', { preHandler: [requireAuth] }, async (request, reply) => {
     const { id } = request.params as { id: string };
