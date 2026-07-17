@@ -9,6 +9,7 @@ import { MapPin, Circle, Search, BadgeCheck, Wind, Venus, Users, Leaf } from 'lu
 import { apiFetch } from '../services/api';
 import { useAuthStore } from '../store/authStore';
 import { useI18n } from '../services/i18n';
+import * as haptics from '../services/haptics';
 import { c, font, radius, space, shadowSm, brass } from '../../theme/tokens';
 
 // Offline-cached search (roadmap Phase 1, session-scoped): module-level so it
@@ -107,6 +108,7 @@ export default function HomeScreen() {
   };
 
   const findRides = async () => {
+    haptics.tap();
     if (!originCoords || !destCoords) {
       Alert.alert('Select locations', 'Pick a pickup and destination from the suggestions.');
       return;
@@ -150,6 +152,7 @@ export default function HomeScreen() {
 
   // Open Confirm & pay (fare shown before the KYC gate; confirm screen books).
   const bookRide = (ride: Ride) => {
+    haptics.press();
     if (!originCoords || !destCoords) {
       Alert.alert('Select locations', 'Pick a pickup and destination from the suggestions.');
       return;

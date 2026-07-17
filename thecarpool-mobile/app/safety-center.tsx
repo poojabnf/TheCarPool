@@ -4,6 +4,7 @@ import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ShieldAlert, Share2, BadgeCheck, MapPin, PhoneCall, Plus } from 'lucide-react-native';
 import { apiFetch } from './services/api';
+import HapticPressable from './components/HapticPressable';
 import { c, font, radius, space, shadowSm } from '../theme/tokens';
 
 const FEATURES = [
@@ -105,17 +106,17 @@ export default function SafetyCenter() {
         <View style={styles.addBox}>
           <TextInput style={styles.input} placeholder="Contact name" placeholderTextColor={c.textTertiary} value={name} onChangeText={setName} />
           <TextInput style={styles.input} placeholder="Phone number" placeholderTextColor={c.textTertiary} keyboardType="phone-pad" value={phone} onChangeText={setPhone} />
-          <TouchableOpacity style={styles.addBtn} onPress={addContact} disabled={adding} activeOpacity={0.9}>
+          <HapticPressable haptic="press" style={styles.addBtn} onPress={addContact} disabled={adding} activeOpacity={0.9}>
             <Plus color="#fff" size={16} strokeWidth={2.6} />
             <Text style={styles.addBtnText}>{adding ? 'Adding…' : 'Add emergency contact'}</Text>
-          </TouchableOpacity>
+          </HapticPressable>
         </View>
 
         {/* Emergency call */}
-        <TouchableOpacity style={styles.emergencyRow} onPress={() => Linking.openURL('tel:112')}>
+        <HapticPressable haptic="error" style={styles.emergencyRow} onPress={() => Linking.openURL('tel:112')}>
           <PhoneCall color={c.textPrimary} size={16} strokeWidth={2.4} />
           <Text style={styles.emergencyText}>In immediate danger? Call 112 (national emergency)</Text>
-        </TouchableOpacity>
+        </HapticPressable>
       </ScrollView>
     </View>
   );

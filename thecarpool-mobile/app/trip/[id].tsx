@@ -9,6 +9,7 @@ import { ShieldAlert, Share2, MapPin, MessageCircle } from 'lucide-react-native'
 const MAP_PROVIDER = Platform.OS === 'android' ? PROVIDER_GOOGLE : undefined;
 import { auth } from '../services/firebase';
 import { API_URL, apiFetch } from '../services/api';
+import * as haptics from '../services/haptics';
 import { c, font, radius, space, shadowSm } from '../../theme/tokens';
 
 const SOCKET_URL = API_URL;
@@ -44,7 +45,10 @@ export default function TripScreen() {
         setSpeed(typeof data.speed === 'number' ? data.speed : 0);
       });
       socket.on('safety:alert', (a) => {
-        if (a.type === 'GEOFENCE_BREACH') setGeofenceAlert('Driver has deviated > 100m from the planned route.');
+        if (a.type === 'GEOFENCE_BREACH') {
+          setGeofenceAlert('Driver has deviated > 100m from the planned route.');
+          haptics.warning(); // buzz the rider so the alert isn't missed
+        }
       });
     })();
     return () => { cancelled = true; socket?.disconnect(); };
@@ -56,16 +60,16 @@ export default function TripScreen() {
         method: 'POST',
         body: JSON.stringify({ ride_id: id, latitude: driverLocation.lat, longitude: driverLocation.lng, is_silent: false }),
       });
-      if (res.ok) Alert.alert('SOS dispatched', 'Your emergency alert and live location have been sent. Help is on the way.');
+      if (res.ok) { haptics.sos(); Alert.alert('SOS dispatched', 'Your emergency alert and live location have been sent. Help is on the way.'); }
       else if (res.status === 429) Alert.alert('Already sent', 'An SOS was dispatched moments ago.');
       else Alert.alert('SOS failed', 'Could not dispatch. Please call emergency services directly.');
     } catch { Alert.alert('SOS failed', 'Network error. Please call emergency services directly.'); }
   };
 
-  const triggerSOS = () => Alert.alert('🚨 Activate SOS', 'Broadcast your live location to your safety circle and TheCarPool support?', [
+  const triggerSOS = () => { haptics.error(); Alert.alert('🚨 Activate SOS', 'Broadcast your live location to your safety circle and TheCarPool support?', [
     { text: 'Cancel', style: 'cancel' },
     { text: 'Confirm SOS', style: 'destructive', onPress: dispatchSOS },
-  ]);
+  ]); };
 
   const shareTrip = async () => {
     try {
@@ -183,7 +187,7 @@ export default function TripScreen() {
             <Text style={styles.rateTitle}>How was your ride?</Text>
             <View style={styles.starsRow}>
               {[1, 2, 3, 4, 5].map((n) => (
-                <TouchableOpacity key={n} onPress={() => setStars(n)}>
+                <TouchableOpacity key={n} onPress={() => { haptics.tap(); setStars(n); }}>
                   <Text style={[styles.star, n <= stars && styles.starOn]}>★</Text>
                 </TouchableOpacity>
               ))}

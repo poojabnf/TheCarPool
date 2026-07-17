@@ -1,13 +1,14 @@
 import React, { useState, useCallback } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView,
-  RefreshControl, ActivityIndicator,
+  RefreshControl, ActivityIndicator, Alert,
 } from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Route, MapPin, Clock, CheckCircle, Circle, ChevronRight } from 'lucide-react-native';
 import { c, font, radius, space, shadowSm } from '../../theme/tokens';
 import { apiFetch } from '../services/api';
+import * as haptics from '../services/haptics';
 
 interface Booking {
   id: string;
@@ -73,6 +74,52 @@ export default function TripsScreen() {
   // Reload every time the tab comes into focus
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
+  // Cancel an upcoming booking. The backend derives the late-cancel fee (₹50
+  // inside 2h of departure) and refunds the escrow accordingly.
+  const cancelBooking = (b: Booking) => {
+    const isLate = b.departure_time
+      ? new Date(b.departure_time).getTime() - Date.now() < 2 * 60 * 60 * 1000
+      : false;
+    haptics.warning();
+    Alert.alert(
+      'Cancel this booking?',
+      isLate
+        ? 'Departure is under 2 hours away — a ₹50 late-cancellation fee applies. The rest of your escrow is refunded to your wallet.'
+        : 'Your full escrow amount will be refunded to your wallet.',
+      [
+        { text: 'Keep booking', style: 'cancel' },
+        {
+          text: isLate ? 'Cancel (₹50 fee)' : 'Cancel booking',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              const res = await apiFetch('/api/payments/escrow/cancellation-charge', {
+                method: 'POST',
+                body: JSON.stringify({ booking_id: b.id }),
+              });
+              if (res.ok) {
+                const d = await res.json().catch(() => ({}));
+                haptics.success();
+                Alert.alert(
+                  'Booking cancelled',
+                  d.cancellation_fee > 0
+                    ? `A ₹${d.cancellation_fee} late-cancellation fee was applied. The remaining escrow has been refunded to your wallet.`
+                    : 'Your full escrow has been refunded to your wallet.'
+                );
+                load(true);
+              } else {
+                const e = await res.json().catch(() => ({}));
+                Alert.alert('Could not cancel', e.error || `Server error (${res.status}).`);
+              }
+            } catch {
+              Alert.alert('Could not cancel', 'Network error. Please try again.');
+            }
+          },
+        },
+      ]
+    );
+  };
+
   const upcoming = bookings.filter(b => b.ride_status !== 'COMPLETED' && b.escrow_status !== 'SETTLED');
   const past = bookings.filter(b => b.ride_status === 'COMPLETED' || b.escrow_status === 'SETTLED');
 
@@ -113,7 +160,13 @@ export default function TripsScreen() {
           {upcoming.length > 0 && (
             <>
               <Text style={styles.sectionLabel}>Upcoming</Text>
-              {upcoming.map(b => <BookingCard key={b.id} b={b} onPress={() => router.push(`/trip/${b.ride_id}`)} />)}
+              {upcoming.map(b => (
+                <BookingCard
+                  key={b.id} b={b}
+                  onPress={() => router.push(`/trip/${b.ride_id}`)}
+                  onCancel={b.ride_status === 'SCHEDULED' ? () => cancelBooking(b) : undefined}
+                />
+              ))}
             </>
           )}
           {past.length > 0 && (
@@ -128,7 +181,7 @@ export default function TripsScreen() {
   );
 }
 
-function BookingCard({ b, onPress }: { b: Booking; onPress: () => void }) {
+function BookingCard({ b, onPress, onCancel }: { b: Booking; onPress: () => void; onCancel?: () => void }) {
   const color = statusColor(b.escrow_status, b.ride_status);
   const label = statusLabel(b.escrow_status, b.ride_status);
   const isLive = b.ride_status === 'STARTED';
@@ -164,6 +217,12 @@ function BookingCard({ b, onPress }: { b: Booking; onPress: () => void }) {
           <Text style={styles.price}>₹{(b.price_split * b.seats_booked).toFixed(0)} escrow</Text>
         )}
       </View>
+
+      {onCancel && (
+        <TouchableOpacity style={styles.cancelBtn} onPress={onCancel} activeOpacity={0.85}>
+          <Text style={styles.cancelText}>Cancel booking</Text>
+        </TouchableOpacity>
+      )}
     </TouchableOpacity>
   );
 }
@@ -194,4 +253,6 @@ const styles = StyleSheet.create({
   vehicle: { fontFamily: font.sans, fontSize: 12.5, color: c.textTertiary },
   footer: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: space.sm, paddingTop: space.sm, borderTopWidth: 1, borderTopColor: c.borderSubtle },
   price: { fontFamily: font.monoBold, fontSize: 13, color: c.textAccent, marginLeft: 'auto' },
+  cancelBtn: { marginTop: space.sm, height: 38, borderRadius: radius.sm, borderWidth: 1, borderColor: c.dangerSoft, backgroundColor: c.dangerSoft, alignItems: 'center', justifyContent: 'center' },
+  cancelText: { fontFamily: font.sansSemibold, fontSize: 12.5, color: c.danger },
 });

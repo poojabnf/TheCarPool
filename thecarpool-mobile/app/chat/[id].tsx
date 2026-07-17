@@ -9,6 +9,7 @@ import io from 'socket.io-client';
 import { Send } from 'lucide-react-native';
 import { auth } from '../services/firebase';
 import { API_URL, apiFetch } from '../services/api';
+import * as haptics from '../services/haptics';
 import { c, font, radius, space } from '../../theme/tokens';
 
 type ChatMessage = {
@@ -75,6 +76,7 @@ export default function ChatScreen() {
         body: JSON.stringify({ text }),
       });
       if (res.ok) {
+        haptics.tap();
         const saved = await res.json();
         setDraft('');
         // Echo locally — the socket broadcast dedupes by id.

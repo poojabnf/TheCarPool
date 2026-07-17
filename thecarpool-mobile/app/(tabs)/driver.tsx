@@ -4,6 +4,7 @@ import { useRouter } from 'expo-router';
 import { Lock, FileText, CheckCircle, PlusCircle, Activity, Navigation, MapPin, Calendar, Users, X, Check, Car, Bike, Shield } from 'lucide-react-native';
 import { colors } from '../../theme/colors';
 import { apiFetch } from '../services/api';
+import * as haptics from '../services/haptics';
 import auth from '@react-native-firebase/auth';
 import io from 'socket.io-client';
 import { API_URL } from '../services/api';
@@ -232,6 +233,7 @@ export default function DriverInterface() {
         return;
       }
       const ride = await res.json();
+      haptics.success(); // route published
       setActiveRideId(String(ride.id || ride.ride_id));
       setShowPostModal(false);
       Alert.alert(

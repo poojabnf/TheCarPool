@@ -5,6 +5,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import auth from '@react-native-firebase/auth';
 import { Lock, ChevronLeft, Circle, MapPin, Footprints } from 'lucide-react-native';
 import { apiFetch } from './services/api';
+import * as haptics from './services/haptics';
 import { useAuthStore } from './store/authStore';
 import { c, font, radius, space, shadowSm } from '../theme/tokens';
 
@@ -57,6 +58,7 @@ export default function ConfirmPay() {
   const upiVpa = (userProfile?.email ? userProfile.email.split('@')[0] : 'you') + '@okhdfcbank';
 
   const pay = async () => {
+    haptics.press();
     if (kycStatus !== 'verified') {
       Alert.alert('Verification required', 'Complete a quick verification (~2 mins) to book.', [
         { text: 'Not now', style: 'cancel' },
@@ -82,6 +84,7 @@ export default function ConfirmPay() {
         return;
       }
       const b = await res.json();
+      haptics.success(); // seat locked
       const rideId = b.ride_id || b.id || p.ride_id;
       if (!rideId) {
         Alert.alert('Booking confirmed!', `Your seat is locked. Booking ref: ${b.id || 'N/A'}`);
