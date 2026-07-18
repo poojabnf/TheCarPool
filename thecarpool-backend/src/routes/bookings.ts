@@ -194,22 +194,25 @@ export async function bookingRoutes(fastify: FastifyInstance) {
       const fareAmount = Number(ride.price_split || 0) * Number(booking.seats_booked || 1);
       const driverWalletId = driver_id ? String(driver_id) : null;
 
+      const driverWalletRef = driverWalletId ? db.collection('wallets').doc(driverWalletId) : null;
+
       await db.runTransaction(async (tx) => {
+        // Firestore requires ALL reads before ANY writes.
         const freshBooking = await tx.get(bookingRef);
         if (freshBooking.data()?.escrow_status !== 'HELD') {
           throw new Error('ALREADY_SETTLED');
         }
+        const walletDoc = driverWalletRef ? await tx.get(driverWalletRef) : null;
+
         tx.update(bookingRef, {
           payment_status: 'RELEASED',
           escrow_status: 'SETTLED',
           settled_amount: fareAmount,
           settled_at: new Date().toISOString(),
         });
-        if (driverWalletId) {
-          const walletRef = db.collection('wallets').doc(driverWalletId);
-          const walletDoc = await tx.get(walletRef);
-          const cur = walletDoc.exists ? walletDoc.data()! : { available_wallet_balance: 0, escrow_locked_balance: 0, currency: 'INR' };
-          tx.set(walletRef, { ...cur, available_wallet_balance: (cur.available_wallet_balance || 0) + fareAmount }, { merge: true });
+        if (driverWalletRef) {
+          const cur = walletDoc?.exists ? walletDoc.data()! : { available_wallet_balance: 0, escrow_locked_balance: 0, currency: 'INR' };
+          tx.set(driverWalletRef, { ...cur, available_wallet_balance: (cur.available_wallet_balance || 0) + fareAmount }, { merge: true });
         }
       });
 
@@ -449,19 +452,24 @@ export async function bookingRoutes(fastify: FastifyInstance) {
 
       const fareAmount = Number(ride.price_split || 0) * Number(b.seats_booked || 1);
 
+      const walletRef = db.collection('wallets').doc(uid);
+
       await db.runTransaction(async (tx) => {
-        // Refetch booking inside transaction
+        // Firestore requires ALL reads before ANY writes — read booking, ride
+        // and wallet up front, then perform every write.
         const freshBookingDoc = await tx.get(bookingRef);
         const freshB = freshBookingDoc.data()!;
         if (freshB.escrow_status !== 'HELD') {
           throw new Error('ALREADY_PROCESSED');
         }
 
-        // Refetch ride inside transaction
         const freshRideDoc = await tx.get(rideRef);
         const freshRide = freshRideDoc.data()!;
 
-        // 1. Update ride seats
+        const walletDoc = await tx.get(walletRef);
+        const cur = walletDoc.exists ? walletDoc.data()! : { available_wallet_balance: 0, escrow_locked_balance: 0, currency: 'INR' };
+
+        // 1. Restore the freed seats on the ride
         tx.update(rideRef, {
           seats_available: (freshRide.seats_available || 0) + freshB.seats_booked,
         });
@@ -473,9 +481,6 @@ export async function bookingRoutes(fastify: FastifyInstance) {
         });
 
         // 3. Refund the rider's wallet since funds were locked in escrow
-        const walletRef = db.collection('wallets').doc(uid);
-        const walletDoc = await tx.get(walletRef);
-        const cur = walletDoc.exists ? walletDoc.data()! : { available_wallet_balance: 0, escrow_locked_balance: 0, currency: 'INR' };
         tx.set(walletRef, {
           ...cur,
           available_wallet_balance: (cur.available_wallet_balance || 0) + fareAmount,
