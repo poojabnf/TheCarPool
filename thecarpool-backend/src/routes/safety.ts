@@ -7,6 +7,21 @@ import { parseOrReply } from '../lib/validate';
 import { verifyAadhaar, verifyDrivingLicence, isKycConfigured } from '../lib/kyc';
 import { createMaskedCall, isMaskingConfigured } from '../lib/masking';
 
+/**
+ * ID document retention.
+ *
+ * Images are kept for 6 months and then deleted. Enforcement is the Cloud
+ * Storage lifecycle rule in `storage.lifecycle.json` (age 180 days on this
+ * prefix) — object expiry is handled by GCS itself rather than app code, so it
+ * still happens if the service is down or a cron never fires.
+ *
+ * The prefix is deliberately top-level: lifecycle rules match a literal prefix
+ * and cannot wildcard a uid in the middle of `users/{uid}/kyc/`, so scoping a
+ * delete rule there would have caught avatars and classifieds too.
+ */
+export const KYC_PREFIX = 'kyc-documents/';
+export const KYC_RETENTION_DAYS = 180;
+
 const SosSchema = z.object({
   ride_id: z.union([z.string(), z.number()]).optional(),
   latitude: z.number().min(-90).max(90),
@@ -450,10 +465,14 @@ export async function safetyRoutes(fastify: FastifyInstance) {
 
     try {
       const bucket = storage.bucket(); // Default firebase bucket
-      // Bind the upload path to the authenticated user so one user can never
-      // write into another user's KYC folder.
-      const file = bucket.file(`users/${uid}/kyc/${document_type}/${Date.now()}_${filename}`);
-      
+      // ID documents live under their OWN top-level prefix, not users/{uid}/…,
+      // so a storage lifecycle rule can delete them on a retention schedule
+      // without touching avatars or classifieds in the same user folder.
+      // GCS lifecycle prefixes cannot wildcard the uid in the middle of a path.
+      // The uid still comes from the token, so nobody can write into another
+      // user's folder.
+      const file = bucket.file(`${KYC_PREFIX}${uid}/${document_type}/${Date.now()}_${filename}`);
+
       const [uploadUrl] = await file.getSignedUrl({
         version: 'v4',
         action: 'write',
@@ -461,11 +480,27 @@ export async function safetyRoutes(fastify: FastifyInstance) {
         contentType: content_type,
       });
 
+      const deleteAfter = new Date(Date.now() + KYC_RETENTION_DAYS * 24 * 60 * 60 * 1000);
+
+      // Record the retention deadline alongside the object. The storage
+      // lifecycle rule is what actually deletes it; this is the audit trail and
+      // lets us show the user when their document goes.
+      await db.collection('kyc_documents').doc(`${uid}_${Date.now()}`).set({
+        user_id: uid,
+        document_type,
+        file_key: file.name,
+        uploaded_at: new Date().toISOString(),
+        delete_after: deleteAfter.toISOString(),
+        retention_days: KYC_RETENTION_DAYS,
+      }).catch(() => { /* audit record is best-effort; never block the upload */ });
+
       return reply.code(201).send({
         status: 'SIGNED_UPLOAD_URL_GENERATED',
         bucket: bucket.name,
         file_key: file.name,
         upload_url: uploadUrl,
+        retention_days: KYC_RETENTION_DAYS,
+        delete_after: deleteAfter.toISOString(),
         ready_for_ai_ocr: true
       });
     } catch (err: any) {
