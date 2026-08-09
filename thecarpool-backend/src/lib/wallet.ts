@@ -12,6 +12,53 @@ import { db } from '../server';
  * webhook payload) — never from the client — so a caller can't claim a larger
  * amount than they actually paid.
  */
+/**
+ * Claim a captured Razorpay payment as the funding for a specific booking.
+ *
+ * This is what makes "no booking without full payment" enforceable. The
+ * `payments/{paymentId}` doc is the single claim record: a payment already
+ * credited to a wallet, or already consumed by another booking, cannot be
+ * reused. Caller MUST have fetched the payment from Razorpay first and passed
+ * the real captured amount — never a client-supplied figure.
+ *
+ * Returns the transaction body so it can be composed inside a larger booking
+ * transaction; see `claimPaymentInTransaction` for that form.
+ */
+export function claimPaymentInTransaction(
+  tx: FirebaseFirestore.Transaction,
+  payDoc: FirebaseFirestore.DocumentSnapshot,
+  opts: { paymentId: string; uid: string; bookingId: string; amountRupees: number; requiredRupees: number }
+) {
+  const { paymentId, uid, bookingId, amountRupees, requiredRupees } = opts;
+  const existing = payDoc.exists ? payDoc.data()! : null;
+
+  if (existing?.wallet_credited === true) {
+    throw new Error('PAYMENT_ALREADY_USED');
+  }
+  if (existing?.consumed_by_booking && existing.consumed_by_booking !== bookingId) {
+    throw new Error('PAYMENT_ALREADY_USED');
+  }
+  if (existing?.user_id && String(existing.user_id) !== String(uid)) {
+    throw new Error('PAYMENT_NOT_YOURS');
+  }
+  // Guard against a partial payment funding a full-price seat.
+  if (!(amountRupees + 0.01 >= requiredRupees)) {
+    throw new Error('PAYMENT_TOO_SMALL');
+  }
+
+  tx.set(
+    payDoc.ref,
+    {
+      user_id: uid,
+      amount: amountRupees,
+      status: 'CAPTURED',
+      consumed_by_booking: bookingId,
+      consumed_at: new Date().toISOString(),
+    },
+    { merge: true }
+  );
+}
+
 export async function creditWalletForPayment(opts: {
   paymentId: string;
   orderId?: string | null;

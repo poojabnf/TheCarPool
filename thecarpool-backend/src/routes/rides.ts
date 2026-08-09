@@ -2,6 +2,13 @@ import { FastifyInstance } from 'fastify';
 import { randomUUID } from 'crypto';
 import { db, redisClient } from '../server';
 import { requireAuth } from '../middleware/auth';
+import { canTransition, isSettableStatus, SETTABLE_STATUSES } from '../lib/rideLifecycle';
+import { noShowOutcome, WITHDRAWAL_HOLD_MS } from '../lib/fees';
+
+/** Rounds to paise — wallet balances are rupees held as JS numbers. */
+function round2(n: number): number {
+  return Math.round((n + Number.EPSILON) * 100) / 100;
+}
 
 interface CreateRideBody {
   driver_id: string | number;
@@ -642,9 +649,8 @@ export async function rideRoutes(fastify: FastifyInstance) {
     const { status } = request.body as { status: string };
     const uid = String(request.user!.id);
 
-    const VALID = ['STARTED', 'COMPLETED', 'CANCELLED'];
-    if (!VALID.includes(status)) {
-      return reply.code(400).send({ error: `Invalid status. Must be one of: ${VALID.join(', ')}` });
+    if (!isSettableStatus(status)) {
+      return reply.code(400).send({ error: `Invalid status. Must be one of: ${SETTABLE_STATUSES.join(', ')}` });
     }
 
     try {
@@ -658,30 +664,159 @@ export async function rideRoutes(fastify: FastifyInstance) {
         return reply.code(403).send({ error: 'Forbidden: only the ride driver can update status.' });
       }
 
-      await rideRef.update({ status, updated_at: new Date().toISOString() });
-
-      // On completion, auto-settle all HELD escrow bookings for this ride
-      if (status === 'COMPLETED') {
-        const bookingsSnap = await db.collection('bookings')
-          .where('ride_id', '==', id)
-          .where('escrow_status', '==', 'HELD')
-          .get();
-
-        const batch = db.batch();
-        bookingsSnap.docs.forEach((doc) => {
-          batch.update(doc.ref, {
-            escrow_status: 'SETTLED',
-            payment_status: 'RELEASED',
-            settled_at: new Date().toISOString(),
-          });
+      // Enforce the lifecycle. Without this a driver could COMPLETE a ride that
+      // never STARTED (settling escrow for passengers who were never picked up),
+      // or re-COMPLETE a finished ride.
+      const current = String(ride.status || 'SCHEDULED');
+      if (!canTransition(current, status)) {
+        return reply.code(409).send({
+          error: 'INVALID_TRANSITION',
+          message: `Cannot move a ${current} ride to ${status}.`,
+          current_status: current,
         });
-        if (!bookingsSnap.empty) await batch.commit();
-
-        fastify.log.info({ ride_id: id, settled: bookingsSnap.size }, 'Auto-settled escrow on ride completion');
       }
 
-      return reply.send({ id, status, updated: true });
+      if (status !== 'COMPLETED') {
+        await rideRef.update({ status, updated_at: new Date().toISOString() });
+        return reply.send({ id, status, updated: true });
+      }
+
+      // ── COMPLETED: settle every HELD booking AND pay the driver ────────────
+      // Previously this only flipped the booking flags and never moved money,
+      // so a completed trip left the fare stranded — the driver was never paid
+      // and `settled_amount` stayed undefined (wallet history showed -0).
+      const bookingsSnap = await db.collection('bookings')
+        .where('ride_id', '==', id)
+        .where('escrow_status', '==', 'HELD')
+        .get();
+
+      // Per-rider outcome depends ONLY on whether the driver verified that
+      // rider's boarding OTP:
+      //   verified  → the driver receives 100% of that rider's fare.
+      //   unverified → treated as a no-show: the rider gets 80% back to their
+      //                wallet, the driver 5% for turning up, platform keeps 15%.
+      // The insurance premium is never part of the driver payout — it is held
+      // for the insurer, and refunded to the rider on a no-show.
+      const driverWalletRef = db.collection('wallets').doc(uid);
+      const settledAt = new Date().toISOString();
+
+      const outcome = await db.runTransaction(async (tx) => {
+        // Firestore requires ALL reads before ANY writes.
+        const freshRide = await tx.get(rideRef);
+        if (String(freshRide.data()?.status) === 'COMPLETED') {
+          throw new Error('ALREADY_COMPLETED');
+        }
+        const bookingDocs = await Promise.all(bookingsSnap.docs.map((d) => tx.get(d.ref)));
+
+        // Collect the rider wallets we may need to refund, de-duplicated.
+        const riderRefs = new Map<string, FirebaseFirestore.DocumentReference>();
+        for (const doc of bookingDocs) {
+          if (!doc.exists || doc.data()?.escrow_status !== 'HELD') continue;
+          if (doc.data()?.boarding_verified === true) continue;
+          const rid = String(doc.data()?.rider_id);
+          if (rid && !riderRefs.has(rid)) riderRefs.set(rid, db.collection('wallets').doc(rid));
+        }
+        const driverWalletDoc = await tx.get(driverWalletRef);
+        const riderWalletDocs = new Map<string, FirebaseFirestore.DocumentSnapshot>();
+        for (const [rid, ref] of riderRefs) {
+          riderWalletDocs.set(rid, await tx.get(ref));
+        }
+
+        // ── Compute, then write ───────────────────────────────────────────
+        let driverTotal = 0;
+        let paidCount = 0;
+        let noShowCount = 0;
+        const riderCredits = new Map<string, number>();
+        const bookingWrites: { ref: FirebaseFirestore.DocumentReference; data: any }[] = [];
+
+        for (const doc of bookingDocs) {
+          // Re-check under the transaction: a rider may have cancelled between
+          // the query above and this transaction.
+          if (!doc.exists || doc.data()?.escrow_status !== 'HELD') continue;
+          const b = doc.data()!;
+          const fare = Number(b.fare_amount ?? Number(ride.price_split || 0) * Number(b.seats_booked || 1));
+          const premium = Number(b.insurance_premium || 0);
+
+          if (b.boarding_verified === true) {
+            driverTotal += fare;
+            paidCount += 1;
+            bookingWrites.push({
+              ref: doc.ref,
+              data: {
+                escrow_status: 'SETTLED',
+                payment_status: 'RELEASED',
+                settled_amount: fare,
+                driver_payout: fare,
+                insurance_retained: premium,
+                settled_at: settledAt,
+              },
+            });
+          } else {
+            const ns = noShowOutcome(fare, premium);
+            const rid = String(b.rider_id);
+            driverTotal += ns.driver_share;
+            noShowCount += 1;
+            riderCredits.set(rid, (riderCredits.get(rid) || 0) + ns.refund + ns.insurance_refund);
+            bookingWrites.push({
+              ref: doc.ref,
+              data: {
+                escrow_status: 'SETTLED',
+                payment_status: 'NO_SHOW',
+                no_show: true,
+                settled_amount: ns.driver_share,
+                driver_payout: ns.driver_share,
+                rider_refund: ns.refund + ns.insurance_refund,
+                platform_share: ns.platform_share,
+                settled_at: settledAt,
+              },
+            });
+          }
+        }
+
+        tx.update(rideRef, { status, updated_at: settledAt });
+        for (const w of bookingWrites) tx.update(w.ref, w.data);
+
+        if (driverTotal > 0) {
+          const cur = driverWalletDoc.exists
+            ? driverWalletDoc.data()!
+            : { available_wallet_balance: 0, escrow_locked_balance: 0, currency: 'INR' };
+          tx.set(driverWalletRef, {
+            ...cur,
+            available_wallet_balance: round2((cur.available_wallet_balance || 0) + driverTotal),
+            // Driver earnings only become withdrawable 24h after the ride.
+            withdrawable_after: new Date(Date.now() + WITHDRAWAL_HOLD_MS).toISOString(),
+          }, { merge: true });
+        }
+        for (const [rid, amount] of riderCredits) {
+          if (amount <= 0) continue;
+          const ref = riderRefs.get(rid)!;
+          const doc = riderWalletDocs.get(rid)!;
+          const cur = doc.exists
+            ? doc.data()!
+            : { available_wallet_balance: 0, escrow_locked_balance: 0, currency: 'INR' };
+          tx.set(ref, {
+            ...cur,
+            available_wallet_balance: round2((cur.available_wallet_balance || 0) + amount),
+          }, { merge: true });
+        }
+
+        return { paid: paidCount, no_shows: noShowCount, driver_credited: round2(driverTotal) };
+      });
+
+      fastify.log.info({ ride_id: id, ...outcome }, 'Settled escrow on ride completion');
+
+      return reply.send({
+        id,
+        status,
+        updated: true,
+        bookings_paid: outcome.paid,
+        no_shows: outcome.no_shows,
+        driver_credited: outcome.driver_credited,
+      });
     } catch (err: any) {
+      if (err.message === 'ALREADY_COMPLETED') {
+        return reply.code(409).send({ error: 'This ride has already been completed.' });
+      }
       fastify.log.error(err, 'Failed to update ride status');
       return reply.code(500).send({ error: 'Failed to update ride status.' });
     }

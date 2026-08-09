@@ -7,6 +7,7 @@ const AVATAR_URL_TTL_MS = 7 * 24 * 60 * 60 * 1000; // signed read URLs last 7 da
 interface ProfileBody {
   name?: string;
   displayName?: string;
+  address?: string;
   company?: string;
   employeeId?: string;
   workLocation?: string;
@@ -19,7 +20,7 @@ interface ProfileBody {
 
 // Whitelist of profile fields a client is allowed to set on their own doc.
 const ALLOWED_FIELDS: (keyof ProfileBody)[] = [
-  'name', 'displayName', 'company', 'employeeId', 'workLocation',
+  'name', 'displayName', 'address', 'company', 'employeeId', 'workLocation',
   'role', 'gender', 'corporate_email', 'vehicle_type', 'notifications_enabled',
 ];
 

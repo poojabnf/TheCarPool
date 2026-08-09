@@ -77,6 +77,41 @@ export async function createUpiPayout(opts: {
 }
 
 /**
+ * Refund a captured payment back to the rider's original payment method.
+ *
+ * Used when money was taken but the seat was never confirmed — the rider never
+ * had a booking, so parking the money in a platform wallet would be wrong. A
+ * cancellation of an already-confirmed booking refunds to the wallet instead.
+ *
+ * `amountRupees` omitted refunds the payment in full. Idempotent via
+ * `referenceId` (Razorpay rejects a duplicate idempotency key).
+ */
+export async function refundPaymentToSource(opts: {
+  paymentId: string;
+  amountRupees?: number;
+  referenceId: string;
+  notes?: Record<string, string>;
+}): Promise<{ refund_id: string; status: string }> {
+  const body: any = { speed: 'normal', notes: opts.notes || {} };
+  if (opts.amountRupees != null) {
+    body.amount = Math.round(opts.amountRupees * 100);
+  }
+  const res = await fetch(`https://api.razorpay.com/v1/payments/${opts.paymentId}/refund`, {
+    method: 'POST',
+    headers: {
+      ...razorpayXHeaders(),
+      'X-Razorpay-Idempotency': opts.referenceId,
+    },
+    body: JSON.stringify(body),
+  });
+  const data: any = await res.json();
+  if (!res.ok) {
+    throw new Error(`Razorpay refund ${res.status}: ${data?.error?.description || 'unknown error'}`);
+  }
+  return { refund_id: data.id, status: data.status };
+}
+
+/**
  * Verify the signature Razorpay sends after checkout
  * (razorpay_order_id|razorpay_payment_id signed with the key secret).
  */

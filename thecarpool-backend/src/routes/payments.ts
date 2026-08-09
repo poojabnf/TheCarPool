@@ -258,6 +258,18 @@ export async function paymentRoutes(fastify: FastifyInstance) {
       return reply.code(503).send({ error: 'Instant payouts are not configured on this server.' });
     }
 
+    // Ride earnings are held for 24h after the ride before they can leave the
+    // platform, so a dispute or chargeback still has somewhere to land.
+    const walletSnapshot = await db.collection('wallets').doc(String(uid)).get();
+    const holdUntil = walletSnapshot.data()?.withdrawable_after;
+    if (holdUntil && new Date(holdUntil).getTime() > Date.now()) {
+      return reply.code(409).send({
+        error: 'WITHDRAWAL_ON_HOLD',
+        message: 'Funds from a recent ride become withdrawable 24 hours after the trip.',
+        withdrawable_after: holdUntil,
+      });
+    }
+
     const payoutRef = 'PO_' + Math.random().toString(36).substring(2, 10).toUpperCase();
 
     // Atomically reserve the funds from the caller's own wallet.
