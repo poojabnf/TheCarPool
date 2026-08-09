@@ -809,6 +809,9 @@ export async function bookingRoutes(fastify: FastifyInstance) {
         ride_id,
         seats: seatCount,
         distance_km: Number(ride.distance_km || 0) || null,
+        // Stops the driver said they'd collect from. Offered to the rider
+        // alongside the auto-suggested meeting points at checkout.
+        pickup_points: Array.isArray(ride.pickup_points) ? ride.pickup_points : [],
         fare_amount: fare,
         convenience_fee: CONVENIENCE_FEE,
         // Optional — only added to the total if the rider opts in.

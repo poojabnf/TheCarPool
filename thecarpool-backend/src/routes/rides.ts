@@ -10,10 +10,37 @@ function round2(n: number): number {
   return Math.round((n + Number.EPSILON) * 100) / 100;
 }
 
+/** Hard cap on driver-declared pickup points; keeps ride docs and rider UI sane. */
+const MAX_PICKUP_POINTS = 6;
+
 /**
- * Normalise a free-text vehicle field. Trimmed, length-capped so it can't be
- * used to smuggle a paragraph into a rider-facing card, and null when empty so
- * the UI can fall back cleanly rather than rendering "".
+ * Validate and normalise the driver's extra pickup points.
+ *
+ * Anything without usable coordinates is dropped rather than stored as NaN —
+ * a bad point would otherwise render as a pin at (0,0) off the coast of Africa
+ * and could be booked against.
+ */
+function normalisePickupPoints(
+  raw: unknown
+): { label: string | null; lat: number; lng: number }[] {
+  if (!Array.isArray(raw)) return [];
+  const out: { label: string | null; lat: number; lng: number }[] = [];
+  for (const p of raw) {
+    const lat = Number((p as any)?.lat);
+    const lng = Number((p as any)?.lng);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) continue;
+    if (lat < -90 || lat > 90 || lng < -180 || lng > 180) continue;
+    if (lat === 0 && lng === 0) continue;
+    out.push({ label: clean((p as any)?.label), lat, lng });
+    if (out.length >= MAX_PICKUP_POINTS) break;
+  }
+  return out;
+}
+
+/**
+ * Normalise a free-text vehicle/label field. Trimmed, length-capped so it can't
+ * be used to smuggle a paragraph into a rider-facing card, and null when empty
+ * so the UI can fall back cleanly rather than rendering "".
  */
 function clean(v: unknown, upper = false): string | null {
   if (typeof v !== 'string') return null;
@@ -29,6 +56,9 @@ interface CreateRideBody {
   price_split: number;
   departure_time: string;
   vehicle_type?: 'CAR' | 'BIKE';
+  // Optional extra stops the driver is willing to pick up from, so riders who
+  // aren't at the single origin still have somewhere to meet.
+  pickup_points?: { label?: string; lat: number; lng: number }[];
   // Shown to riders before they book so they know what they're getting into.
   vehicle_make?: string;
   vehicle_model?: string;
@@ -163,7 +193,8 @@ export async function rideRoutes(fastify: FastifyInstance) {
       vehicle_type = 'CAR', music_allowed = true, smoking_allowed = false,
       chattiness = 'MEDIUM', ac_available = true, women_only = false,
       ride_type = 'COMMUTE', event_tag,
-      vehicle_make, vehicle_model, vehicle_colour, vehicle_plate
+      vehicle_make, vehicle_model, vehicle_colour, vehicle_plate,
+      pickup_points
     } = request.body as CreateRideBody;
 
     if (!['COMMUTE', 'INTERCITY', 'EVENT'].includes(ride_type)) {
@@ -262,6 +293,7 @@ export async function rideRoutes(fastify: FastifyInstance) {
         price_split: Number(price_split),
         departure_time,
         vehicle_type,
+        pickup_points: normalisePickupPoints(pickup_points),
         vehicle_make: clean(vehicle_make),
         vehicle_model: clean(vehicle_model),
         vehicle_colour: clean(vehicle_colour),
@@ -443,6 +475,7 @@ export async function rideRoutes(fastify: FastifyInstance) {
             price_split: ride.price_split,
             departure_time: ride.departure_time,
             vehicle_type: ride.vehicle_type,
+            pickup_points: ride.pickup_points ?? [],
             vehicle_make: ride.vehicle_make ?? null,
             vehicle_model: ride.vehicle_model ?? null,
             vehicle_colour: ride.vehicle_colour ?? null,

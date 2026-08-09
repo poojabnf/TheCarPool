@@ -30,7 +30,7 @@ export default function ConfirmPay() {
 
   // Meeting-point suggestions: points on the driver's existing route within
   // walking distance — pick one and the driver doesn't detour at all.
-  type MeetingPoint = { label: string; latitude: number; longitude: number; walk_meters: number; walk_minutes: number };
+  type MeetingPoint = { label: string; latitude: number; longitude: number; walk_meters: number; walk_minutes: number; driver_stop?: boolean };
   const [meetingPoints, setMeetingPoints] = useState<MeetingPoint[]>([]);
   const [chosenMp, setChosenMp] = useState<number | null>(null);
 
@@ -60,6 +60,7 @@ export default function ConfirmPay() {
     convenience_fee: number;
     insurance_premium: number;
     insurance_available: boolean;
+    pickup_points?: { label: string | null; lat: number; lng: number }[];
   } | null>(null);
   const [insuranceOpted, setInsuranceOpted] = useState(false);
 
@@ -81,6 +82,33 @@ export default function ConfirmPay() {
 
   const num = (n: number) => `₹${n.toFixed(2)}`;
   const upiVpa = (userProfile?.email ? userProfile.email.split('@')[0] : 'you') + '@okhdfcbank';
+
+  /** Straight-line metres between two coords — enough for a "x min walk" hint. */
+  const metresBetween = (aLat: number, aLng: number, bLat: number, bLng: number) => {
+    const R = 6371e3;
+    const p1 = (aLat * Math.PI) / 180;
+    const p2 = (bLat * Math.PI) / 180;
+    const dp = ((bLat - aLat) * Math.PI) / 180;
+    const dl = ((bLng - aLng) * Math.PI) / 180;
+    const h = Math.sin(dp / 2) ** 2 + Math.cos(p1) * Math.cos(p2) * Math.sin(dl / 2) ** 2;
+    return Math.round(R * 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h)));
+  };
+
+  // The driver's own declared stops, shown alongside the auto-suggested
+  // meeting points so the rider picks from one list rather than two.
+  const driverStops: MeetingPoint[] = (quote?.pickup_points || []).map((pt, i) => {
+    const metres = metresBetween(Number(p.pickup_lat), Number(p.pickup_lng), pt.lat, pt.lng);
+    return {
+      label: pt.label || `Driver stop ${i + 1}`,
+      latitude: pt.lat,
+      longitude: pt.lng,
+      walk_meters: metres,
+      walk_minutes: Math.max(1, Math.round(metres / 80)), // ~4.8 km/h
+      driver_stop: true,
+    } as MeetingPoint;
+  });
+  // Driver's stops first — they're committed, the suggestions are inferred.
+  const allPickups: MeetingPoint[] = [...driverStops, ...meetingPoints];
 
   const pay = async () => {
     haptics.press();
@@ -142,8 +170,8 @@ export default function ConfirmPay() {
           razorpay_payment_id: paymentData.razorpay_payment_id,
           insurance_opted: insuranceOpted,
           // Book at the chosen meeting point (zero driver detour) when picked.
-          pickup_lng: chosenMp !== null ? meetingPoints[chosenMp].longitude : Number(p.pickup_lng),
-          pickup_lat: chosenMp !== null ? meetingPoints[chosenMp].latitude : Number(p.pickup_lat),
+          pickup_lng: chosenMp !== null ? allPickups[chosenMp].longitude : Number(p.pickup_lng),
+          pickup_lat: chosenMp !== null ? allPickups[chosenMp].latitude : Number(p.pickup_lat),
           drop_lng: Number(p.drop_lng), drop_lat: Number(p.drop_lat),
         }),
       });
@@ -214,23 +242,30 @@ export default function ConfirmPay() {
           </View>
         </View>
 
-        {/* Meeting-point suggestions */}
-        {meetingPoints.length > 0 && (
+        {/* Pickup options — the driver's declared stops plus route suggestions */}
+        {allPickups.length > 0 && (
           <View style={styles.card}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 4 }}>
               <Footprints color={c.textSecondary} size={16} strokeWidth={2.2} />
-              <Text style={styles.mpTitle}>Walk a little, ride sooner</Text>
+              <Text style={styles.mpTitle}>Where to meet</Text>
             </View>
-            <Text style={styles.mpSub}>Meet the driver on their route — no detour, faster pickup.</Text>
-            {meetingPoints.map((mp, i) => (
+            <Text style={styles.mpSub}>
+              {driverStops.length > 0
+                ? 'Stops the driver collects from, plus points on their route.'
+                : 'Meet the driver on their route — no detour, faster pickup.'}
+            </Text>
+            {allPickups.map((mp, i) => (
               <HapticPressable
                 key={i}
                 style={[styles.mpRow, chosenMp === i && styles.mpRowOn]}
                 onPress={() => setChosenMp(chosenMp === i ? null : i)}
                 activeOpacity={0.85}
               >
-                <Text style={[styles.mpLabel, chosenMp === i && { color: c.goStrong }]}>{mp.label}</Text>
-                <Text style={styles.mpWalk}>{mp.walk_minutes} min walk · {mp.walk_meters}m</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.mpLabel, chosenMp === i && { color: c.goStrong }]}>{mp.label}</Text>
+                  <Text style={styles.mpWalk}>{mp.walk_minutes} min walk · {mp.walk_meters}m</Text>
+                </View>
+                {mp.driver_stop && <Text style={styles.mpBadge}>Driver stop</Text>}
               </HapticPressable>
             ))}
             <Text style={styles.mpHint}>
@@ -351,6 +386,7 @@ const styles = StyleSheet.create({
   totalValue: { fontFamily: font.monoBold, fontSize: 18, color: c.textPrimary, letterSpacing: -0.4 },
   escrow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: space.sm, backgroundColor: c.accentSoft, borderRadius: radius.sm, padding: space.sm },
   escrowText: { flex: 1, fontFamily: font.sansMedium, fontSize: 11.5, color: c.textAccent },
+  mpBadge: { fontFamily: font.sansBold, fontSize: 10.5, color: c.textAccent, backgroundColor: c.accentSoft, paddingHorizontal: 8, paddingVertical: 3, borderRadius: radius.pill, overflow: 'hidden' },
   policyNote: { fontFamily: font.sans, fontSize: 11, color: c.textTertiary, marginTop: space.sm, lineHeight: 15 },
 
   insuranceCard: { flexDirection: 'row', alignItems: 'flex-start', gap: space.sm, backgroundColor: c.surfaceCard, borderRadius: radius.md, borderWidth: 1, borderColor: c.borderSubtle, padding: space.md, marginBottom: space.md },

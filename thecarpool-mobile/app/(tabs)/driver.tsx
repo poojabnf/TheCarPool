@@ -47,6 +47,8 @@ function Linkedin({ size = 16, color, style }: { size?: number; color?: string; 
   );
 }
 
+const MAX_PICKUP_POINTS = 6;
+
 export default function DriverInterface() {
   const router = useRouter();
   const userId = auth().currentUser?.uid ?? null;
@@ -65,6 +67,7 @@ export default function DriverInterface() {
     return () => {
       if (originTimeoutRef.current) clearTimeout(originTimeoutRef.current);
       if (destTimeoutRef.current) clearTimeout(destTimeoutRef.current);
+      if (pickupTimeoutRef.current) clearTimeout(pickupTimeoutRef.current);
     };
   }, []);
 
@@ -75,6 +78,12 @@ export default function DriverInterface() {
   const [sourceCoords, setSourceCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [destCoords, setDestCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [sourceSug, setSourceSug] = useState<any[]>([]);
+  // Extra stops the driver will collect from, for riders who aren't at the
+  // single origin. Stored on the ride and offered to riders at booking.
+  const [pickupPoints, setPickupPoints] = useState<{ label: string; lat: number; lng: number }[]>([]);
+  const [pickupQuery, setPickupQuery] = useState('');
+  const [pickupSug, setPickupSug] = useState<any[]>([]);
+  const pickupTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [destSug, setDestSug] = useState<any[]>([]);
   const [seatsTotal, setSeatsTotal] = useState(3);
   const [departure, setDeparture] = useState<{ label: string; iso: string }>(departurePresets()[0]);
@@ -397,6 +406,7 @@ export default function DriverInterface() {
           vehicle_model: vehicleModel.trim(),
           vehicle_colour: vehicleColour.trim(),
           vehicle_plate: vehiclePlate.trim(),
+          pickup_points: pickupPoints,
           ac_available: acAvailable,
           music_allowed: musicAllowed,
           smoking_allowed: smokingAllowed,
@@ -613,6 +623,61 @@ export default function DriverInterface() {
               )}
             </View>
 
+            {/* Extra pickup points — riders aren't always at the origin */}
+            <View style={styles.formGroup}>
+              <Text style={styles.formLabel}>Pickup points (optional)</Text>
+              <Text style={styles.formHint}>
+                Add stops along your route where you're happy to collect riders.
+                They pick one when booking. Up to {MAX_PICKUP_POINTS}.
+              </Text>
+
+              {pickupPoints.map((pt, i) => (
+                <View key={`${pt.lat},${pt.lng},${i}`} style={styles.pickupRow}>
+                  <MapPin color={colors.primary} size={16} />
+                  <Text style={styles.pickupLabel} numberOfLines={1}>{pt.label}</Text>
+                  <HapticPressable
+                    haptic="warning"
+                    onPress={() => setPickupPoints((prev) => prev.filter((_, j) => j !== i))}
+                    accessibilityLabel={`Remove ${pt.label}`}
+                  >
+                    <X color={colors.textMuted} size={16} />
+                  </HapticPressable>
+                </View>
+              ))}
+
+              {pickupPoints.length < MAX_PICKUP_POINTS && (
+                <>
+                  <TextInput
+                    style={styles.formInput}
+                    placeholder="Add a pickup stop"
+                    placeholderTextColor={colors.inputPlaceholder}
+                    value={pickupQuery}
+                    onChangeText={(t) => { setPickupQuery(t); searchGeo(t, setPickupSug, pickupTimeoutRef); }}
+                  />
+                  {pickupSug.length > 0 && (
+                    <View style={styles.suggBox}>
+                      {pickupSug.slice(0, 5).map((sg, i) => (
+                        <HapticPressable key={i} style={styles.suggItem} onPress={() => {
+                          const lat = sg.latitude ?? sg.lat ?? 0;
+                          const lng = sg.longitude ?? sg.lng ?? 0;
+                          if (!lat && !lng) return;
+                          setPickupPoints((prev) => (
+                            prev.length >= MAX_PICKUP_POINTS ? prev : [...prev, { label: sg.place_name, lat, lng }]
+                          ));
+                          setPickupQuery('');
+                          setPickupSug([]);
+                        }}>
+                          <Text style={styles.suggText} numberOfLines={1}>
+                            {sg.place_name}{sg.state_name ? `, ${sg.state_name}` : ''}
+                          </Text>
+                        </HapticPressable>
+                      ))}
+                    </View>
+                  )}
+                </>
+              )}
+            </View>
+
             <View style={styles.formGroup}>
               <Text style={styles.formLabel}>Office Destination</Text>
               <TextInput
@@ -756,23 +821,46 @@ export default function DriverInterface() {
               </View>
             </View>
 
-            {/* Smart Pricing Suggestion (BlaBlaCar Smart Pricing Gap) */}
-            {suggestedPrice !== null && (
-              <View style={styles.pricingCard}>
-                <Text style={styles.pricingTitle}>Smart Pricing Recommendation</Text>
-                <Text style={styles.pricingSub}>Suggested fuel contribution based on distance and mode:</Text>
-                <Text style={styles.pricingSuggested}>₹{suggestedPrice.toFixed(0)}</Text>
-                <View style={styles.priceInputGroup}>
-                  <Text style={styles.priceInputLabel}>Your Split Cost (₹):</Text>
-                  <TextInput 
-                    style={styles.priceInput}
-                    keyboardType="numeric"
-                    value={customPrice}
-                    onChangeText={setCustomPrice}
-                  />
-                </View>
+            {/* Pricing. The suggestion is only ever advice - the driver sets the
+                price. Previously this whole card was hidden until a distance
+                produced a suggestion, which meant no distance = no way to name
+                a price at all. */}
+            <View style={styles.pricingCard}>
+              <Text style={styles.pricingTitle}>Your price per seat</Text>
+              {suggestedPrice !== null ? (
+                <>
+                  <Text style={styles.pricingSub}>Suggested fuel contribution for this distance and mode:</Text>
+                  <Text style={styles.pricingSuggested}>₹{suggestedPrice.toFixed(0)}</Text>
+                  {customPrice !== '' && Number(customPrice) !== suggestedPrice && (
+                    <Text style={styles.pricingSub}>
+                      {Number(customPrice) > suggestedPrice
+                        ? 'Above the suggestion — riders may take longer to book.'
+                        : 'Below the suggestion — you may not cover your fuel.'}
+                    </Text>
+                  )}
+                </>
+              ) : (
+                <Text style={styles.pricingSub}>
+                  Set a route distance and we'll suggest a fair split. You can price it yourself either way.
+                </Text>
+              )}
+              <View style={styles.priceInputGroup}>
+                <Text style={styles.priceInputLabel}>Your Split Cost (₹):</Text>
+                <TextInput
+                  style={styles.priceInput}
+                  keyboardType="numeric"
+                  value={customPrice}
+                  onChangeText={(t) => setCustomPrice(t.replace(/[^0-9.]/g, ''))}
+                  placeholder={suggestedPrice !== null ? String(Math.round(suggestedPrice)) : '0'}
+                  placeholderTextColor={colors.inputPlaceholder}
+                />
               </View>
-            )}
+              {suggestedPrice !== null && (
+                <HapticPressable onPress={() => setCustomPrice(String(Math.round(suggestedPrice)))}>
+                  <Text style={styles.useSuggested}>Use suggested ₹{suggestedPrice.toFixed(0)}</Text>
+                </HapticPressable>
+              )}
+            </View>
 
             {/* Recurring Schedules (Quick Ride "Repeat Ride" Gap) */}
             <View style={styles.formSwitchRow}>
@@ -1153,6 +1241,9 @@ const styles = StyleSheet.create({
   formLabel: { fontSize: 13, color: colors.text, fontWeight: 'bold', marginBottom: 8 },
   formHint: { fontSize: 11.5, color: colors.textMuted, marginTop: -4, marginBottom: 8, lineHeight: 16 },
   vehicleDetailRow: { flexDirection: 'row', gap: 8, marginBottom: 8 },
+  pickupRow: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: colors.inputBackground, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 10, marginBottom: 8, borderWidth: 1, borderColor: colors.cardBorder },
+  pickupLabel: { flex: 1, fontSize: 13, color: colors.text },
+  useSuggested: { fontSize: 12.5, color: colors.primary, fontWeight: '600', marginTop: 10 },
   formSubLabel: { fontSize: 11, color: colors.textMuted, marginTop: 2 },
   formInput: { backgroundColor: colors.inputBackground, borderRadius: 8, height: 44, paddingHorizontal: 12, color: colors.text, borderWidth: 1, borderColor: colors.cardBorder },
   suggBox: { backgroundColor: colors.inputBackground, borderRadius: 8, marginTop: 4, borderWidth: 1, borderColor: colors.cardBorder },
