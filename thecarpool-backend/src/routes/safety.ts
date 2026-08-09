@@ -28,6 +28,16 @@ import { crossCheckDocument, extractText } from '../lib/idImageCheck';
 export const KYC_PREFIX = 'kyc-documents/';
 export const KYC_RETENTION_DAYS = 15;
 
+/**
+ * Whether /kyc/complete requires a government ID to have passed
+ * /kyc/document first.
+ *
+ * Off by default purely so the backend can ship before the mobile build that
+ * adds document capture. FLIP THIS TO true once that build has rolled out —
+ * while it is false, anyone calling /kyc/complete is verified without checks.
+ */
+export const KYC_REQUIRE_DOCUMENT = process.env.KYC_REQUIRE_DOCUMENT === 'true';
+
 const SosSchema = z.object({
   ride_id: z.union([z.string(), z.number()]).optional(),
   latitude: z.number().min(-90).max(90),
@@ -676,12 +686,24 @@ export async function safetyRoutes(fastify: FastifyInstance) {
   fastify.post('/kyc/complete', { preHandler: [requireAuth] }, async (request, reply) => {
     const uid = request.user!.id;
     try {
-      const userDoc = await db.collection('users').doc(uid).get();
-      if (userDoc.data()?.id_document_verified !== true) {
-        return reply.code(403).send({
-          error: 'DOCUMENT_REQUIRED',
-          message: 'Verify a government ID before completing verification.',
-        });
+      // Gated by a flag so this can deploy AHEAD of the app build that adds the
+      // document-capture screen. No shipped client calls /kyc/document yet, so
+      // enforcing immediately would lock every existing user out of onboarding
+      // — and KYC gates booking, offering rides and payouts.
+      //
+      // Set KYC_REQUIRE_DOCUMENT=true once a build with the capture UI has
+      // rolled out. Until then the bypass remains open, so treat this as a
+      // temporary state, not the finished fix.
+      if (KYC_REQUIRE_DOCUMENT) {
+        const userDoc = await db.collection('users').doc(uid).get();
+        if (userDoc.data()?.id_document_verified !== true) {
+          return reply.code(403).send({
+            error: 'DOCUMENT_REQUIRED',
+            message: 'Verify a government ID before completing verification.',
+          });
+        }
+      } else {
+        fastify.log.warn({ uid }, 'KYC completed WITHOUT document verification (KYC_REQUIRE_DOCUMENT is off)');
       }
 
       await db.collection('users').doc(uid).set({

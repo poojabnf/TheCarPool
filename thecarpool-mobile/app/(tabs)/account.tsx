@@ -11,6 +11,7 @@ import { useAuthStore } from '../store/authStore';
 import { chooseAndUploadAvatar } from '../services/avatar';
 import { useI18n } from '../services/i18n';
 import { c, font, radius, space, shadowSm } from '../../theme/tokens';
+import Constants from 'expo-constants';
 import * as haptics from '../services/haptics';
 import HapticPressable from '../components/HapticPressable';
 
@@ -24,6 +25,11 @@ const FAQS = [
   { q: 'How does the SOS button work?', a: 'One tap alerts your emergency contacts with your live location during an active trip.' },
   { q: 'How do payouts reach drivers?', a: 'Fares are held in escrow and released to the driver’s UPI once the ride completes.' },
 ];
+
+// Read the real shipped version rather than a hardcoded string - the old
+// literal said 1.2.6 long after the app had moved on, which made every bug
+// report point at the wrong build.
+const APP_VERSION = Constants.expoConfig?.version ?? 'unknown';
 
 function initials(name?: string | null) {
   if (!name) return 'You';
@@ -101,7 +107,13 @@ export default function AccountInterface() {
   const performDelete = async () => {
     setDeleting(true);
     try {
-      const res = await apiFetch('/api/safety/account', { method: 'DELETE' });
+      // user_id is redundant on the current backend (the token decides), but the
+      // previously deployed version destructures it from the body and throws a
+      // 500 when it is absent. Sending it keeps this working on both.
+      const res = await apiFetch('/api/safety/account', {
+        method: 'DELETE',
+        body: JSON.stringify({ user_id: user?.uid }),
+      });
       const data = await res.json().catch(() => ({} as any));
 
       if (res.status === 409 && Array.isArray(data.blockers)) {
@@ -227,7 +239,7 @@ export default function AccountInterface() {
                 <View style={{ flex: 1 }}><Text style={styles.rowTitle}>Contact support</Text><Text style={styles.rowSub}>{SUPPORT_EMAIL}</Text></View>
                 <ChevronRight color={c.textDisabled} size={18} />
               </HapticPressable>
-              <View style={styles.row}><View style={{ flex: 1 }}><Text style={styles.rowTitle}>App version</Text><Text style={styles.rowSub}>TheCarPool v1.2.6</Text></View></View>
+              <View style={styles.row}><View style={{ flex: 1 }}><Text style={styles.rowTitle}>App version</Text><Text style={styles.rowSub}>TheCarPool v{APP_VERSION}</Text></View></View>
               <HapticPressable
                 haptic="warning"
                 style={[styles.dangerRow, deleting && { opacity: 0.6 }]}
