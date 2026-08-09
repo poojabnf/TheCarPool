@@ -7,12 +7,17 @@ import { requireAuth } from '../middleware/auth';
 import { parseOrReply } from '../lib/validate';
 import { verifyAadhaar, verifyDrivingLicence, isKycConfigured } from '../lib/kyc';
 import { createMaskedCall, isMaskingConfigured } from '../lib/masking';
+import {
+  DocumentType, DOCUMENT_TYPES, DOCUMENT_SPECS,
+  validateIdNumber, validateExpiry, maskIdNumber, documentHasExpiry,
+} from '../lib/idDocuments';
+import { crossCheckDocument, extractText } from '../lib/idImageCheck';
 
 /**
  * ID document retention.
  *
- * Images are kept for 6 months and then deleted. Enforcement is the Cloud
- * Storage lifecycle rule in `storage.lifecycle.json` (age 180 days on this
+ * Images are kept for 15 days and then deleted. Enforcement is the Cloud
+ * Storage lifecycle rule in `storage.lifecycle.json` (age 15 days on this
  * prefix) — object expiry is handled by GCS itself rather than app code, so it
  * still happens if the service is down or a cron never fires.
  *
@@ -21,7 +26,7 @@ import { createMaskedCall, isMaskingConfigured } from '../lib/masking';
  * delete rule there would have caught avatars and classifieds too.
  */
 export const KYC_PREFIX = 'kyc-documents/';
-export const KYC_RETENTION_DAYS = 180;
+export const KYC_RETENTION_DAYS = 15;
 
 const SosSchema = z.object({
   ride_id: z.union([z.string(), z.number()]).optional(),
@@ -576,20 +581,116 @@ export async function safetyRoutes(fastify: FastifyInstance) {
     }
   });
 
+  // ── ID document submission ───────────────────────────────────────────────
+  // The rider/driver enters a document type + number (+ expiry where the
+  // document has one) and uploads a photo of that same document. We validate
+  // the number's format and checksum, then OCR the image and cross-check that
+  // it really is that document and really carries that number.
+  //
+  // Fails CLOSED: if OCR is unavailable we reject rather than wave the document
+  // through, because this is the only barrier between a typed number and a
+  // verified account.
+  fastify.post('/kyc/document', { preHandler: [requireAuth] }, async (request, reply) => {
+    const uid = String(request.user!.id);
+    const body = (request.body as any) || {};
+    const type = String(body.document_type || '').toUpperCase() as DocumentType;
+    const idNumber = String(body.id_number || '');
+    const expiry = body.expiry ?? null;
+    const imageBase64 = String(body.image_base64 || '');
+
+    if (!DOCUMENT_TYPES.includes(type)) {
+      return reply.code(400).send({ error: 'Choose a valid document type.', accepted: DOCUMENT_TYPES });
+    }
+
+    // 1. Number format + checksum (Aadhaar Verhoeff, PAN holder type, etc.)
+    const idCheck = validateIdNumber(type, idNumber);
+    if (!idCheck.valid) {
+      return reply.code(400).send({ error: 'INVALID_ID_NUMBER', message: idCheck.reason, code: idCheck.code });
+    }
+
+    // 2. Expiry rules — required where the document has one, refused where not.
+    const expiryCheck = validateExpiry(type, expiry);
+    if (!expiryCheck.valid) {
+      return reply.code(400).send({ error: 'INVALID_EXPIRY', message: expiryCheck.reason, code: expiryCheck.code });
+    }
+
+    if (!imageBase64) {
+      return reply.code(400).send({ error: 'IMAGE_REQUIRED', message: `Upload a photo of your ${DOCUMENT_SPECS[type].label}.` });
+    }
+
+    // 3. OCR + cross-check the photo against what was typed.
+    let ocrText = '';
+    try {
+      const token = await admin.credential.applicationDefault().getAccessToken();
+      ocrText = await extractText(imageBase64, token.access_token);
+    } catch (err: any) {
+      fastify.log.error(err, 'Document OCR failed');
+      return reply.code(503).send({
+        error: 'VERIFICATION_UNAVAILABLE',
+        message: 'We could not check your document right now. Please try again shortly.',
+      });
+    }
+
+    const cross = crossCheckDocument({ type, idNumber: idCheck.normalised, ocrText, expiry });
+    if (!cross.ok) {
+      // Record the attempt so repeated failures are visible to support.
+      await db.collection('kyc_attempts').add({
+        user_id: uid, document_type: type, ok: false,
+        checks: cross.checks, at: new Date().toISOString(),
+      }).catch(() => {});
+      return reply.code(400).send({
+        error: 'DOCUMENT_MISMATCH',
+        message: cross.reasons[0] || 'That document could not be verified.',
+        reasons: cross.reasons,
+        checks: cross.checks,
+      });
+    }
+
+    // 4. Passed. Store ONLY the masked number — never the raw value.
+    await db.collection('users').doc(uid).set({
+      id_document: {
+        type,
+        masked_number: maskIdNumber(type, idCheck.normalised),
+        expiry: documentHasExpiry(type) ? expiry : null,
+        verified_at: new Date().toISOString(),
+        match_score: cross.score,
+      },
+      id_document_verified: true,
+    }, { merge: true });
+
+    return reply.send({
+      status: 'DOCUMENT_VERIFIED',
+      document_type: type,
+      masked_number: maskIdNumber(type, idCheck.normalised),
+      score: cross.score,
+    });
+  });
+
   // ── Self-service KYC completion ──────────────────────────────────────────
-  // Called by the mobile onboarding wizard after all 5 steps pass client-side
-  // validation. Sets kyc_status = VERIFIED in Firestore so the AuthGuard and
-  // backend booking gate both recognise the user as verified on the next load.
+  // Called by the mobile onboarding wizard at the end of the flow.
+  //
+  // This used to set kyc_status = VERIFIED unconditionally, which meant anyone
+  // who called it directly was verified — bypassing every document check, and
+  // with it the gates on booking, offering rides and payouts. It now refuses
+  // unless a government ID has actually passed /kyc/document.
   fastify.post('/kyc/complete', { preHandler: [requireAuth] }, async (request, reply) => {
     const uid = request.user!.id;
     try {
+      const userDoc = await db.collection('users').doc(uid).get();
+      if (userDoc.data()?.id_document_verified !== true) {
+        return reply.code(403).send({
+          error: 'DOCUMENT_REQUIRED',
+          message: 'Verify a government ID before completing verification.',
+        });
+      }
+
       await db.collection('users').doc(uid).set({
         kyc_status: 'VERIFIED',
         kyc_completed_at: new Date().toISOString(),
         onboarded: true,
       }, { merge: true });
 
-      fastify.log.info({ uid }, 'KYC self-completed via onboarding wizard');
+      fastify.log.info({ uid }, 'KYC completed with a verified ID document');
       return reply.send({ status: 'KYC_VERIFIED', user_id: uid });
     } catch (err: any) {
       fastify.log.error(err, 'Failed to complete KYC');
