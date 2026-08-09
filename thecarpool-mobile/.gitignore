@@ -16,3 +16,6 @@ web-build/
 
 # local scratch payloads (API request bodies, etc.)
 scratch_payload.json
+
+# App Store Connect API key (never commit)
+AuthKey_*.p8
