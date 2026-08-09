@@ -9,6 +9,7 @@ import HapticPressable from '../components/HapticPressable';
 import auth from '@react-native-firebase/auth';
 import io from 'socket.io-client';
 import { API_URL } from '../services/api';
+import * as Location from 'expo-location';
 import { useAuthStore } from '../store/authStore';
 
 // Departure is picked as a real date AND time. Deliberately built from plain
@@ -88,6 +89,7 @@ export default function DriverInterface() {
   const [activeTab, setActiveTab] = useState<'overview' | 'requests' | 'drive'>('overview');
   const socketRef = useRef<ReturnType<typeof io> | null>(null);
   const telemetryIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const locationSubRef = useRef<Location.LocationSubscription | null>(null);
 
   const originTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const destTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -354,11 +356,19 @@ export default function DriverInterface() {
     }
   }, [distanceKm, vehicleType, acAvailable]);
 
-  // Connect Socket.IO and broadcast simulated telemetry when online
+  // Broadcast the driver's REAL location once a trip is underway, so the rider's
+  // map shows where the car actually is.
+  //
+  // This previously emitted simulated GPS — a hardcoded point in Gurugram that
+  // drifted randomly — so riders watched a convincing map of a car that did not
+  // exist, and the "driver is arriving" push fired off fake coordinates.
   useEffect(() => {
-    if (!isOnline || !activeRideId) {
-      // Clean up socket and interval when going offline
+    // Only while a trip is actually running. Streaming a driver's position
+    // outside a live trip would be surveillance, not a feature.
+    if (!activeRideId) {
       if (telemetryIntervalRef.current) clearInterval(telemetryIntervalRef.current);
+      locationSubRef.current?.remove();
+      locationSubRef.current = null;
       socketRef.current?.disconnect();
       socketRef.current = null;
       return;
@@ -366,6 +376,15 @@ export default function DriverInterface() {
 
     let cancelled = false;
     (async () => {
+      const perm = await Location.requestForegroundPermissionsAsync();
+      if (perm.status !== 'granted') {
+        Alert.alert(
+          'Location needed',
+          'Your riders track the trip on a map. Enable location access so they can see you on the way.'
+        );
+        return;
+      }
+
       const token = await auth().currentUser?.getIdToken();
       if (cancelled) return;
 
@@ -374,28 +393,35 @@ export default function DriverInterface() {
 
       socket.on('connect', () => {
         socket.emit('ride:join', activeRideId);
-        // Simulated GPS: increments slightly each tick (replace with expo-location for real GPS)
-        let lat = 28.4231, lng = 77.0872;
-        telemetryIntervalRef.current = setInterval(() => {
-          lat += 0.0001 * (Math.random() - 0.5);
-          lng += 0.0002;
-          socket.emit('telemetry:update', {
+      });
+
+      // Push-based rather than polling: watchPositionAsync fires when the
+      // device actually moves, so a stationary car in traffic doesn't burn
+      // battery re-sending the same coordinate.
+      locationSubRef.current = await Location.watchPositionAsync(
+        { accuracy: Location.Accuracy.High, timeInterval: 5000, distanceInterval: 25 },
+        (pos) => {
+          socketRef.current?.emit('telemetry:update', {
             userId: auth().currentUser?.uid,
-            lat, lng,
-            speed: Math.round(30 + Math.random() * 20),
-            bearing: 90,
+            lat: pos.coords.latitude,
+            lng: pos.coords.longitude,
+            speed: Math.max(0, Math.round((pos.coords.speed ?? 0) * 3.6)), // m/s -> km/h
+            bearing: Math.round(pos.coords.heading ?? 0),
             rideId: activeRideId,
           });
-        }, 5000);
-      });
+        }
+      );
+      if (cancelled) { locationSubRef.current?.remove(); locationSubRef.current = null; }
     })();
 
     return () => {
       cancelled = true;
       if (telemetryIntervalRef.current) clearInterval(telemetryIntervalRef.current);
+      locationSubRef.current?.remove();
+      locationSubRef.current = null;
       socketRef.current?.disconnect();
     };
-  }, [isOnline, activeRideId]);
+  }, [activeRideId]);
 
   const toggleDay = (dayIndex: number) => {
     if (selectedDays.includes(dayIndex)) {

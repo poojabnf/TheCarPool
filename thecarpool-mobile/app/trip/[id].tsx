@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, Alert, Platform, Share } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import io from 'socket.io-client';
+import * as Location from 'expo-location';
 import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
 import { ShieldAlert, Share2, MapPin, MessageCircle } from 'lucide-react-native';
 
@@ -19,7 +20,11 @@ export default function TripScreen() {
   const { id } = useLocalSearchParams();
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const [driverLocation, setDriverLocation] = useState({ lat: 28.4231, lng: 77.0872 });
+  // null until the driver's device actually reports a position. It previously
+  // defaulted to a hardcoded point in Gurugram, so a rider saw a confident
+  // marker for a car that had never sent a location — worse than showing
+  // nothing, because it looks like real tracking.
+  const [driverLocation, setDriverLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [speed, setSpeed] = useState(0);
   const [geofenceAlert, setGeofenceAlert] = useState<string | null>(null);
   const [ride, setRide] = useState<any | null>(null);
@@ -76,9 +81,32 @@ export default function TripScreen() {
 
   const dispatchSOS = async () => {
     try {
+      // Send the RIDER's own position — they are the person who needs help, and
+      // they may no longer be with the vehicle. The driver's last known
+      // location is only a fallback for when location access is refused, and
+      // previously it was the only thing sent.
+      let latitude: number | undefined;
+      let longitude: number | undefined;
+      try {
+        const perm = await Location.requestForegroundPermissionsAsync();
+        if (perm.status === 'granted') {
+          const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
+          latitude = pos.coords.latitude;
+          longitude = pos.coords.longitude;
+        }
+      } catch { /* fall back below */ }
+      if (latitude === undefined || longitude === undefined) {
+        latitude = driverLocation?.lat;
+        longitude = driverLocation?.lng;
+      }
+      if (latitude === undefined || longitude === undefined) {
+        Alert.alert('Location unavailable', 'Enable location access so we can send help to the right place, or call emergency services directly.');
+        return;
+      }
+
       const res = await apiFetch('/api/safety/sos/trigger', {
         method: 'POST',
-        body: JSON.stringify({ ride_id: id, latitude: driverLocation.lat, longitude: driverLocation.lng, is_silent: false }),
+        body: JSON.stringify({ ride_id: id, latitude, longitude, is_silent: false }),
       });
       if (res.ok) { haptics.sos(); Alert.alert('SOS dispatched', 'Your emergency alert and live location have been sent. Help is on the way.'); }
       else if (res.status === 429) Alert.alert('Already sent', 'An SOS was dispatched moments ago.');
@@ -139,10 +167,32 @@ export default function TripScreen() {
         <MapView
           provider={MAP_PROVIDER}
           style={StyleSheet.absoluteFill}
-          region={{ latitude: driverLocation.lat, longitude: driverLocation.lng, latitudeDelta: 0.02, longitudeDelta: 0.02 }}
+          region={{
+            // Follow the driver once we have them; otherwise sit on the
+            // rider's own pickup point so the map still means something.
+            latitude: driverLocation?.lat ?? (Number(ride?.pickup_lat) || 28.6139),
+            longitude: driverLocation?.lng ?? (Number(ride?.pickup_lng) || 77.2090),
+            latitudeDelta: 0.02,
+            longitudeDelta: 0.02,
+          }}
         >
-          <Marker coordinate={{ latitude: driverLocation.lat, longitude: driverLocation.lng }} title="Driver" description={`${speed} km/h`} />
+          {driverLocation && (
+            <Marker
+              coordinate={{ latitude: driverLocation.lat, longitude: driverLocation.lng }}
+              title="Driver"
+              description={`${speed} km/h`}
+            />
+          )}
         </MapView>
+        {!driverLocation && (
+          <View style={styles.awaitingBox}>
+            <Text style={styles.awaitingText}>
+              {ride?.status === 'STARTED'
+                ? 'Getting your driver’s location…'
+                : 'Live tracking starts when your driver begins the trip.'}
+            </Text>
+          </View>
+        )}
         <HapticPressable
           style={[styles.backChip, { top: insets.top + 8 }]}
           onPress={() => (router.canGoBack() ? router.back() : router.replace('/(tabs)'))}
@@ -278,6 +328,8 @@ const styles = StyleSheet.create({
   okBox: { backgroundColor: c.goSoft, borderRadius: radius.md, padding: space.sm, marginBottom: space.md },
   okText: { fontFamily: font.sansMedium, fontSize: 12, color: c.goStrong, textAlign: 'center' },
 
+  awaitingBox: { position: 'absolute', left: space.lg, right: space.lg, bottom: space.lg, backgroundColor: c.surfaceCard, borderRadius: radius.md, paddingVertical: 10, paddingHorizontal: 14, borderWidth: 1, borderColor: c.borderSubtle, ...shadowSm },
+  awaitingText: { fontFamily: font.sansMedium, fontSize: 12.5, color: c.textSecondary, textAlign: 'center' },
   tripCard: { flexDirection: 'row', alignItems: 'center', gap: space.md, backgroundColor: c.surfaceSunken, borderRadius: radius.md, padding: space.md, marginBottom: space.md },
   otpCard: { backgroundColor: c.accentSoft, borderRadius: radius.md, padding: space.md, marginBottom: space.md, borderWidth: 1, borderColor: c.borderSubtle },
   otpCardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 },
