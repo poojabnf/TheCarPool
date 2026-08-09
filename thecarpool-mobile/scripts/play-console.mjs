@@ -13,6 +13,14 @@
  *          are console-only. With Managed publishing ON, `commit` sends
  *          changes for review; a human still presses Publish.
  *
+ * ⚠ DO NOT POLL THIS WHILE A SUBMISSION IS UPLOADING. Every command here —
+ * including read-only `status` — has to open a Play "edit" (the API offers no
+ * way to read tracks without one) and then deletes it. That churn invalidates
+ * the edit an in-flight `eas submit` is holding, and the upload dies with
+ * "Google Api Error: This Edit has been deleted". A status loop running every
+ * 60s during a submission will reliably break it. Wait for the submission to
+ * finish, then check.
+ *
  * Usage:
  *   node scripts/play-console.mjs status
  *   node scripts/play-console.mjs upload-graphics [--icon path] [--feature path]
@@ -105,6 +113,8 @@ const deleteEdit = (token, id) =>
 
 // ── commands ───────────────────────────────────────────────────────────────
 async function cmdStatus(token) {
+  // See the warning at the top of this file: this opens (and deletes) a Play
+  // edit, so running it on a loop during an upload will kill the upload.
   const edit = await newEdit(token);
   try {
     const tracks = await api(token, `/applications/${PACKAGE}/edits/${edit.id}/tracks`);
