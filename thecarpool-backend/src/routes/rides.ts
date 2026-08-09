@@ -3,7 +3,8 @@ import { randomUUID } from 'crypto';
 import { db, redisClient } from '../server';
 import { requireAuth } from '../middleware/auth';
 import { canTransition, isSettableStatus, SETTABLE_STATUSES } from '../lib/rideLifecycle';
-import { noShowOutcome, WITHDRAWAL_HOLD_MS } from '../lib/fees';
+import { noShowOutcome } from '../lib/fees';
+import { planPayout, maskPayoutMethod } from '../lib/payouts';
 
 /** Rounds to paise — wallet balances are rupees held as JS numbers. */
 function round2(n: number): number {
@@ -758,6 +759,11 @@ export async function rideRoutes(fastify: FastifyInstance) {
       // for the insurer, and refunded to the rider on a no-show.
       const driverWalletRef = db.collection('wallets').doc(uid);
       const settledAt = new Date().toISOString();
+      // Read outside the transaction: it only decides routing, and Firestore
+      // requires all reads before writes inside one.
+      const driverDoc = await db.collection('users').doc(uid).get();
+      const driverPayoutMethod = driverDoc.data()?.payout_method ?? null;
+      let payoutPlan: ReturnType<typeof planPayout> | null = null;
 
       const outcome = await db.runTransaction(async (tx) => {
         // Firestore requires ALL reads before ANY writes.
@@ -839,12 +845,40 @@ export async function rideRoutes(fastify: FastifyInstance) {
           const cur = driverWalletDoc.exists
             ? driverWalletDoc.data()!
             : { available_wallet_balance: 0, escrow_locked_balance: 0, currency: 'INR' };
+
+          // Earnings always land in the wallet first — it is the single source
+          // of truth for what the driver is owed. What differs is what happens
+          // next:
+          //   payout details on file -> a payout is queued for ~2h from now and
+          //     debits the wallet when it is sent
+          //   nothing on file        -> it stays in the wallet, spendable
+          //     immediately, with no hold
+          //
+          // The old 24h `withdrawable_after` is gone from this path. That rule
+          // is for a RIDER withdrawing a refund, not for driver earnings.
+          const plan = planPayout({ method: driverPayoutMethod, completedAt: new Date(settledAt) });
+
           tx.set(driverWalletRef, {
             ...cur,
             available_wallet_balance: round2((cur.available_wallet_balance || 0) + driverTotal),
-            // Driver earnings only become withdrawable 24h after the ride.
-            withdrawable_after: new Date(Date.now() + WITHDRAWAL_HOLD_MS).toISOString(),
+            withdrawable_after: null,
           }, { merge: true });
+
+          if (plan.destination === 'BANK') {
+            // Queued rather than paid inline: an irreversible transfer inside
+            // the completion transaction has no safe failure mode.
+            tx.set(db.collection('scheduled_payouts').doc(`${id}_${uid}`), {
+              ride_id: id,
+              driver_uid: uid,
+              amount: driverTotal,
+              payout_method: driverPayoutMethod,
+              destination: maskPayoutMethod(driverPayoutMethod),
+              due_at: plan.due_at,
+              status: 'PENDING',
+              created_at: settledAt,
+            });
+          }
+          payoutPlan = plan;
         }
         for (const [rid, amount] of riderCredits) {
           if (amount <= 0) continue;
@@ -859,7 +893,7 @@ export async function rideRoutes(fastify: FastifyInstance) {
           }, { merge: true });
         }
 
-        return { paid: paidCount, no_shows: noShowCount, driver_credited: round2(driverTotal) };
+        return { paid: paidCount, no_shows: noShowCount, driver_credited: round2(driverTotal), payout: payoutPlan };
       });
 
       fastify.log.info({ ride_id: id, ...outcome }, 'Settled escrow on ride completion');
@@ -871,6 +905,7 @@ export async function rideRoutes(fastify: FastifyInstance) {
         bookings_paid: outcome.paid,
         no_shows: outcome.no_shows,
         driver_credited: outcome.driver_credited,
+        payout: outcome.payout,
       });
     } catch (err: any) {
       if (err.message === 'ALREADY_COMPLETED') {

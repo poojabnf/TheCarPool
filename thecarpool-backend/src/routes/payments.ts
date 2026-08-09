@@ -1,8 +1,9 @@
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { db } from '../server';
-import { requireAuth } from '../middleware/auth';
+import { requireAuth, requireAdmin } from '../middleware/auth';
 import { parseOrReply } from '../lib/validate';
+import { validatePayoutMethod, hasPayoutMethod, maskPayoutMethod, isPayoutDue } from '../lib/payouts';
 import { creditWalletForPayment } from '../lib/wallet';
 import { calculateSplit, suggestPricing, fuelSavings } from '../lib/pricing';
 import {
@@ -11,7 +12,13 @@ import {
   isRazorpayXConfigured,
   verifyPaymentSignature,
   verifyWebhookSignature,
+  createUpiPayout,
 } from '../lib/razorpay';
+
+/** Rounds to paise — wallet balances are rupees held as JS numbers. */
+function round2(n: number): number {
+  return Math.round((n + Number.EPSILON) * 100) / 100;
+}
 
 const OrderSchema = z.object({
   amount: z.number().positive(),
@@ -239,6 +246,107 @@ export async function paymentRoutes(fastify: FastifyInstance) {
   // is initiated. If RazorpayX rejects the payout the debit is refunded. This
   // closes the prior hole where any authenticated user could send arbitrary
   // amounts to arbitrary VPAs from the platform float.
+  // ── Payout method ────────────────────────────────────────────────────────
+  // Where a driver's earnings are sent. With this set, completed rides pay out
+  // to their account ~2h later; without it, earnings sit in the wallet.
+  fastify.post('/payout-method', { preHandler: [requireAuth] }, async (request, reply) => {
+    const uid = String(request.user!.id);
+    const method = (request.body as any)?.payout_method ?? request.body;
+
+    const check = validatePayoutMethod(method);
+    if (!check.valid) {
+      return reply.code(400).send({ error: 'INVALID_PAYOUT_METHOD', message: check.reason });
+    }
+
+    await db.collection('users').doc(uid).set({ payout_method: method }, { merge: true });
+    // Never echo the account number back, even to its owner — it ends up in
+    // logs, screenshots and support tickets.
+    return reply.send({ status: 'PAYOUT_METHOD_SAVED', destination: maskPayoutMethod(method) });
+  });
+
+  fastify.get('/payout-method', { preHandler: [requireAuth] }, async (request, reply) => {
+    const uid = String(request.user!.id);
+    const doc = await db.collection('users').doc(uid).get();
+    const method = doc.data()?.payout_method ?? null;
+    return reply.send({
+      configured: hasPayoutMethod(method),
+      type: method?.type ?? null,
+      destination: maskPayoutMethod(method),
+    });
+  });
+
+  // ── Scheduled payout sweep ───────────────────────────────────────────────
+  // Sends driver payouts that have come due. Intended to be called on a
+  // schedule (Cloud Scheduler every ~15 min comfortably beats the ~2h promise).
+  // Admin-only: it moves money.
+  fastify.post('/payouts/process', { preHandler: [requireAdmin] }, async (request, reply) => {
+    if (!isRazorpayXConfigured()) {
+      return reply.code(503).send({ error: 'Payouts are not configured on this server.' });
+    }
+
+    const due = await db.collection('scheduled_payouts')
+      .where('status', '==', 'PENDING')
+      .limit(50)
+      .get();
+
+    let sent = 0;
+    let failed = 0;
+    const now = Date.now();
+
+    for (const doc of due.docs) {
+      const p = doc.data();
+      if (!isPayoutDue(String(p.due_at), new Date(now))) continue;
+
+      // Claim it first so two overlapping sweeps can't pay the same driver
+      // twice. Losing the race is fine — the winner does the work.
+      const claimed = await db.runTransaction(async (tx) => {
+        const fresh = await tx.get(doc.ref);
+        if (fresh.data()?.status !== 'PENDING') return false;
+        tx.update(doc.ref, { status: 'SENDING', claimed_at: new Date().toISOString() });
+        return true;
+      }).catch(() => false);
+      if (!claimed) continue;
+
+      try {
+        const amount = Number(p.amount || 0);
+        const walletRef = db.collection('wallets').doc(String(p.driver_uid));
+
+        // Debit the wallet BEFORE calling out. If the transfer then fails we
+        // refund below; the reverse order could pay out money we never held.
+        await db.runTransaction(async (tx) => {
+          const w = await tx.get(walletRef);
+          const bal = Number(w.data()?.available_wallet_balance || 0);
+          if (bal + 0.01 < amount) throw new Error('INSUFFICIENT_WALLET');
+          tx.set(walletRef, { available_wallet_balance: round2(bal - amount) }, { merge: true });
+        });
+
+        const result = await createUpiPayout({
+          name: String(p.payout_method?.name || 'TheCarPool driver'),
+          upiVpa: String(p.payout_method?.vpa || ''),
+          amountRupees: amount,
+          referenceId: doc.id,
+        });
+
+        await doc.ref.update({ status: 'SENT', payout_id: result.payout_id, sent_at: new Date().toISOString() });
+        sent += 1;
+      } catch (err: any) {
+        // Put the money back and leave a reason. Never leave it in SENDING.
+        const amount = Number(p.amount || 0);
+        await db.runTransaction(async (tx) => {
+          const walletRef = db.collection('wallets').doc(String(p.driver_uid));
+          const w = await tx.get(walletRef);
+          const bal = Number(w.data()?.available_wallet_balance || 0);
+          tx.set(walletRef, { available_wallet_balance: round2(bal + amount) }, { merge: true });
+        }).catch(() => {});
+        await doc.ref.update({ status: 'FAILED', error: String(err?.message).slice(0, 200), failed_at: new Date().toISOString() }).catch(() => {});
+        fastify.log.error({ err, payout: doc.id }, 'Scheduled payout failed; wallet refunded');
+        failed += 1;
+      }
+    }
+
+    return reply.send({ processed: due.size, sent, failed });
+  });
+
   fastify.post('/payout/release', { preHandler: [requireAuth] }, async (request, reply) => {
     const body = parseOrReply(PayoutSchema, request.body, reply);
     if (!body) return;

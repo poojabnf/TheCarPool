@@ -539,22 +539,41 @@ export async function safetyRoutes(fastify: FastifyInstance) {
       }
 
       // ── Anonymise shared records rather than destroying them ─────────────
-      const batch = db.batch();
+      // Updates are merged PER DOCUMENT before writing. `pastRides` is every
+      // ride for this driver, which includes the active ones, so writing the
+      // cancellation and the anonymisation separately put two writes for the
+      // same doc in one batch — Firestore rejects that outright, the commit
+      // threw, and deletion failed for any driver with an upcoming ride.
+      const rideUpdates = new Map<string, { ref: FirebaseFirestore.DocumentReference; data: Record<string, unknown> }>();
+      const mergeUpdate = (ref: FirebaseFirestore.DocumentReference, data: Record<string, unknown>) => {
+        const existing = rideUpdates.get(ref.path);
+        if (existing) Object.assign(existing.data, data);
+        else rideUpdates.set(ref.path, { ref, data: { ...data } });
+      };
 
       // Empty upcoming rides can simply be cancelled — nobody is relying on them.
       for (const doc of activeRides.docs) {
-        batch.update(doc.ref, { status: 'CANCELLED', cancelled_at: now, cancelled_reason: 'DRIVER_ACCOUNT_DELETED' });
+        mergeUpdate(doc.ref, { status: 'CANCELLED', cancelled_at: now, cancelled_reason: 'DRIVER_ACCOUNT_DELETED' });
       }
-      // Past rides keep their financial shape, lose the identity.
+      // Every ride keeps its financial shape but loses the identity.
       const pastRides = await db.collection('rides').where('driver_uid', '==', uid).get();
       for (const doc of pastRides.docs) {
-        batch.update(doc.ref, { driver_name: 'Deleted user', driver_uid_deleted: true, anonymised_at: now });
+        mergeUpdate(doc.ref, { driver_name: 'Deleted user', driver_uid_deleted: true, anonymised_at: now });
       }
       const pastBookings = await db.collection('bookings').where('rider_id', '==', uid).get();
       for (const doc of pastBookings.docs) {
-        batch.update(doc.ref, { rider_name: 'Deleted user', rider_deleted: true, anonymised_at: now });
+        mergeUpdate(doc.ref, { rider_name: 'Deleted user', rider_deleted: true, anonymised_at: now });
       }
-      await batch.commit();
+
+      // Firestore caps a batch at 500 writes, so chunk. A prolific driver would
+      // otherwise be undeletable for the same "it worked in testing" reason.
+      const writes = [...rideUpdates.values()];
+      const BATCH_LIMIT = 450;
+      for (let i = 0; i < writes.length; i += BATCH_LIMIT) {
+        const batch = db.batch();
+        for (const w of writes.slice(i, i + BATCH_LIMIT)) batch.update(w.ref, w.data);
+        await batch.commit();
+      }
 
       // ── Delete what is genuinely the user's own ──────────────────────────
       // Classifieds are the user's own content, so they go entirely.
