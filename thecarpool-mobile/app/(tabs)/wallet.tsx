@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { View, Text, StyleSheet, ScrollView, RefreshControl, ActivityIndicator, Modal, TextInput, Linking, Alert } from 'react-native';
+import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import auth from '@react-native-firebase/auth';
 import { ArrowDownLeft, ArrowUpRight, Smartphone, Landmark, CreditCard, Wallet as WalletIcon, X, Check } from 'lucide-react-native';
@@ -20,6 +21,7 @@ const QUICK_AMOUNTS = [200, 500, 1000, 2000];
 
 export default function WalletScreen() {
   const insets = useSafeAreaInsets();
+  const router = useRouter();
   const uid = auth().currentUser?.uid ?? null;
   const [balance, setBalance] = useState<number | null>(null);
   const [txns, setTxns] = useState<Txn[]>([]);
@@ -132,17 +134,17 @@ export default function WalletScreen() {
             <ArrowDownLeft color={c.actionPrimaryText} size={16} strokeWidth={2.4} />
             <Text style={styles.actionPrimaryText}>Add money</Text>
           </HapticPressable>
+          {/* Routes to the real payout-details screen. It used to tell people
+              to email support, which was the only option because nothing in the
+              app ever collected bank or UPI details. */}
           <HapticPressable
+            haptic="press"
             style={[styles.actionBtn, styles.actionSecondary]}
             activeOpacity={0.85}
-            onPress={() => Alert.alert(
-              'Withdraw',
-              'Funds are released to your UPI after escrow settles (when your ride completes). Contact support@thecarpool.in to request an early withdrawal.',
-              [{ text: 'OK' }]
-            )}
+            onPress={() => router.push('/payout-method')}
           >
             <ArrowUpRight color={c.textPrimary} size={16} strokeWidth={2.4} />
-            <Text style={styles.actionSecondaryText}>Withdraw</Text>
+            <Text style={styles.actionSecondaryText}>Payout details</Text>
           </HapticPressable>
         </View>
       </View>

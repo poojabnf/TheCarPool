@@ -2,6 +2,55 @@ import { FastifyInstance } from 'fastify';
 import { db, storage } from '../server';
 import { requireAuth, requireAdmin } from '../middleware/auth';
 import { verificationSummary, verificationEnforced } from '../lib/verification';
+import { normalisePhone, phoneKey, phoneOf, portableProfile, decideLink } from '../lib/identity';
+
+/**
+ * Anchor this sign-in to its phone number, adopting an existing profile if the
+ * same number has been here before under a different provider's uid.
+ *
+ * Best-effort: a failure here must never block someone from loading their
+ * profile, so everything is caught. Returns the fields that were adopted so the
+ * caller can answer with the merged view instead of a stale one.
+ */
+async function linkByPhone(
+  uid: string,
+  tokenPhone: string | undefined,
+  existing: Record<string, any> | null,
+  log: FastifyInstance['log']
+): Promise<Record<string, any>> {
+  const phone = normalisePhone(tokenPhone) ?? phoneOf(existing);
+  if (!phone) return {};
+
+  try {
+    const indexRef = db.collection('phone_identities').doc(phoneKey(phone));
+    const owner = (await indexRef.get()).data()?.uid ?? null;
+    const { claimIndex, adoptFrom } = decideLink(uid, owner);
+
+    if (claimIndex) {
+      await indexRef.set({ uid, phone, linked_at: new Date().toISOString() }, { merge: true });
+    }
+
+    const updates: Record<string, any> = {};
+    if (adoptFrom) {
+      const source = (await db.collection('users').doc(adoptFrom).get()).data() ?? null;
+      Object.assign(updates, portableProfile(source, existing));
+      // Recorded on both docs so support can see why two uids share a profile.
+      updates.linked_from_uid = adoptFrom;
+    }
+    // Store the number on the profile too, so a later token without one (a
+    // Google sign-in) can still find its way back to the same identity.
+    if (!existing?.phone) updates.phone = phone;
+
+    if (Object.keys(updates).length > 0) {
+      updates.identity_linked_at = new Date().toISOString();
+      await db.collection('users').doc(uid).set(updates, { merge: true });
+    }
+    return updates;
+  } catch (err) {
+    log.error(err, 'Phone identity linking failed');
+    return {};
+  }
+}
 
 const AVATAR_URL_TTL_MS = 7 * 24 * 60 * 60 * 1000; // signed read URLs last 7 days; refreshed on /me + upload
 
@@ -32,10 +81,16 @@ export async function userRoutes(fastify: FastifyInstance) {
     const uid = request.user!.id;
     try {
       const doc = await db.collection('users').doc(uid).get();
-      if (!doc.exists) {
+      const stored = doc.exists ? doc.data()! : null;
+
+      // Same person, new sign-in provider: carry their profile and verification
+      // across rather than making them do it all again.
+      const adopted = await linkByPhone(uid, request.user!.phone, stored, fastify.log);
+      const data = { ...(stored ?? {}), ...adopted };
+
+      if (!doc.exists && Object.keys(adopted).length === 0) {
         return reply.send({ id: uid, onboarded: false, profile: null, verification: verificationSummary(null) });
       }
-      const data = doc.data()!;
       // Refresh the avatar's signed read URL so it never goes stale.
       let photo_url = data.photo_url;
       if (data.avatar_path) {

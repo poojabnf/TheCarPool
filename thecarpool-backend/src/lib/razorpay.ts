@@ -1,5 +1,6 @@
 import Razorpay from 'razorpay';
 import * as crypto from 'crypto';
+import { PayoutMethod, validatePayoutMethod } from './payouts';
 
 // Razorpay client, lazily initialised from environment variables so the app
 // still boots (with payments disabled) when keys aren't configured locally.
@@ -36,24 +37,46 @@ function razorpayXHeaders() {
 }
 
 /**
- * RazorpayX UPI payout: contact → fund_account → payout. Returns the payout id.
- * Only call when isRazorpayXConfigured(). `amount` is in rupees.
+ * RazorpayX payout: contact → fund_account → payout. Returns the payout id.
+ * Only call when isRazorpayXConfigured(). `amountRupees` is in rupees.
+ *
+ * Handles both destinations a driver can save. UPI goes out over UPI; a bank
+ * account goes out over IMPS, which is the transfer mode that actually settles
+ * in minutes rather than by the next working day.
  */
-export async function createUpiPayout(opts: {
-  name: string; upiVpa: string; amountRupees: number; referenceId: string;
+export async function createPayout(opts: {
+  method: PayoutMethod; amountRupees: number; referenceId: string; fallbackName?: string;
 }): Promise<{ payout_id: string; status: string }> {
   const base = 'https://api.razorpay.com/v1';
+  const { method } = opts;
+
+  const check = validatePayoutMethod(method);
+  if (!check.valid) throw new Error(`Unusable payout method: ${check.reason}`);
+
+  const name = String(method.name || opts.fallbackName || 'TheCarPool driver').trim();
 
   const contactRes = await fetch(`${base}/contacts`, {
     method: 'POST', headers: razorpayXHeaders(),
-    body: JSON.stringify({ name: opts.name, type: 'vendor', reference_id: opts.referenceId }),
+    body: JSON.stringify({ name, type: 'vendor', reference_id: opts.referenceId }),
   });
   if (!contactRes.ok) throw new Error(`RazorpayX contact ${contactRes.status}`);
   const contact: any = await contactRes.json();
 
+  const fundAccountBody = method.type === 'VPA'
+    ? { contact_id: contact.id, account_type: 'vpa', vpa: { address: String(method.vpa) } }
+    : {
+        contact_id: contact.id,
+        account_type: 'bank_account',
+        bank_account: {
+          name,
+          ifsc: String(method.ifsc).toUpperCase(),
+          account_number: String(method.account_number),
+        },
+      };
+
   const faRes = await fetch(`${base}/fund_accounts`, {
     method: 'POST', headers: razorpayXHeaders(),
-    body: JSON.stringify({ contact_id: contact.id, account_type: 'vpa', vpa: { address: opts.upiVpa } }),
+    body: JSON.stringify(fundAccountBody),
   });
   if (!faRes.ok) throw new Error(`RazorpayX fund_account ${faRes.status}`);
   const fundAccount: any = await faRes.json();
@@ -65,7 +88,7 @@ export async function createUpiPayout(opts: {
       fund_account_id: fundAccount.id,
       amount: Math.round(opts.amountRupees * 100),
       currency: 'INR',
-      mode: 'UPI',
+      mode: method.type === 'VPA' ? 'UPI' : 'IMPS',
       purpose: 'payout',
       queue_if_low_balance: true,
       reference_id: opts.referenceId,

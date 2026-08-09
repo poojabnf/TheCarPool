@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { db } from '../server';
 import { requireAuth, requireAdmin } from '../middleware/auth';
 import { parseOrReply } from '../lib/validate';
-import { validatePayoutMethod, hasPayoutMethod, maskPayoutMethod, isPayoutDue } from '../lib/payouts';
+import { validatePayoutMethod, hasPayoutMethod, maskPayoutMethod, isPayoutDue, PayoutMethod } from '../lib/payouts';
 import { creditWalletForPayment } from '../lib/wallet';
 import { calculateSplit, suggestPricing, fuelSavings } from '../lib/pricing';
 import {
@@ -12,7 +12,7 @@ import {
   isRazorpayXConfigured,
   verifyPaymentSignature,
   verifyWebhookSignature,
-  createUpiPayout,
+  createPayout,
 } from '../lib/razorpay';
 
 /** Rounds to paise — wallet balances are rupees held as JS numbers. */
@@ -47,7 +47,9 @@ const PricingSchema = z.object({
 });
 
 const PayoutSchema = z.object({
-  upi_payout_id: z.string().min(3), // the payee VPA, e.g. name@bank
+  // Optional: the app sends nothing and we use the destination already saved
+  // and validated via /payout-method. Older clients still send a payee VPA.
+  upi_payout_id: z.string().min(3).optional(),
   amount: z.number().positive(),
   booking_id: z.union([z.string(), z.number()]).optional(),
 });
@@ -320,9 +322,8 @@ export async function paymentRoutes(fastify: FastifyInstance) {
           tx.set(walletRef, { available_wallet_balance: round2(bal - amount) }, { merge: true });
         });
 
-        const result = await createUpiPayout({
-          name: String(p.payout_method?.name || 'TheCarPool driver'),
-          upiVpa: String(p.payout_method?.vpa || ''),
+        const result = await createPayout({
+          method: p.payout_method,
           amountRupees: amount,
           referenceId: doc.id,
         });
@@ -364,6 +365,19 @@ export async function paymentRoutes(fastify: FastifyInstance) {
 
     if (!isRazorpayXConfigured()) {
       return reply.code(503).send({ error: 'Instant payouts are not configured on this server.' });
+    }
+
+    // Prefer the destination already saved and validated on the account. A
+    // typed-in VPA is only honoured for older clients that still send one.
+    const savedMethod = userData?.payout_method as PayoutMethod | undefined;
+    const destination: PayoutMethod | null = hasPayoutMethod(savedMethod)
+      ? savedMethod!
+      : (upi_payout_id ? { type: 'VPA', vpa: upi_payout_id, name: userData?.name } : null);
+    if (!destination) {
+      return reply.code(400).send({
+        error: 'NO_PAYOUT_METHOD',
+        message: 'Add your UPI or bank details before withdrawing.',
+      });
     }
 
     // Ride earnings are held for 24h after the ride before they can leave the
@@ -418,43 +432,25 @@ export async function paymentRoutes(fastify: FastifyInstance) {
     };
 
     try {
-      const auth = Buffer.from(`${process.env.RAZORPAY_KEY_ID}:${process.env.RAZORPAY_KEY_SECRET}`).toString('base64');
-      const res = await fetch('https://api.razorpay.com/v1/payouts', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Basic ${auth}`,
-          'Content-Type': 'application/json',
-          'X-Payout-Idempotency': payoutRef,
-        },
-        body: JSON.stringify({
-          account_number: process.env.RAZORPAYX_ACCOUNT_NUMBER,
-          fund_account: { account_type: 'vpa', vpa: { address: upi_payout_id } },
-          amount: Math.round(amount * 100), // paise
-          currency: 'INR',
-          mode: 'UPI',
-          purpose: 'payout',
-          notes: { booking_id: booking_id != null ? String(booking_id) : '', payout_ref: payoutRef, user_id: uid },
-        }),
+      const result = await createPayout({
+        method: destination,
+        amountRupees: amount,
+        referenceId: payoutRef,
+        fallbackName: userData?.name,
       });
-      const data = await res.json() as any;
-      if (res.ok && data.id) {
-        await db.collection('payouts').doc(payoutRef).update({
-          status: 'PROCESSING',
-          razorpayx_payout_id: data.id,
-        });
-        return reply.send({
-          status: 'PAYOUT_PROCESSING',
-          booking_id,
-          upi_payout_id,
-          transaction_ref: payoutRef,
-          razorpayx_payout_id: data.id,
-          amount_settled: amount,
-        });
-      }
-      fastify.log.error(data, 'RazorpayX payout failed');
-      await refundReservation();
-      await db.collection('payouts').doc(payoutRef).update({ status: 'FAILED', razorpayx_error: data });
-      return reply.code(502).send({ error: 'Payout initiation failed via RazorpayX.', detail: data?.error?.description });
+      await db.collection('payouts').doc(payoutRef).update({
+        status: 'PROCESSING',
+        razorpayx_payout_id: result.payout_id,
+      });
+      return reply.send({
+        status: 'PAYOUT_PROCESSING',
+        booking_id,
+        // Masked — the full destination never travels back to a client.
+        destination: maskPayoutMethod(destination),
+        transaction_ref: payoutRef,
+        razorpayx_payout_id: result.payout_id,
+        amount_settled: amount,
+      });
     } catch (err: any) {
       fastify.log.error(err, 'RazorpayX API call failed');
       await refundReservation();

@@ -9,6 +9,8 @@ declare module 'fastify' {
       id: string;
       role: string;
       email?: string;
+      /** E.164 phone from the token, when signed in with OTP or a linked phone. */
+      phone?: string;
     };
   }
 }
@@ -40,6 +42,7 @@ export async function requireAuth(request: FastifyRequest, reply: FastifyReply) 
       id: decoded.uid,
       role: (decoded.role as string) || (decoded.admin ? 'ADMIN' : 'USER'),
       email: decoded.email,
+      phone: (decoded.phone_number as string) || undefined,
     };
   } catch (err: any) {
     request.log.error('Authentication failed: %s', err.message);
