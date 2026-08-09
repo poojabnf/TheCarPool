@@ -156,6 +156,21 @@ export default function DriverInterface() {
   const [myRides, setMyRides] = useState<any[]>([]);
   const [manifests, setManifests] = useState<Record<string, any>>({});
   const [ridesLoading, setRidesLoading] = useState(false);
+  const [earnings, setEarnings] = useState(0);
+  const [payoutDestination, setPayoutDestination] = useState<string | null>(null);
+
+  // Real wallet balance and payout destination for the earnings card.
+  useEffect(() => {
+    if (!userId) return;
+    apiFetch(`/api/payments/wallet/${userId}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((w) => { if (w) setEarnings(Number(w.available_wallet_balance || 0)); })
+      .catch(() => { /* leave at zero rather than invent a number */ });
+    apiFetch('/api/payments/payout-method')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (d?.configured) setPayoutDestination(d.destination); })
+      .catch(() => {});
+  }, [userId]);
 
   const loadMyRides = async () => {
     setRidesLoading(true);
@@ -613,14 +628,19 @@ export default function DriverInterface() {
       <View style={styles.content}>
         {activeTab === 'overview' && !showPostModal && (
           <ScrollView showsVerticalScrollIndicator={false}>
-            {/* Earnings Widget */}
+            {/* Earnings. Real balance from the wallet — this used to show a
+                hardcoded ₹4,320 and "+12% from last week" to every driver. */}
             <View style={styles.earningsCard}>
-              <Text style={styles.earningsLabel}>Earned this Week</Text>
-              <Text style={styles.earningsAmount}>₹4,320</Text>
-              <View style={styles.sparklineBox}>
+              <Text style={styles.earningsLabel}>Your earnings</Text>
+              <Text style={styles.earningsAmount}>₹{earnings.toLocaleString('en-IN')}</Text>
+              <HapticPressable haptic="press" style={styles.sparklineBox} onPress={() => router.push('/payout-method')}>
                 <Activity color={colors.success} size={20} />
-                <Text style={styles.sparklineText}>+12% from last week</Text>
-              </View>
+                <Text style={styles.sparklineText}>
+                  {payoutDestination
+                    ? `Paid to ${payoutDestination} after each ride →`
+                    : 'Add bank or UPI details to get paid →'}
+                </Text>
+              </HapticPressable>
             </View>
 
             <HapticPressable haptic="press" style={styles.postRideBtn} onPress={() => setShowPostModal(true)}>
