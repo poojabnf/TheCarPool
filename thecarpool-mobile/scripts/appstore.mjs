@@ -10,8 +10,17 @@
  * what EAS produces) sit in App Store Connect, fully processed, visible to
  * nobody. That is why testers stayed on an old build while newer ones piled up.
  *
- * `distribute` closes that gap: one call attaches a build to a group and it
- * appears in testers' TestFlight immediately.
+ * WHAT IS ACTUALLY TRUE (measured, not assumed)
+ * An INTERNAL group with hasAccessToAllBuilds:true receives every processed
+ * build automatically — Apple rejects per-build assignment to internal groups
+ * outright ("Cannot add internal group to a build"). So for internal testing
+ * there is nothing to attach: once a build reaches internalBuildState
+ * IN_BETA_TESTING it is already installable, and a tester still on an older
+ * version simply has not updated. `status` shows that state so you can tell
+ * "not distributed" from "not yet installed" without guessing.
+ *
+ * `distribute` therefore applies to EXTERNAL groups, where builds are assigned
+ * explicitly and go through Beta App Review.
  *
  * CREDENTIALS — create these once:
  *   App Store Connect -> Users and Access -> Integrations -> App Store Connect API
@@ -104,7 +113,7 @@ async function api(path, { method = 'GET', body } = {}) {
 
 // ── helpers ────────────────────────────────────────────────────────────────
 const listBuilds = (limit = 10) =>
-  api(`/builds?filter[app]=${APP_ID}&sort=-version&limit=${limit}&include=preReleaseVersion`);
+  api(`/builds?filter[app]=${APP_ID}&sort=-version&limit=${limit}&include=preReleaseVersion,buildBetaDetail`);
 
 const listGroups = () => api(`/betaGroups?filter[app]=${APP_ID}&limit=50`);
 
@@ -124,12 +133,20 @@ function shortVersionOf(build, included) {
 // ── commands ───────────────────────────────────────────────────────────────
 async function cmdStatus() {
   const data = await listBuilds(10);
+  const detail = Object.fromEntries(
+    (data.included || []).filter((i) => i.type === 'buildBetaDetails').map((i) => [i.id, i.attributes])
+  );
   console.log(`\nBuilds for app ${APP_ID}:\n`);
   for (const b of data.data) {
     const a = b.attributes;
+    const d = detail[b.relationships?.buildBetaDetail?.data?.id] || {};
+    // internal=IN_BETA_TESTING means testers can install it NOW. Anyone still
+    // on an older version simply hasn't updated — which is not the same thing
+    // as the build not being distributed, and the difference is worth seeing.
     console.log(
       `  ${shortVersionOf(b, data.included).padEnd(8)} (${String(a.version).padEnd(4)}) ` +
-      `${String(a.processingState).padEnd(11)} expired=${a.expired}  uploaded=${a.uploadedDate}`
+      `${String(a.processingState).padEnd(7)} internal=${String(d.internalBuildState || '?').padEnd(17)}` +
+      ` external=${d.externalBuildState || '?'}`
     );
   }
   const groups = await listGroups();
@@ -169,6 +186,23 @@ async function cmdDistribute(args) {
   const state = build.attributes.processingState;
   if (state !== 'VALID') {
     throw new Error(`Build ${build.attributes.version} is ${state}, not VALID — wait for processing to finish.`);
+  }
+
+  if (group.attributes.isInternalGroup) {
+    // Apple rejects this with a 422; say so plainly rather than letting the
+    // API error look like a broken script.
+    console.log(
+      `"${group.attributes.name}" is an INTERNAL group — Apple distributes every
+` +
+      `processed build to it automatically and refuses explicit assignment.
+` +
+      `Build ${build.attributes.version} is ${build.attributes.processingState}; run \`status\` to see its
+` +
+      `internalBuildState. IN_BETA_TESTING means testers can install it now and
+` +
+      `anyone on an older version simply has not updated yet.`
+    );
+    return;
   }
 
   console.log(`Attaching build ${build.attributes.version} to "${group.attributes.name}"…`);
