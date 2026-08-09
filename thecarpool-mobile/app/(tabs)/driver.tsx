@@ -11,19 +11,39 @@ import io from 'socket.io-client';
 import { API_URL } from '../services/api';
 import { useAuthStore } from '../store/authStore';
 
-// Quick-pick departure options — avoids a native date-picker dependency so the
-// feature ships via OTA update.
-function departurePresets(): { label: string; iso: string }[] {
-  const now = Date.now();
-  const tomorrow9 = new Date();
-  tomorrow9.setDate(tomorrow9.getDate() + 1);
-  tomorrow9.setHours(9, 0, 0, 0);
-  return [
-    { label: 'In 30 min', iso: new Date(now + 30 * 60 * 1000).toISOString() },
-    { label: 'In 1 hour', iso: new Date(now + 60 * 60 * 1000).toISOString() },
-    { label: 'In 2 hours', iso: new Date(now + 2 * 60 * 60 * 1000).toISOString() },
-    { label: 'Tomorrow 9 AM', iso: tomorrow9.toISOString() },
-  ];
+// Departure is picked as a real date AND time. Deliberately built from plain
+// chips rather than @react-native-community/datetimepicker: that is a native
+// module, so it would force a store build for every change here, while this
+// ships over the air.
+const DEPARTURE_DAYS = 14;
+
+function upcomingDays(count = DEPARTURE_DAYS): { label: string; date: Date }[] {
+  const out: { label: string; date: Date }[] = [];
+  for (let i = 0; i < count; i++) {
+    const d = new Date();
+    d.setDate(d.getDate() + i);
+    d.setHours(0, 0, 0, 0);
+    const label =
+      i === 0 ? 'Today'
+      : i === 1 ? 'Tomorrow'
+      : d.toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' });
+    out.push({ label, date: d });
+  }
+  return out;
+}
+
+/** Combine a chosen day with an hour/minute into a concrete departure. */
+function combineDeparture(day: Date, hour: number, minute: number): Date {
+  const d = new Date(day);
+  d.setHours(hour, minute, 0, 0);
+  return d;
+}
+
+function formatDeparture(d: Date): string {
+  return d.toLocaleString('en-IN', {
+    weekday: 'short', day: 'numeric', month: 'short',
+    hour: '2-digit', minute: '2-digit', hour12: true,
+  });
 }
 
 function Linkedin({ size = 16, color, style }: { size?: number; color?: string; style?: any }) {
@@ -47,7 +67,7 @@ function Linkedin({ size = 16, color, style }: { size?: number; color?: string; 
   );
 }
 
-const MAX_PICKUP_POINTS = 6;
+const MAX_PICKUP_POINTS = 10;
 
 export default function DriverInterface() {
   const router = useRouter();
@@ -95,7 +115,12 @@ export default function DriverInterface() {
   const pickupTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [destSug, setDestSug] = useState<any[]>([]);
   const [seatsTotal, setSeatsTotal] = useState(3);
-  const [departure, setDeparture] = useState<{ label: string; iso: string }>(departurePresets()[0]);
+  // Departure: a day plus an hour/minute, combined on submit.
+  const [depDay, setDepDay] = useState<Date>(() => { const d = new Date(); d.setHours(0,0,0,0); return d; });
+  const [depHour, setDepHour] = useState<number>(() => (new Date().getHours() + 1) % 24);
+  const [depMinute, setDepMinute] = useState<number>(0);
+  const departureAt = combineDeparture(depDay, depHour, depMinute);
+  const departureInPast = departureAt.getTime() <= Date.now();
   const [distanceKm, setDistanceKm] = useState('');
   const [vehicleType, setVehicleType] = useState<'CAR' | 'BIKE'>('CAR');
   // Riders see these on the match card before booking, so they know which
@@ -387,9 +412,13 @@ export default function DriverInterface() {
       Alert.alert('Select Locations', 'Pick a pickup and destination from the suggestions.');
       return;
     }
+    if (departureInPast) {
+      Alert.alert('Pick a future time', 'That departure time has already passed.');
+      return;
+    }
     const price = parseFloat(customPrice) || suggestedPrice || 0;
     if (price <= 0) {
-      Alert.alert('Set a Price', 'Enter the route distance so we can suggest a per-seat price, or set one.');
+      Alert.alert('Set a Price', 'Enter a price per seat before posting.');
       return;
     }
     setIsPosting(true);
@@ -409,13 +438,16 @@ export default function DriverInterface() {
           route_geojson,
           seats_total: seatsTotal,
           price_split: price,
-          departure_time: departure.iso,
+          departure_time: departureAt.toISOString(),
           vehicle_type: vehicleType,
           vehicle_make: vehicleMake.trim(),
           vehicle_model: vehicleModel.trim(),
           vehicle_colour: vehicleColour.trim(),
           vehicle_plate: vehiclePlate.trim(),
           pickup_points: pickupPoints,
+          // Derived from source/destination. The backend prices the optional
+          // journey insurance from this; omitting it made insurance invisible.
+          distance_km: parseFloat(distanceKm) || undefined,
           ac_available: acAvailable,
           music_allowed: musicAllowed,
           smoking_allowed: smokingAllowed,
@@ -733,17 +765,16 @@ export default function DriverInterface() {
               )}
             </View>
 
-            <View style={styles.formGroup}>
-              <Text style={styles.formLabel}>Route Length (Kms)</Text>
-              <TextInput
-                style={styles.formInput}
-                keyboardType="numeric"
-                placeholder="e.g. 15 (used for smart pricing)"
-                placeholderTextColor={colors.inputPlaceholder}
-                value={distanceKm}
-                onChangeText={setDistanceKm}
-              />
-            </View>
+            {/* Route length is derived from source + destination, not typed.
+                Asking for it again invited a number that disagreed with the
+                route, and it drives both smart pricing and insurance. */}
+            {distanceKm !== '' && (
+              <View style={styles.formGroup}>
+                <Text style={styles.formLabel}>Route length</Text>
+                <Text style={styles.derivedValue}>{distanceKm} km</Text>
+                <Text style={styles.formHint}>Measured from your start and destination.</Text>
+              </View>
+            )}
 
             <View style={styles.formGroup}>
               <Text style={styles.formLabel}>Seats Offered</Text>
@@ -768,20 +799,63 @@ export default function DriverInterface() {
 
             <View style={styles.formGroup}>
               <Text style={styles.formLabel}>Departure</Text>
-              <View style={styles.depRow}>
-                {departurePresets().map((p) => {
-                  const active = departure.label === p.label;
+              <Text style={styles.formHint}>Pick the day, then the time you'll set off.</Text>
+
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 10 }}>
+                {upcomingDays().map((d) => {
+                  const active = d.date.toDateString() === depDay.toDateString();
                   return (
                     <HapticPressable
-                      key={p.label}
+                      key={d.label}
                       style={[styles.depChip, active && styles.depChipActive]}
-                      onPress={() => setDeparture(p)}
+                      onPress={() => setDepDay(d.date)}
                     >
-                      <Text style={[styles.depChipText, active && styles.depChipTextActive]}>{p.label}</Text>
+                      <Text style={[styles.depChipText, active && styles.depChipTextActive]}>{d.label}</Text>
+                    </HapticPressable>
+                  );
+                })}
+              </ScrollView>
+
+              <Text style={styles.formSubLabel}>Hour</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 10 }}>
+                {Array.from({ length: 24 }, (_, h) => h).map((h) => {
+                  const active = h === depHour;
+                  const label = `${((h % 12) || 12)}${h < 12 ? 'am' : 'pm'}`;
+                  return (
+                    <HapticPressable
+                      key={h}
+                      style={[styles.depChip, active && styles.depChipActive]}
+                      onPress={() => setDepHour(h)}
+                    >
+                      <Text style={[styles.depChipText, active && styles.depChipTextActive]}>{label}</Text>
+                    </HapticPressable>
+                  );
+                })}
+              </ScrollView>
+
+              <Text style={styles.formSubLabel}>Minutes</Text>
+              <View style={styles.depRow}>
+                {[0, 15, 30, 45].map((m) => {
+                  const active = m === depMinute;
+                  return (
+                    <HapticPressable
+                      key={m}
+                      style={[styles.depChip, active && styles.depChipActive]}
+                      onPress={() => setDepMinute(m)}
+                    >
+                      <Text style={[styles.depChipText, active && styles.depChipTextActive]}>
+                        :{String(m).padStart(2, '0')}
+                      </Text>
                     </HapticPressable>
                   );
                 })}
               </View>
+
+              <Text style={[styles.depSummary, departureInPast && styles.depSummaryBad]}>
+                {departureInPast
+                  ? `${formatDeparture(departureAt)} is in the past — pick a later time.`
+                  : `Departing ${formatDeparture(departureAt)}`}
+              </Text>
             </View>
 
             {/* Vehicle Mode (Togopool Bike vs Car Option Gap) */}
@@ -1274,6 +1348,9 @@ const styles = StyleSheet.create({
   vehicleDetailRow: { flexDirection: 'row', gap: 8, marginBottom: 8 },
   pickupRow: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: colors.inputBackground, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 10, marginBottom: 8, borderWidth: 1, borderColor: colors.cardBorder },
   pickupLabel: { flex: 1, fontSize: 13, color: colors.text },
+  depSummary: { fontSize: 12.5, color: colors.success, fontWeight: '600', marginTop: 4 },
+  depSummaryBad: { color: '#C0392B' },
+  derivedValue: { fontSize: 18, color: colors.text, fontWeight: '700' },
   useSuggested: { fontSize: 12.5, color: colors.primary, fontWeight: '600', marginTop: 10 },
   formSubLabel: { fontSize: 11, color: colors.textMuted, marginTop: 2 },
   formInput: { backgroundColor: colors.inputBackground, borderRadius: 8, height: 44, paddingHorizontal: 12, color: colors.text, borderWidth: 1, borderColor: colors.cardBorder },

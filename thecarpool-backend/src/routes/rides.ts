@@ -13,7 +13,7 @@ function round2(n: number): number {
 }
 
 /** Hard cap on driver-declared pickup points; keeps ride docs and rider UI sane. */
-const MAX_PICKUP_POINTS = 6;
+const MAX_PICKUP_POINTS = 10;
 
 /**
  * Validate and normalise the driver's extra pickup points.
@@ -61,6 +61,12 @@ interface CreateRideBody {
   // Optional extra stops the driver is willing to pick up from, so riders who
   // aren't at the single origin still have somewhere to meet.
   pickup_points?: { label?: string; lat: number; lng: number }[];
+  /**
+   * Route length in km, derived by the app from source/destination.
+   * Prices the optional journey insurance — without it insurancePremium() sees
+   * 0 and the insurance option silently never appears to riders.
+   */
+  distance_km?: number;
   // Shown to riders before they book so they know what they're getting into.
   vehicle_make?: string;
   vehicle_model?: string;
@@ -196,7 +202,7 @@ export async function rideRoutes(fastify: FastifyInstance) {
       chattiness = 'MEDIUM', ac_available = true, women_only = false,
       ride_type = 'COMMUTE', event_tag,
       vehicle_make, vehicle_model, vehicle_colour, vehicle_plate,
-      pickup_points
+      pickup_points, distance_km
     } = request.body as CreateRideBody;
 
     if (!['COMMUTE', 'INTERCITY', 'EVENT'].includes(ride_type)) {
@@ -293,6 +299,9 @@ export async function rideRoutes(fastify: FastifyInstance) {
         price_split: Number(price_split),
         departure_time,
         vehicle_type,
+        distance_km: Number.isFinite(Number(distance_km)) && Number(distance_km) > 0
+          ? Math.round(Number(distance_km) * 10) / 10
+          : null,
         pickup_points: normalisePickupPoints(pickup_points),
         vehicle_make: clean(vehicle_make),
         vehicle_model: clean(vehicle_model),
@@ -476,6 +485,7 @@ export async function rideRoutes(fastify: FastifyInstance) {
             departure_time: ride.departure_time,
             vehicle_type: ride.vehicle_type,
             pickup_points: ride.pickup_points ?? [],
+            distance_km: ride.distance_km ?? null,
             vehicle_make: ride.vehicle_make ?? null,
             vehicle_model: ride.vehicle_model ?? null,
             vehicle_colour: ride.vehicle_colour ?? null,
