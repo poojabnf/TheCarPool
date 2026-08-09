@@ -125,8 +125,15 @@ export default function DriverInterface() {
   const [vehicleType, setVehicleType] = useState<'CAR' | 'BIKE'>('CAR');
   // Riders see these on the match card before booking, so they know which
   // vehicle they're getting into.
+  // Catalogue comes from the server so the driver's pickers and the rider's
+  // size icons agree on what each model is.
+  const [catalogue, setCatalogue] = useState<{ key: string; label: string; models: { model: string; class: string }[] }[]>([]);
   const [vehicleMake, setVehicleMake] = useState('');
   const [vehicleModel, setVehicleModel] = useState('');
+  // "Other" lets a driver type anything — an unlisted car must never stop
+  // someone offering a ride.
+  const makeIsOther = vehicleMake === 'Other' || (vehicleMake !== '' && !catalogue.some((m) => m.label === vehicleMake));
+  const modelsForMake = catalogue.find((m) => m.label === vehicleMake)?.models ?? [];
   const [vehicleColour, setVehicleColour] = useState('');
   const [vehiclePlate, setVehiclePlate] = useState('');
   const [isRecurring, setIsRecurring] = useState(false);
@@ -170,6 +177,13 @@ export default function DriverInterface() {
     finally { setRidesLoading(false); }
   };
   useEffect(() => { loadMyRides(); }, []);
+
+  useEffect(() => {
+    apiFetch('/api/rides/vehicle-catalogue')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (d?.makes) setCatalogue(d.makes); })
+      .catch(() => { /* pickers fall back to free text */ });
+  }, []);
 
   // ── Boarding verification ────────────────────────────────────────────────
   // Each rider reads out a 4-digit code from their trip screen before the
@@ -887,24 +901,62 @@ export default function DriverInterface() {
               <Text style={styles.formHint}>
                 Riders see this before booking, so they know which vehicle to look for.
               </Text>
-              <View style={styles.vehicleDetailRow}>
+              <Text style={styles.formSubLabel}>Make</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 10 }}>
+                {catalogue.map((m) => {
+                  const active = vehicleMake === m.label;
+                  return (
+                    <HapticPressable
+                      key={m.key}
+                      style={[styles.depChip, active && styles.depChipActive]}
+                      onPress={() => { setVehicleMake(m.label); setVehicleModel(''); }}
+                    >
+                      <Text style={[styles.depChipText, active && styles.depChipTextActive]}>{m.label}</Text>
+                    </HapticPressable>
+                  );
+                })}
+              </ScrollView>
+
+              {makeIsOther ? (
                 <TextInput
-                  style={[styles.formInput, { flex: 1 }]}
-                  placeholder={vehicleType === 'BIKE' ? 'Make (e.g. Honda)' : 'Make (e.g. Maruti)'}
+                  style={styles.formInput}
+                  placeholder={vehicleType === 'BIKE' ? 'Type the make (e.g. Yamaha)' : 'Type the make (e.g. Rivian)'}
                   placeholderTextColor={colors.inputPlaceholder}
-                  value={vehicleMake}
+                  value={vehicleMake === 'Other' ? '' : vehicleMake}
                   onChangeText={setVehicleMake}
                   maxLength={40}
                 />
-                <TextInput
-                  style={[styles.formInput, { flex: 1 }]}
-                  placeholder={vehicleType === 'BIKE' ? 'Model (e.g. Activa)' : 'Model (e.g. Swift)'}
-                  placeholderTextColor={colors.inputPlaceholder}
-                  value={vehicleModel}
-                  onChangeText={setVehicleModel}
-                  maxLength={40}
-                />
-              </View>
+              ) : null}
+
+              {vehicleMake !== '' && (
+                <>
+                  <Text style={styles.formSubLabel}>Model</Text>
+                  {modelsForMake.length > 0 && (
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 10 }}>
+                      {modelsForMake.map((mm) => {
+                        const active = vehicleModel === mm.model;
+                        return (
+                          <HapticPressable
+                            key={mm.model}
+                            style={[styles.depChip, active && styles.depChipActive]}
+                            onPress={() => setVehicleModel(mm.model)}
+                          >
+                            <Text style={[styles.depChipText, active && styles.depChipTextActive]}>{mm.model}</Text>
+                          </HapticPressable>
+                        );
+                      })}
+                    </ScrollView>
+                  )}
+                  <TextInput
+                    style={styles.formInput}
+                    placeholder={modelsForMake.length ? "Not listed? Type your model" : 'Type your model'}
+                    placeholderTextColor={colors.inputPlaceholder}
+                    value={vehicleModel}
+                    onChangeText={setVehicleModel}
+                    maxLength={40}
+                  />
+                </>
+              )}
               <View style={styles.vehicleDetailRow}>
                 <TextInput
                   style={[styles.formInput, { flex: 1 }]}

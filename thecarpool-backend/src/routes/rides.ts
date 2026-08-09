@@ -6,6 +6,7 @@ import { canTransition, isSettableStatus, SETTABLE_STATUSES } from '../lib/rideL
 import { noShowOutcome } from '../lib/fees';
 import { planPayout, maskPayoutMethod } from '../lib/payouts';
 import { canOfferRide, verificationEnforced } from '../lib/verification';
+import { classifyVehicle, listMakes, listModels, VEHICLE_CLASSES } from '../lib/vehicles';
 
 /** Rounds to paise — wallet balances are rupees held as JS numbers. */
 function round2(n: number): number {
@@ -193,6 +194,20 @@ function routeBboxIntersects(
 }
 
 export async function rideRoutes(fastify: FastifyInstance) {
+
+  // ── GET /vehicle-catalogue — makes, models and size classes ──────────────
+  // One source of truth for the driver's pickers and the rider's icons, so the
+  // two can't disagree about what a "Creta" is.
+  fastify.get('/vehicle-catalogue', async (_request, reply) => {
+    return reply.send({
+      makes: listMakes().map((m) => ({
+        ...m,
+        models: listModels(m.key),
+      })),
+      classes: VEHICLE_CLASSES,
+    });
+  });
+
   
   // 1. Create a ride with LineString geometry
   fastify.post('/', { preHandler: [requireAuth] }, async (request, reply) => {
@@ -304,6 +319,9 @@ export async function rideRoutes(fastify: FastifyInstance) {
           : null,
         pickup_points: normalisePickupPoints(pickup_points),
         vehicle_make: clean(vehicle_make),
+        // Derived server-side, never taken from the client: a ride could
+        // otherwise claim SUV for a two-seater and mislead riders at booking.
+        vehicle_class: classifyVehicle(vehicle_make, vehicle_model, vehicle_type),
         vehicle_model: clean(vehicle_model),
         vehicle_colour: clean(vehicle_colour),
         vehicle_plate: clean(vehicle_plate, true),
@@ -487,6 +505,7 @@ export async function rideRoutes(fastify: FastifyInstance) {
             pickup_points: ride.pickup_points ?? [],
             distance_km: ride.distance_km ?? null,
             vehicle_make: ride.vehicle_make ?? null,
+            vehicle_class: ride.vehicle_class ?? classifyVehicle(ride.vehicle_make, ride.vehicle_model, ride.vehicle_type),
             vehicle_model: ride.vehicle_model ?? null,
             vehicle_colour: ride.vehicle_colour ?? null,
             vehicle_plate: ride.vehicle_plate ?? null,

@@ -12,6 +12,7 @@ import { useI18n } from '../services/i18n';
 import * as haptics from '../services/haptics';
 import { c, font, radius, space, shadowSm, brass } from '../../theme/tokens';
 import HapticPressable from '../components/HapticPressable';
+import VehicleIcon from '../components/VehicleIcon';
 
 // Offline-cached search (roadmap Phase 1, session-scoped): module-level so it
 // survives tab switches. A persistent cache needs AsyncStorage, which is a
@@ -28,6 +29,8 @@ interface Ride {
   vehicle_make?: string | null;
   vehicle_model?: string | null;
   vehicle_colour?: string | null;
+  /** Size class decided server-side; drives the icon riders scan for. */
+  vehicle_class?: string | null;
   vehicle_plate?: string | null;
   ac_available?: boolean;
   is_ev?: boolean;
@@ -278,10 +281,13 @@ export default function HomeScreen() {
                     {ride.driver_name}
                     {(ride as any).driver_rating ? `  ★ ${(ride as any).driver_rating}` : ''}
                   </Text>
-                  <Text style={styles.vehicle}>
-                    {vehicleLabel(ride)}{ride.is_ev ? ' · EV' : ''}{ride.ac_available ? ' · AC' : ''}
-                    {(ride as any).driver_rating_count ? ` · ${(ride as any).driver_rating_count} rated trips` : ''}
-                  </Text>
+                  <View style={styles.vehicleRow}>
+                    <VehicleIcon vehicleClass={ride.vehicle_class} />
+                    <Text style={styles.vehicle} numberOfLines={1}>
+                      {vehicleLabel(ride)}{ride.is_ev ? ' · EV' : ''}{ride.ac_available ? ' · AC' : ''}
+                      {(ride as any).driver_rating_count ? ` · ${(ride as any).driver_rating_count} rated trips` : ''}
+                    </Text>
+                  </View>
                 </View>
                 <View style={{ alignItems: 'flex-end' }}>
                   <Text style={styles.fare}>₹{Number(ride.price_split).toFixed(0)}</Text>
@@ -385,6 +391,7 @@ const styles = StyleSheet.create({
   badge: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: c.surfaceSunken, borderRadius: radius.pill, paddingHorizontal: 8, paddingVertical: 4 },
   badgeText: { fontFamily: font.sansSemibold, fontSize: 11, color: c.textSecondary },
   detour: { fontFamily: font.mono, fontSize: 11, color: c.textTertiary, marginLeft: 'auto' },
+  vehicleRow: { flexDirection: 'row', alignItems: 'center', gap: 2, marginTop: 1 },
   bookBtn: { backgroundColor: c.go, height: 46, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center', marginTop: space.md },
   bookBtnText: { fontFamily: font.sansBold, fontSize: 14.5, color: '#fff' },
 
