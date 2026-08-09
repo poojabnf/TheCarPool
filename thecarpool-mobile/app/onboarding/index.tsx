@@ -14,6 +14,7 @@ import {
 } from 'react-native';
 import { apiFetch } from '../services/api';
 import { useRouter } from 'expo-router';
+import * as ImagePicker from 'expo-image-picker';
 import { useAuthStore } from '../store/authStore';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import HapticPressable from '../components/HapticPressable';
@@ -118,11 +119,13 @@ function StepRole({ onNext }: { onNext: (data: any) => void }) {
 // ─── Step 1: Basic Profile ────────────────────────────────────────
 function StepProfile({ onNext }: { onNext: (data: any) => void }) {
   const [name, setName] = useState('');
-  const [employeeId, setEmployeeId] = useState('');
-  const [company, setCompany] = useState('');
-  const [workLocation, setWorkLocation] = useState('');
+  // Company / employee ID / work location were dropped: the app is open to
+  // anyone commuting, not just corporate employees, and asking for an employer
+  // we never verify was friction for no gain. An address is what actually helps
+  // match people on a route.
+  const [address, setAddress] = useState('');
 
-  const isValid = name.trim().length > 1 && company.trim().length > 1;
+  const isValid = name.trim().length > 1 && address.trim().length > 2;
 
   return (
     <ScrollView showsVerticalScrollIndicator={false}>
@@ -138,27 +141,15 @@ function StepProfile({ onNext }: { onNext: (data: any) => void }) {
         onChangeText={setName}
       />
       <Field
-        label="Company / Organisation *"
-        placeholder="e.g. Infosys, TCS, HDFC"
-        value={company}
-        onChangeText={setCompany}
-      />
-      <Field
-        label="Employee / Staff ID"
-        placeholder="Optional — for workplace verification"
-        value={employeeId}
-        onChangeText={setEmployeeId}
-      />
-      <Field
-        label="Work Location / Office Area"
-        placeholder="e.g. Cyber City, Gurugram"
-        value={workLocation}
-        onChangeText={setWorkLocation}
+        label="Address *"
+        placeholder="e.g. DLF Phase 5, Gurugram"
+        value={address}
+        onChangeText={setAddress}
       />
 
       <HapticPressable haptic="press"
         style={[styles.nextBtn, !isValid && styles.nextBtnDisabled]}
-        onPress={() => isValid && onNext({ name, employeeId, company, workLocation })}
+        onPress={() => isValid && onNext({ name, address })}
         activeOpacity={0.8}
       >
         <Text style={styles.nextBtnText}>Continue →</Text>
@@ -170,37 +161,54 @@ function StepProfile({ onNext }: { onNext: (data: any) => void }) {
 // ─── Step 2: Aadhaar ──────────────────────────────────────────────
 function StepAadhaar({ onNext }: { onNext: (data: any) => void }) {
   const [aadhaar, setAadhaar] = useState('');
-  const [stage, setStage] = useState<'input' | 'otp' | 'done'>('input');
-  const [otp, setOtp] = useState('');
+  // No OTP stage: we don't talk to UIDAI, so there is no OTP to send. The
+  // number is validated locally (12 digits + Verhoeff checksum, server-side)
+  // and then matched against the copy the user uploads.
+  const [stage, setStage] = useState<'input' | 'done'>('input');
   const [loading, setLoading] = useState(false);
 
   const formatted = aadhaar.replace(/(\d{4})(?=\d)/g, '$1 ').trim();
 
-  const handleSendOtp = () => {
-    if (aadhaar.replace(/\s/g, '').length !== 12) return;
-    setLoading(true);
-    setTimeout(() => {
-      setLoading(false);
-      setStage('otp');
-    }, 1500);
-  };
-
-  const handleVerifyOtp = async () => {
-    if (otp.length < 6) return;
-    setLoading(true);
+  // Capture the document itself. The server OCRs it and refuses if the image
+  // is blank, is a different document type, or carries a different number than
+  // the one typed — that cross-check is what stands in for a government API.
+  const captureDocument = async (source: 'camera' | 'library') => {
     try {
-      const res = await apiFetch('/api/safety/kyc/verify', {
-        method: 'POST',
-        body: JSON.stringify({ aadhaar_number: aadhaar.replace(/\s/g, '') })
-      });
-      if (res.ok) {
-        setStage('done');
-      } else {
-        Alert.alert('Verification Failed', 'Invalid Aadhaar details.');
+      const perm = source === 'camera'
+        ? await ImagePicker.requestCameraPermissionsAsync()
+        : await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!perm.granted) {
+        Alert.alert('Permission needed', 'Enable access in Settings to add your document.');
+        return;
       }
-    } catch (e) {
-      console.error(e);
-      Alert.alert('Error', 'Failed to verify Aadhaar.');
+      const opts: ImagePicker.ImagePickerOptions = {
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        quality: 0.7,
+        base64: true,
+      };
+      const result = source === 'camera'
+        ? await ImagePicker.launchCameraAsync(opts)
+        : await ImagePicker.launchImageLibraryAsync(opts);
+      if (result.canceled || !result.assets?.[0]?.base64) return;
+
+      setLoading(true);
+      const res = await apiFetch('/api/safety/kyc/document', {
+        method: 'POST',
+        body: JSON.stringify({
+          document_type: 'AADHAAR',
+          id_number: aadhaar.replace(/\s/g, ''),
+          image_base64: result.assets[0].base64,
+        }),
+      }, { timeoutMs: 45000 });
+
+      const data = await res.json().catch(() => ({} as any));
+      if (!res.ok) {
+        Alert.alert('Could not verify', data.message || data.error || 'Please try again with a clearer photo.');
+        return;
+      }
+      setStage('done');
+    } catch {
+      Alert.alert('Error', 'Could not check your document. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -209,10 +217,10 @@ function StepAadhaar({ onNext }: { onNext: (data: any) => void }) {
   if (stage === 'done') {
     return (
       <View style={styles.verifiedContainer}>
-        <Text style={styles.verifiedEmoji}>🎉</Text>
-        <Text style={styles.verifiedTitle}>Aadhaar Verified!</Text>
+        <Text style={styles.verifiedEmoji}>✅</Text>
+        <Text style={styles.verifiedTitle}>Aadhaar checked</Text>
         <Text style={styles.verifiedSub}>
-          Identity confirmed with UIDAI registry.{'\n'}Last 4 digits: ••••{' '}
+          The number and your uploaded copy match.{'\n'}Last 4 digits: ••••{' '}
           {aadhaar.slice(-4)}
         </Text>
         <HapticPressable haptic="press"
@@ -230,67 +238,36 @@ function StepAadhaar({ onNext }: { onNext: (data: any) => void }) {
     <ScrollView showsVerticalScrollIndicator={false}>
       <Text style={styles.stepTitle}>Aadhaar Verification</Text>
       <Text style={styles.stepSubtitle}>
-        Required by RBI guidelines for identity verification. Your Aadhaar is never stored.
+        Enter your number, then upload a photo of the same card so we can check they match.
       </Text>
 
-      {stage === 'input' ? (
-        <>
-          <InfoCard
-            icon="🔒"
-            text="We use DigiLocker API to verify your identity. No document is uploaded or stored."
-          />
-          <Field
-            label="Aadhaar Number *"
-            placeholder="XXXX XXXX XXXX"
-            value={formatted}
-            onChangeText={(t: string) => setAadhaar(t.replace(/\D/g, '').slice(0, 12))}
-            keyboardType="number-pad"
-            maxLength={14}
-          />
-          <HapticPressable haptic="press"
-            style={[
-              styles.nextBtn,
-              aadhaar.length < 12 && styles.nextBtnDisabled,
-            ]}
-            onPress={handleSendOtp}
-            disabled={loading || aadhaar.length < 12}
-            activeOpacity={0.8}
-          >
-            {loading ? (
-              <ActivityIndicator color="#fff" />
-            ) : (
-              <Text style={styles.nextBtnText}>Send OTP to Linked Mobile →</Text>
-            )}
-          </HapticPressable>
-        </>
-      ) : (
-        <>
-          <InfoCard
-            icon="📱"
-            text={`OTP sent to the mobile number linked with Aadhaar ending ••••${aadhaar.slice(-4)}`}
-          />
-          <Field
-            label="Enter 6-digit OTP *"
-            placeholder="• • • • • •"
-            value={otp}
-            onChangeText={(t: string) => setOtp(t.replace(/\D/g, '').slice(0, 6))}
-            keyboardType="number-pad"
-            maxLength={6}
-          />
-          <HapticPressable haptic="press"
-            style={[styles.nextBtn, otp.length < 6 && styles.nextBtnDisabled]}
-            onPress={handleVerifyOtp}
-            disabled={loading || otp.length < 6}
-            activeOpacity={0.8}
-          >
-            {loading ? (
-              <ActivityIndicator color="#fff" />
-            ) : (
-              <Text style={styles.nextBtnText}>Verify Aadhaar →</Text>
-            )}
-          </HapticPressable>
-        </>
-      )}
+      <InfoCard
+        icon="🔒"
+        text="We check the number's format and match it against the copy you upload. Only the last 4 digits are kept — the image is deleted after 15 days."
+      />
+      <Field
+        label="Aadhaar Number *"
+        placeholder="XXXX XXXX XXXX"
+        value={formatted}
+        onChangeText={(t: string) => setAadhaar(t.replace(/\D/g, '').slice(0, 12))}
+        keyboardType="number-pad"
+        maxLength={14}
+      />
+
+      <HapticPressable haptic="press"
+        style={[styles.nextBtn, (aadhaar.length < 12 || loading) && styles.nextBtnDisabled]}
+        onPress={() => Alert.alert('Upload your Aadhaar', 'Add a clear photo of the card', [
+          { text: 'Take photo', onPress: () => captureDocument('camera') },
+          { text: 'Choose from gallery', onPress: () => captureDocument('library') },
+          { text: 'Cancel', style: 'cancel' },
+        ])}
+        disabled={loading || aadhaar.length < 12}
+        activeOpacity={0.8}
+      >
+        {loading
+          ? <ActivityIndicator color="#fff" />
+          : <Text style={styles.nextBtnText}>Upload Aadhaar copy →</Text>}
+      </HapticPressable>
     </ScrollView>
   );
 }
@@ -464,7 +441,7 @@ function StepSelfie({ onNext }: { onNext: () => void }) {
 
       <InfoCard
         icon="🔒"
-        text="Selfie is matched against your Aadhaar photo via DigiLocker. It is not stored on our servers."
+        text="Your selfie is used to confirm a real person is signing up. We do not match it against any government database."
       />
 
       {stage !== 'done' ? (
@@ -563,9 +540,7 @@ export default function OnboardingScreen() {
           method: 'POST',
           body: JSON.stringify({
             name: fullProfile.name,
-            company: fullProfile.company,
-            employeeId: fullProfile.employeeId,
-            workLocation: fullProfile.workLocation,
+            address: fullProfile.address,
             role: fullProfile.role,
           }),
         });
