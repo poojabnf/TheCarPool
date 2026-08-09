@@ -20,6 +20,18 @@ export type DocumentType = 'AADHAAR' | 'PAN' | 'DL' | 'PASSPORT' | 'VOTER_ID';
 
 export const DOCUMENT_TYPES: DocumentType[] = ['AADHAAR', 'PAN', 'DL', 'PASSPORT', 'VOTER_ID'];
 
+/**
+ * How much of the number on the photo has to match what the user typed.
+ *
+ * FULL  — every character. Used where the number is always printed in full.
+ * LAST4 — only the final 4 characters. Required for Aadhaar: the masked form
+ *         UIDAI itself encourages prints as "XXXX XXXX 1234", so demanding a
+ *         full match would reject the very documents we want people to send.
+ *         It is a weaker check (1-in-10,000 of colliding by chance), which is
+ *         why it is opt-in per document type rather than the default.
+ */
+export type NumberMatchMode = 'FULL' | 'LAST4';
+
 export interface DocumentSpec {
   type: DocumentType;
   label: string;
@@ -29,6 +41,8 @@ export interface DocumentSpec {
   hint: string;
   /** Words that should appear on a photo of this document (upper-cased OCR text). */
   keywords: string[];
+  /** How strictly the number on the image must match the number typed. */
+  numberMatch: NumberMatchMode;
 }
 
 export const DOCUMENT_SPECS: Record<DocumentType, DocumentSpec> = {
@@ -38,6 +52,8 @@ export const DOCUMENT_SPECS: Record<DocumentType, DocumentSpec> = {
     hasExpiry: false,
     hint: '12 digits, e.g. 2345 6789 0123',
     keywords: ['AADHAAR', 'AADHAR', 'UIDAI', 'UNIQUE IDENTIFICATION', 'GOVERNMENT OF INDIA'],
+    // Masked Aadhaar only prints the last 4 digits.
+    numberMatch: 'LAST4',
   },
   PAN: {
     type: 'PAN',
@@ -45,6 +61,8 @@ export const DOCUMENT_SPECS: Record<DocumentType, DocumentSpec> = {
     hasExpiry: false,
     hint: '10 characters, e.g. ABCPD1234E',
     keywords: ['INCOME TAX', 'PERMANENT ACCOUNT', 'PAN', 'GOVT. OF INDIA', 'GOVT OF INDIA'],
+    // PAN is always printed in full — demand the whole thing.
+    numberMatch: 'FULL',
   },
   DL: {
     type: 'DL',
@@ -52,6 +70,7 @@ export const DOCUMENT_SPECS: Record<DocumentType, DocumentSpec> = {
     hasExpiry: true,
     hint: 'State code + 13 digits, e.g. DL0420110149646',
     keywords: ['DRIVING LICENCE', 'DRIVING LICENSE', 'TRANSPORT', 'DL NO', 'LICENCE'],
+    numberMatch: 'FULL',
   },
   PASSPORT: {
     type: 'PASSPORT',
@@ -59,6 +78,7 @@ export const DOCUMENT_SPECS: Record<DocumentType, DocumentSpec> = {
     hasExpiry: true,
     hint: '1 letter + 7 digits, e.g. M1234567',
     keywords: ['PASSPORT', 'REPUBLIC OF INDIA', 'भारत गणराज्य'],
+    numberMatch: 'FULL',
   },
   VOTER_ID: {
     type: 'VOTER_ID',
@@ -66,6 +86,7 @@ export const DOCUMENT_SPECS: Record<DocumentType, DocumentSpec> = {
     hasExpiry: false,
     hint: '3 letters + 7 digits, e.g. ABC1234567',
     keywords: ['ELECTION COMMISSION', 'ELECTORS PHOTO', 'EPIC', 'IDENTITY CARD'],
+    numberMatch: 'FULL',
   },
 };
 

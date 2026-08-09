@@ -182,9 +182,41 @@ describe('crossCheckDocument', () => {
   });
 
   it('rejects an Aadhaar photo whose number differs from the one typed', () => {
-    // The headline case: right document type, wrong card.
+    // The headline case: right document type, wrong card. Differs in the last
+    // 4 digits (…1238 vs …0124), which is what Aadhaar matching compares.
     const r = crossCheckDocument({ type: 'AADHAAR', idNumber: '345678901238', ocrText: aadhaarText });
     expect(r.ok).toBe(false);
+    expect(r.checks.idNumberMatches).toBe(false);
+    expect(r.reasons.join(' ')).toMatch(/last 4 digits/i);
+  });
+
+  it('accepts a MASKED Aadhaar showing only the last 4 digits', () => {
+    // The form UIDAI encourages. A full-number match would reject this.
+    const masked = `GOVERNMENT OF INDIA
+      Ravi Kumar
+      XXXX XXXX 0124
+      UNIQUE IDENTIFICATION AUTHORITY OF INDIA`;
+    const r = crossCheckDocument({ type: 'AADHAAR', idNumber: AADHAAR_OK, ocrText: masked });
+    expect(r.checks.idNumberMatches).toBe(true);
+    expect(r.ok).toBe(true);
+  });
+
+  it('does not accept a stray 4-digit number as an Aadhaar match', () => {
+    // 0124 appears, but only as part of a longer unrelated run and a PIN — the
+    // match is anchored to the end of an alphanumeric run, not a loose search.
+    const decoy = `GOVERNMENT OF INDIA UIDAI
+      Address: 01245 Sector 9, PIN 122001
+      XXXX XXXX 7788`;
+    const r = crossCheckDocument({ type: 'AADHAAR', idNumber: AADHAAR_OK, ocrText: decoy });
+    expect(r.checks.idNumberMatches).toBe(false);
+  });
+
+  it('requires the FULL number for PAN, not just the last 4', () => {
+    // Same trailing 234E, different card — must be rejected.
+    const panText = `INCOME TAX DEPARTMENT
+      Permanent Account Number
+      ZZZPQ234E`;
+    const r = crossCheckDocument({ type: 'PAN', idNumber: 'ABCPD1234E', ocrText: panText });
     expect(r.checks.idNumberMatches).toBe(false);
     expect(r.reasons.join(' ')).toMatch(/does not match/i);
   });

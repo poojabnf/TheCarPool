@@ -128,11 +128,36 @@ export function crossCheckDocument(input: CrossCheckInput): CrossCheckResult {
   }
 
   // 3. Does the number on the card match the number typed?
+  //
+  // FULL  — the whole number must appear (PAN, DL, passport, voter ID).
+  // LAST4 — only the final 4 characters (Aadhaar), because the masked form
+  //         prints as "XXXX XXXX 1234". Anchored to the END of an alphanumeric
+  //         run on the card rather than searched loosely: a bare substring
+  //         search for "1234" would happily match a PIN code, a date, or a
+  //         document number that merely contains those digits.
   const typed = canonical(idNumber);
   const cardCanonical = canonical(alnum(text));
-  const idNumberMatches = typed.length > 0 && cardCanonical.includes(typed);
+  let idNumberMatches = false;
+
+  if (typed.length > 0) {
+    if (spec.numberMatch === 'FULL') {
+      idNumberMatches = cardCanonical.includes(typed);
+    } else {
+      const suffix = typed.slice(-4);
+      // Split into runs FIRST, then canonicalise each one. Canonicalising the
+      // whole text first would strip the whitespace that separates the runs,
+      // collapsing the card into a single token that never ends with anything.
+      const runs = (text.toUpperCase().match(/[A-Z0-9]{4,}/g) || []).map(canonical);
+      idNumberMatches = runs.some((run) => run.endsWith(suffix));
+    }
+  }
+
   if (hasText && !idNumberMatches) {
-    reasons.push(`The ${spec.label} number on the image does not match the number you entered.`);
+    reasons.push(
+      spec.numberMatch === 'LAST4'
+        ? `The last 4 digits on the image don't match the ${spec.label} number you entered.`
+        : `The ${spec.label} number on the image does not match the number you entered.`
+    );
   }
 
   // 4. If the card carries an expiry, has it passed?
