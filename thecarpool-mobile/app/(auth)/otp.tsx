@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { View, Text, TextInput, StyleSheet, StatusBar, Animated } from 'react-native';
+import { View, Text, TextInput, StyleSheet, StatusBar, Animated, ScrollView, KeyboardAvoidingView, Platform } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import auth from '@react-native-firebase/auth';
@@ -96,13 +96,23 @@ export default function OtpScreen() {
   };
 
   return (
-    <View style={[styles.screen, { paddingTop: insets.top + space.sm }]}>
+    <KeyboardAvoidingView style={styles.screen} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <StatusBar barStyle="dark-content" backgroundColor={c.bgApp} />
-      <HapticPressable style={styles.back} onPress={() => (router.canGoBack() ? router.back() : router.replace('/(auth)/login'))}>
-        <Text style={styles.backText}>← Back</Text>
-      </HapticPressable>
+      {/* The number pad is up the whole time on this screen, so the layout has
+          to survive losing half its height: scrollable content plus a body that
+          can't shrink below its own size (a bare flex:1 collapsed and let the
+          heading overlap the back button). */}
+      <ScrollView
+        contentContainerStyle={[styles.scrollContent, { paddingTop: insets.top + space.sm }]}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+        bounces={false}
+      >
+        <HapticPressable style={styles.back} onPress={() => (router.canGoBack() ? router.back() : router.replace('/(auth)/login'))}>
+          <Text style={styles.backText}>← Back</Text>
+        </HapticPressable>
 
-      <View style={styles.body}>
+        <View style={styles.body}>
         <Text style={styles.h1}>Enter the code</Text>
         <Text style={styles.sub}>We sent a 6-digit code to{'\n'}<Text style={styles.phone}>+91 {phone}</Text></Text>
 
@@ -141,16 +151,20 @@ export default function OtpScreen() {
             </Text>
           </HapticPressable>
         </View>
-      </View>
-    </View>
+        </View>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: c.bgApp, paddingHorizontal: space.xl },
-  back: { paddingVertical: 8 },
+  screen: { flex: 1, backgroundColor: c.bgApp },
+  scrollContent: { flexGrow: 1, paddingHorizontal: space.xl, paddingBottom: space.xl },
+  back: { paddingVertical: 8, alignSelf: 'flex-start' },
   backText: { fontFamily: font.sansSemibold, fontSize: 15, color: c.textSecondary },
-  body: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingBottom: 60 },
+  // minHeight stops this collapsing (and overlapping the back button) once the
+  // number pad takes half the screen.
+  body: { flex: 1, justifyContent: 'center', alignItems: 'center', minHeight: 340, paddingTop: 24, paddingBottom: 24 },
   h1: { fontFamily: font.sansExtrabold, fontSize: 28, color: c.textPrimary, letterSpacing: -0.6 },
   sub: { fontFamily: font.sans, fontSize: 14.5, color: c.textTertiary, textAlign: 'center', lineHeight: 22, marginTop: 8, marginBottom: 28 },
   phone: { fontFamily: font.monoBold, color: c.textPrimary },

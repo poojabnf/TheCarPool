@@ -1,6 +1,6 @@
 import React, { useState, useRef } from 'react';
 import {
-  View, Text, TextInput, TouchableOpacity, StyleSheet, StatusBar,
+  View, Text, TextInput, ScrollView, StyleSheet, StatusBar,
   KeyboardAvoidingView, Platform, Animated, Alert, ActivityIndicator, Linking,
 } from 'react-native';
 import { useRouter } from 'expo-router';
@@ -92,14 +92,25 @@ export default function LoginScreen() {
   return (
     <KeyboardAvoidingView style={styles.screen} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <StatusBar barStyle="dark-content" backgroundColor={c.bgApp} />
-      <Animated.View style={[styles.content, { paddingTop: insets.top + 40, paddingBottom: insets.bottom + 24, opacity: fadeAnim, transform: [{ translateY: slideAnim }] }]}>
+      {/* Scrollable so the layout can never be squeezed shorter than its own
+          content. Previously the hero was a bare flex:1 block: when the
+          keyboard opened it collapsed towards zero height and, because RN
+          doesn't clip overflow, the headline painted straight over the brand
+          row above it. */}
+      <ScrollView
+        contentContainerStyle={[styles.content, { paddingTop: insets.top + 40, paddingBottom: insets.bottom + 24 }]}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+        bounces={false}
+      >
+        <Animated.View style={{ flex: 1, opacity: fadeAnim, transform: [{ translateY: slideAnim }] }}>
         {/* Brand */}
         <View style={styles.brandRow}>
           <View style={styles.logoBox}><Leaf color="#fff" size={18} strokeWidth={2.4} /></View>
           <Text style={styles.brandName}>TheCarPool</Text>
         </View>
 
-        <View style={{ flex: 1, justifyContent: 'center' }}>
+        <View style={styles.hero}>
           <Text style={styles.h1}>Share the drive.</Text>
           <Text style={styles.h1accent}>Split the fare.</Text>
           <Text style={styles.sub}>Verified workplace carpooling for Indian professionals.</Text>
@@ -143,15 +154,19 @@ export default function LoginScreen() {
           {' '}and{' '}
           <Text style={styles.link} onPress={() => Linking.openURL(PRIVACY_URL)}>Privacy Policy</Text>.
         </Text>
-      </Animated.View>
+        </Animated.View>
+      </ScrollView>
     </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: c.bgApp },
-  content: { flex: 1, paddingHorizontal: space.xl },
+  content: { flexGrow: 1, paddingHorizontal: space.xl },
   brandRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  // minHeight is what actually prevents the overlap: flex:1 alone will happily
+  // shrink to nothing when the keyboard steals the vertical space.
+  hero: { flex: 1, justifyContent: 'center', minHeight: 168, paddingVertical: 24 },
   logoBox: { width: 36, height: 36, borderRadius: radius.md, backgroundColor: c.go, alignItems: 'center', justifyContent: 'center' },
   brandName: { fontFamily: font.sansExtrabold, fontSize: 20, color: c.textPrimary, letterSpacing: -0.4 },
 

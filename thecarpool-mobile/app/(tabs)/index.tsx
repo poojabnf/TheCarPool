@@ -25,9 +25,24 @@ interface Ride {
   price_split: number;
   departure_time: string;
   vehicle_type?: string;
+  vehicle_make?: string | null;
+  vehicle_model?: string | null;
+  vehicle_colour?: string | null;
+  vehicle_plate?: string | null;
   ac_available?: boolean;
   is_ev?: boolean;
   pickup_deviation?: number;
+}
+
+/**
+ * "Maruti Swift · White" when the driver filled it in, falling back to the
+ * bare vehicle type so older rides (posted before these fields existed) still
+ * render something sensible rather than an empty line.
+ */
+function vehicleLabel(ride: Ride): string {
+  const named = [ride.vehicle_make, ride.vehicle_model].filter(Boolean).join(' ').trim();
+  const head = named || (ride.vehicle_type ? ride.vehicle_type.charAt(0) + ride.vehicle_type.slice(1).toLowerCase() : 'Car');
+  return [head, ride.vehicle_colour || null].filter(Boolean).join(' · ');
 }
 
 type Coords = { lat: number; lng: number };
@@ -163,7 +178,8 @@ export default function HomeScreen() {
       params: {
         ride_id: String(ride.id),
         driver_name: ride.driver_name,
-        vehicle: `${ride.vehicle_type || 'Car'}${ride.ac_available ? ' · AC' : ''}`,
+        vehicle: `${vehicleLabel(ride)}${ride.ac_available ? ' · AC' : ''}`,
+        vehicle_plate: ride.vehicle_plate || '',
         price_split: String(ride.price_split),
         seats: String(seats),
         pickup_lat: String(originCoords.lat), pickup_lng: String(originCoords.lng),
@@ -263,7 +279,7 @@ export default function HomeScreen() {
                     {(ride as any).driver_rating ? `  ★ ${(ride as any).driver_rating}` : ''}
                   </Text>
                   <Text style={styles.vehicle}>
-                    {(ride.vehicle_type || 'Car')}{ride.is_ev ? ' · EV' : ''}{ride.ac_available ? ' · AC' : ''}
+                    {vehicleLabel(ride)}{ride.is_ev ? ' · EV' : ''}{ride.ac_available ? ' · AC' : ''}
                     {(ride as any).driver_rating_count ? ` · ${(ride as any).driver_rating_count} rated trips` : ''}
                   </Text>
                 </View>

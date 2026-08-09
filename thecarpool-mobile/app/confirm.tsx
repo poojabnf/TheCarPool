@@ -194,7 +194,10 @@ export default function ConfirmPay() {
             <View style={styles.disc}><Text style={styles.discText}>{initials(p.driver_name)}</Text></View>
             <View style={{ flex: 1 }}>
               <Text style={styles.driverName}>{p.driver_name || 'Driver'}</Text>
-              <Text style={styles.vehicle}>{p.vehicle || 'Shared ride'}</Text>
+              <Text style={styles.vehicle}>
+                {p.vehicle || 'Shared ride'}
+                {p.vehicle_plate ? `  ·  ${p.vehicle_plate}` : ''}
+              </Text>
             </View>
             <View style={styles.seatPill}><Text style={styles.seatPillText}>{seats} seat{seats > 1 ? 's' : ''}</Text></View>
           </View>

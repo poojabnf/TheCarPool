@@ -80,6 +80,12 @@ export default function DriverInterface() {
   const [departure, setDeparture] = useState<{ label: string; iso: string }>(departurePresets()[0]);
   const [distanceKm, setDistanceKm] = useState('');
   const [vehicleType, setVehicleType] = useState<'CAR' | 'BIKE'>('CAR');
+  // Riders see these on the match card before booking, so they know which
+  // vehicle they're getting into.
+  const [vehicleMake, setVehicleMake] = useState('');
+  const [vehicleModel, setVehicleModel] = useState('');
+  const [vehicleColour, setVehicleColour] = useState('');
+  const [vehiclePlate, setVehiclePlate] = useState('');
   const [isRecurring, setIsRecurring] = useState(false);
   const [selectedDays, setSelectedDays] = useState<number[]>([]);
   const [acAvailable, setAcAvailable] = useState(true);
@@ -387,6 +393,10 @@ export default function DriverInterface() {
           price_split: price,
           departure_time: departure.iso,
           vehicle_type: vehicleType,
+          vehicle_make: vehicleMake.trim(),
+          vehicle_model: vehicleModel.trim(),
+          vehicle_colour: vehicleColour.trim(),
+          vehicle_plate: vehiclePlate.trim(),
           ac_available: acAvailable,
           music_allowed: musicAllowed,
           smoking_allowed: smokingAllowed,
@@ -696,6 +706,53 @@ export default function DriverInterface() {
                   <Bike color={vehicleType === 'BIKE' ? '#fff' : colors.textMuted} size={18} style={{marginRight: 6}} />
                   <Text style={[styles.vehicleSelectBtnText, vehicleType === 'BIKE' && styles.vehicleSelectBtnTextActive]}>Bike Pool</Text>
                 </HapticPressable>
+              </View>
+            </View>
+
+            {/* Vehicle details — surfaced to riders on the match card */}
+            <View style={styles.formGroup}>
+              <Text style={styles.formLabel}>
+                {vehicleType === 'BIKE' ? 'Bike details' : 'Car details'}
+              </Text>
+              <Text style={styles.formHint}>
+                Riders see this before booking, so they know which vehicle to look for.
+              </Text>
+              <View style={styles.vehicleDetailRow}>
+                <TextInput
+                  style={[styles.formInput, { flex: 1 }]}
+                  placeholder={vehicleType === 'BIKE' ? 'Make (e.g. Honda)' : 'Make (e.g. Maruti)'}
+                  placeholderTextColor={colors.inputPlaceholder}
+                  value={vehicleMake}
+                  onChangeText={setVehicleMake}
+                  maxLength={40}
+                />
+                <TextInput
+                  style={[styles.formInput, { flex: 1 }]}
+                  placeholder={vehicleType === 'BIKE' ? 'Model (e.g. Activa)' : 'Model (e.g. Swift)'}
+                  placeholderTextColor={colors.inputPlaceholder}
+                  value={vehicleModel}
+                  onChangeText={setVehicleModel}
+                  maxLength={40}
+                />
+              </View>
+              <View style={styles.vehicleDetailRow}>
+                <TextInput
+                  style={[styles.formInput, { flex: 1 }]}
+                  placeholder="Colour (e.g. White)"
+                  placeholderTextColor={colors.inputPlaceholder}
+                  value={vehicleColour}
+                  onChangeText={setVehicleColour}
+                  maxLength={40}
+                />
+                <TextInput
+                  style={[styles.formInput, { flex: 1 }]}
+                  placeholder="Number plate"
+                  placeholderTextColor={colors.inputPlaceholder}
+                  value={vehiclePlate}
+                  onChangeText={(t) => setVehiclePlate(t.toUpperCase())}
+                  autoCapitalize="characters"
+                  maxLength={20}
+                />
               </View>
             </View>
 
@@ -1094,6 +1151,8 @@ const styles = StyleSheet.create({
   formTitle: { fontSize: 18, fontWeight: 'bold', color: colors.text },
   formGroup: { marginBottom: 16 },
   formLabel: { fontSize: 13, color: colors.text, fontWeight: 'bold', marginBottom: 8 },
+  formHint: { fontSize: 11.5, color: colors.textMuted, marginTop: -4, marginBottom: 8, lineHeight: 16 },
+  vehicleDetailRow: { flexDirection: 'row', gap: 8, marginBottom: 8 },
   formSubLabel: { fontSize: 11, color: colors.textMuted, marginTop: 2 },
   formInput: { backgroundColor: colors.inputBackground, borderRadius: 8, height: 44, paddingHorizontal: 12, color: colors.text, borderWidth: 1, borderColor: colors.cardBorder },
   suggBox: { backgroundColor: colors.inputBackground, borderRadius: 8, marginTop: 4, borderWidth: 1, borderColor: colors.cardBorder },

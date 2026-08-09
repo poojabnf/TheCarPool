@@ -10,6 +10,18 @@ function round2(n: number): number {
   return Math.round((n + Number.EPSILON) * 100) / 100;
 }
 
+/**
+ * Normalise a free-text vehicle field. Trimmed, length-capped so it can't be
+ * used to smuggle a paragraph into a rider-facing card, and null when empty so
+ * the UI can fall back cleanly rather than rendering "".
+ */
+function clean(v: unknown, upper = false): string | null {
+  if (typeof v !== 'string') return null;
+  const t = v.trim().replace(/\s+/g, ' ').slice(0, 40);
+  if (!t) return null;
+  return upper ? t.toUpperCase() : t;
+}
+
 interface CreateRideBody {
   driver_id: string | number;
   route_geojson: any; // GeoJSON LineString representing route
@@ -17,6 +29,11 @@ interface CreateRideBody {
   price_split: number;
   departure_time: string;
   vehicle_type?: 'CAR' | 'BIKE';
+  // Shown to riders before they book so they know what they're getting into.
+  vehicle_make?: string;
+  vehicle_model?: string;
+  vehicle_colour?: string;
+  vehicle_plate?: string;
   music_allowed?: boolean;
   smoking_allowed?: boolean;
   chattiness?: 'QUIET' | 'MEDIUM' | 'TALKATIVE';
@@ -145,7 +162,8 @@ export async function rideRoutes(fastify: FastifyInstance) {
       driver_id, route_geojson, seats_total, price_split, departure_time,
       vehicle_type = 'CAR', music_allowed = true, smoking_allowed = false,
       chattiness = 'MEDIUM', ac_available = true, women_only = false,
-      ride_type = 'COMMUTE', event_tag
+      ride_type = 'COMMUTE', event_tag,
+      vehicle_make, vehicle_model, vehicle_colour, vehicle_plate
     } = request.body as CreateRideBody;
 
     if (!['COMMUTE', 'INTERCITY', 'EVENT'].includes(ride_type)) {
@@ -244,6 +262,10 @@ export async function rideRoutes(fastify: FastifyInstance) {
         price_split: Number(price_split),
         departure_time,
         vehicle_type,
+        vehicle_make: clean(vehicle_make),
+        vehicle_model: clean(vehicle_model),
+        vehicle_colour: clean(vehicle_colour),
+        vehicle_plate: clean(vehicle_plate, true),
         music_allowed,
         smoking_allowed,
         chattiness,
@@ -421,6 +443,10 @@ export async function rideRoutes(fastify: FastifyInstance) {
             price_split: ride.price_split,
             departure_time: ride.departure_time,
             vehicle_type: ride.vehicle_type,
+            vehicle_make: ride.vehicle_make ?? null,
+            vehicle_model: ride.vehicle_model ?? null,
+            vehicle_colour: ride.vehicle_colour ?? null,
+            vehicle_plate: ride.vehicle_plate ?? null,
             music_allowed: ride.music_allowed,
             smoking_allowed: ride.smoking_allowed,
             chattiness: ride.chattiness,
