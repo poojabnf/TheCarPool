@@ -189,7 +189,21 @@ async function scenarioHappyPath(riderToken, driverToken) {
   check('rider debited by fare', riderBefore - (await walletOf(RIDER)), fare);
 
   const mine = await callApi(riderToken, '/api/bookings/mine');
-  const otp = mine.data.bookings.find((x) => x.id === b.data.id)?.boarding_otp;
+  const bookingsList = Array.isArray(mine.data) ? mine.data : (mine.data?.bookings || []);
+  const otp = bookingsList.find((x) => x.id === b.data.id)?.boarding_otp;
+
+  // Fail loudly here rather than limping on with an undefined OTP. The first
+  // run did exactly that: verification 400'd, the ride completed as a no-show,
+  // and the 5% payout looked like a payout bug. The actual cause was
+  // /api/bookings/mine 500ing on a missing Firestore composite index — a
+  // production outage that a soft failure here would have kept hiding.
+  if (!otp) {
+    console.log(`  FAIL  could not read boarding OTP from /api/bookings/mine`);
+    console.log(`        status=${mine.status} bookings=${bookingsList.length} body=${JSON.stringify(mine.data).slice(0, 200)}`);
+    console.log('        -> riders cannot see their code, so boarding can never be verified');
+    fail++;
+    return;
+  }
   note(`boarding OTP issued to rider: ${otp}`);
 
   const bad = await callApi(driverToken, `/api/bookings/${b.data.id}/verify-boarding-otp`, {
@@ -250,11 +264,19 @@ async function scenarioCancellations(riderToken) {
 
 async function scenarioUnpaidRejected(riderToken) {
   console.log('\n[4] Payment enforcement — a seat cannot be booked without funds');
-  const rideId = await makeRide({ pricePerSeat: 5000, minutesFromNow: 600 });
+  // Price the seat ABOVE the rider's actual balance. The first version of this
+  // test asked for 5000 against a 20000 float, which is simply a funded
+  // booking — it asserted the wrong thing and "failed" on correct behaviour.
+  const balance = await walletOf(RIDER);
+  const fare = Math.round(balance + 1000);
+  const rideId = await makeRide({ pricePerSeat: fare, minutesFromNow: 600 });
+  note(`wallet holds ${balance}, seat priced at ${fare}`);
+
   const r = await book(riderToken, rideId);
   check('insufficient wallet rejected (402)', r.status, 402);
   const ride = (await db.collection('rides').doc(rideId).get()).data();
   check('seat NOT consumed on rejection', ride.seats_available, 4);
+  check('wallet untouched by the rejected booking', await walletOf(RIDER), balance);
 }
 
 async function cleanup() {

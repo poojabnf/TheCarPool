@@ -1,0 +1,23 @@
+{
+  "indexes": [
+    {
+      "_comment": "GET /api/bookings/mine — the rider's booking list, and the ONLY place a rider can read their boarding OTP. Without this index the query throws FAILED_PRECONDITION, the route 500s, and no driver can ever verify boarding (so every trip settles as a no-show at 5%).",
+      "collectionGroup": "bookings",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "rider_id", "order": "ASCENDING" },
+        { "fieldPath": "created_at", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "_comment": "POST /api/rides/search — the candidate scan. Without this index no rider can find any ride at all.",
+      "collectionGroup": "rides",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "departure_time", "order": "ASCENDING" }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}
