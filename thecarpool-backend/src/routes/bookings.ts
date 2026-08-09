@@ -30,7 +30,14 @@ const CreateBookingSchema = z.object({
   drop_lat: z.number(),
   // Funding. A booking cannot exist without one of these covering the full
   // total — there is no "book now, pay later" path.
-  payment_method: z.enum(['RAZORPAY', 'WALLET']),
+  //
+  // Defaults to WALLET for backwards compatibility: builds shipped before this
+  // change don't send the field at all, and they top the wallet up via
+  // /payments/verify immediately before booking. Treating them as wallet
+  // payments keeps those clients working AND still enforces full payment (the
+  // wallet debit fails if the balance doesn't cover the fare). Making this
+  // field required would 400 every booking from every installed app.
+  payment_method: z.enum(['RAZORPAY', 'WALLET']).optional().default('WALLET'),
   razorpay_payment_id: z.string().min(1).optional(),
   /** Rider opted into the optional journey insurance. */
   insurance_opted: z.boolean().optional().default(false),
