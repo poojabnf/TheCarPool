@@ -152,6 +152,7 @@ export default function RootLayout() {
           <Stack.Screen name="onboarding" options={{ headerShown: false }} />
           <Stack.Screen name="trip/[id]" options={{ headerShown: false }} />
           <Stack.Screen name="confirm" options={{ headerShown: false }} />
+          <Stack.Screen name="licence" options={{ headerShown: false }} />
           <Stack.Screen name="components/AiVoiceModal" options={{ presentation: 'modal' }} />
           <Stack.Screen name="components/KycUploadModal" options={{ presentation: 'modal' }} />
         </Stack>

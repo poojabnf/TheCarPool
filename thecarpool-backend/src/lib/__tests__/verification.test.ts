@@ -93,6 +93,31 @@ describe('canOfferRide', () => {
   });
 });
 
+describe('enforcement switch (testing mode)', () => {
+  it('waves everyone through when enforcement is off', () => {
+    // Used while testing so the tiers can be disabled without deleting them.
+    expect(canBookRide(PHONE_ONLY, { enforced: false }).allowed).toBe(true);
+    expect(canOfferRide(PHONE_ONLY, { enforced: false }).allowed).toBe(true);
+  });
+
+  it('reports the relaxed state in the summary too', () => {
+    // The app renders the summary, so it must unlock in step with the server.
+    const s = verificationSummary(PHONE_ONLY, { enforced: false });
+    expect(s.can_book).toBe(true);
+    expect(s.can_offer_rides).toBe(true);
+    // The underlying facts stay honest — they genuinely aren't verified.
+    expect(s.level).toBe(1);
+    expect(s.id_verified).toBe(false);
+    expect(s.licence_verified).toBe(false);
+  });
+
+  it('enforces by default, so forgetting the flag fails safe', () => {
+    expect(canBookRide(PHONE_ONLY).allowed).toBe(false);
+    expect(canBookRide(PHONE_ONLY, {}).allowed).toBe(false);
+    expect(canOfferRide(PHONE_ONLY, { enforced: true }).allowed).toBe(false);
+  });
+});
+
 describe('hasVerifiedLicence', () => {
   it('is true only when explicitly verified', () => {
     expect(hasVerifiedLicence(PARTNER)).toBe(true);

@@ -5,7 +5,7 @@ import { requireAuth } from '../middleware/auth';
 import { canTransition, isSettableStatus, SETTABLE_STATUSES } from '../lib/rideLifecycle';
 import { noShowOutcome } from '../lib/fees';
 import { planPayout, maskPayoutMethod } from '../lib/payouts';
-import { canOfferRide } from '../lib/verification';
+import { canOfferRide, verificationEnforced } from '../lib/verification';
 
 /** Rounds to paise — wallet balances are rupees held as JS numbers. */
 function round2(n: number): number {
@@ -224,7 +224,7 @@ export async function rideRoutes(fastify: FastifyInstance) {
       const userData = userDoc.data();
       // Offering a ride is the moment we ask for a licence — a rider becoming a
       // partner is prompted here rather than during signup.
-      const offerGate = canOfferRide(userData);
+      const offerGate = canOfferRide(userData, { enforced: verificationEnforced() });
       if (!offerGate.allowed) {
         return reply.code(403).send({
           error: offerGate.code,

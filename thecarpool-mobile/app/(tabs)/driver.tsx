@@ -57,7 +57,11 @@ export default function DriverInterface() {
   // A rider who never drives is never asked for a licence.
   const verification = useAuthStore((s) => s.verification);
   const idVerified = verification?.id_verified ?? (kycStatus === 'verified');
-  const canOfferRides = verification?.can_offer_rides ?? false;
+  // Fall back to the PRE-TIER behaviour when the server doesn't send a
+  // verification summary. Defaulting to false would lock every existing driver
+  // out of offering rides the moment this ships against a backend that hasn't
+  // been deployed yet.
+  const canOfferRides = verification?.can_offer_rides ?? (kycStatus === 'verified');
   const needsLicenceOnly = idVerified && !canOfferRides;
   const [isOnline, setIsOnline] = useState(false);
   const [isPosting, setIsPosting] = useState(false);
@@ -492,7 +496,11 @@ export default function DriverInterface() {
           </View>
         </View>
 
-        <HapticPressable haptic="press" style={styles.upgradeBtn} onPress={() => router.push('/onboarding')}>
+        <HapticPressable
+          haptic="press"
+          style={styles.upgradeBtn}
+          onPress={() => router.push(needsLicenceOnly ? '/licence' : '/onboarding')}
+        >
           <Text style={styles.upgradeBtnText}>
             {needsLicenceOnly ? 'Add my driving licence' : 'Verify my ID'}
           </Text>

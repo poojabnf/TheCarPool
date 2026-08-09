@@ -1,7 +1,7 @@
 import { FastifyInstance } from 'fastify';
 import { db, storage } from '../server';
 import { requireAuth, requireAdmin } from '../middleware/auth';
-import { verificationSummary } from '../lib/verification';
+import { verificationSummary, verificationEnforced } from '../lib/verification';
 
 const AVATAR_URL_TTL_MS = 7 * 24 * 60 * 60 * 1000; // signed read URLs last 7 days; refreshed on /me + upload
 
@@ -53,7 +53,7 @@ export async function userRoutes(fastify: FastifyInstance) {
         photo_url,
         // Single source of truth for what this user may do, so the app never
         // has to re-derive the rules and get them subtly different.
-        verification: verificationSummary(data),
+        verification: verificationSummary(data, { enforced: verificationEnforced() }),
       });
     } catch (err: any) {
       fastify.log.error(err, 'Failed to load user profile');

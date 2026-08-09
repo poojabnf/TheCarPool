@@ -46,6 +46,18 @@ export function hasVerifiedLicence(user: VerifiableUser | null | undefined): boo
 
 export type RequiredAction = 'VERIFY_ID' | 'ADD_LICENCE' | 'REAL_KYC' | null;
 
+/**
+ * Options for the gates.
+ *
+ * `enforced: false` waves everyone through. It exists so the tiers can be
+ * switched off during testing WITHOUT deleting the rules — the code stays,
+ * the tests stay, and turning it back on is one environment variable. Default
+ * is enforced, so forgetting to set it fails safe.
+ */
+export interface GateOptions {
+  enforced?: boolean;
+}
+
 export interface Gate {
   allowed: boolean;
   /** What the user must do next, for the UI to route them straight there. */
@@ -58,7 +70,8 @@ export interface Gate {
 const ALLOWED: Gate = { allowed: true, required: null };
 
 /** Booking a seat needs a government ID — nothing more. */
-export function canBookRide(user: VerifiableUser | null | undefined): Gate {
+export function canBookRide(user: VerifiableUser | null | undefined, opts: GateOptions = {}): Gate {
+  if (opts.enforced === false) return ALLOWED;
   if (verificationLevel(user) < 2) {
     return {
       allowed: false,
@@ -76,7 +89,8 @@ export function canBookRide(user: VerifiableUser | null | undefined): Gate {
  * Checked in that order so a rider who has done neither is told to verify their
  * ID first, rather than being asked for a licence out of nowhere.
  */
-export function canOfferRide(user: VerifiableUser | null | undefined): Gate {
+export function canOfferRide(user: VerifiableUser | null | undefined, opts: GateOptions = {}): Gate {
+  if (opts.enforced === false) return ALLOWED;
   if (verificationLevel(user) < 2) {
     return {
       allowed: false,
@@ -105,13 +119,20 @@ export function canOfferRide(user: VerifiableUser | null | undefined): Gate {
 }
 
 /** Everything the client needs to render the right verification prompt. */
-export function verificationSummary(user: VerifiableUser | null | undefined) {
+export function verificationSummary(user: VerifiableUser | null | undefined, opts: GateOptions = {}) {
   const level = verificationLevel(user);
   return {
     level,
     id_verified: level >= 2,
     licence_verified: hasVerifiedLicence(user),
-    can_book: canBookRide(user).allowed,
-    can_offer_rides: canOfferRide(user).allowed,
+    // These reflect the gates INCLUDING the enforcement switch, so the app
+    // unlocks in step with the server instead of needing its own flag.
+    can_book: canBookRide(user, opts).allowed,
+    can_offer_rides: canOfferRide(user, opts).allowed,
   };
+}
+
+/** Reads the environment switch. Enforced unless explicitly turned off. */
+export function verificationEnforced(): boolean {
+  return process.env.VERIFICATION_ENFORCED !== 'false';
 }
