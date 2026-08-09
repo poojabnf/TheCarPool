@@ -1,12 +1,27 @@
 import { FastifyInstance } from 'fastify';
 import { randomUUID } from 'crypto';
 import { db, redisClient } from '../server';
-import { requireAuth } from '../middleware/auth';
+import { requireAuth, requireAdmin } from '../middleware/auth';
 import { canTransition, isSettableStatus, SETTABLE_STATUSES } from '../lib/rideLifecycle';
 import { noShowOutcome } from '../lib/fees';
 import { planPayout, maskPayoutMethod } from '../lib/payouts';
 import { canOfferRide, verificationEnforced } from '../lib/verification';
 import { classifyVehicle, listMakes, listModels, VEHICLE_CLASSES } from '../lib/vehicles';
+import { needsDepartureReminder, minutesUntil } from '../lib/rideNotifications';
+import { sendPushToUser } from '../lib/fcm';
+
+/** Uids of riders with a live booking on a ride — who gets told about it. */
+async function activeRiderUids(rideId: string): Promise<string[]> {
+  const snap = await db.collection('bookings').where('ride_id', '==', rideId).get();
+  return [...new Set(
+    snap.docs
+      .filter((d) => {
+        const b = d.data();
+        return b.status !== 'CANCELLED' && !['CANCELLED', 'REFUNDED'].includes(String(b.escrow_status));
+      })
+      .map((d) => String(d.data().rider_id))
+  )];
+}
 
 /** Rounds to paise — wallet balances are rupees held as JS numbers. */
 function round2(n: number): number {
@@ -194,6 +209,47 @@ function routeBboxIntersects(
 }
 
 export async function rideRoutes(fastify: FastifyInstance) {
+
+  // ── POST /notify-upcoming — one-hour departure reminders ─────────────────
+  // Intended for a scheduler (every ~5 min comfortably covers the window).
+  // Idempotent: a ride is flagged once reminded, so a double-run cannot spam.
+  fastify.post('/notify-upcoming', { preHandler: [requireAdmin] }, async (_request, reply) => {
+    const now = new Date();
+    const horizon = new Date(now.getTime() + 65 * 60 * 1000).toISOString();
+
+    const snap = await db.collection('rides')
+      .where('status', '==', 'SCHEDULED')
+      .where('departure_time', '>', now.toISOString())
+      .where('departure_time', '<', horizon)
+      .limit(200)
+      .get();
+
+    let notified = 0;
+    for (const doc of snap.docs) {
+      const ride = doc.data();
+      if (!needsDepartureReminder(ride, now)) continue;
+
+      // Claim it before sending so two overlapping sweeps can't both notify.
+      const claimed = await db.runTransaction(async (tx) => {
+        const fresh = await tx.get(doc.ref);
+        if (fresh.data()?.departure_reminder_sent === true) return false;
+        tx.update(doc.ref, { departure_reminder_sent: true });
+        return true;
+      }).catch(() => false);
+      if (!claimed) continue;
+
+      const mins = minutesUntil(String(ride.departure_time), now);
+      const riders = await activeRiderUids(doc.id);
+      for (const rider of riders) {
+        sendPushToUser(rider, `⏰ Your ride leaves in ${mins} minutes`,
+          'Be ready at your pickup point. Your boarding code is on the trip screen.',
+          { type: 'RIDE_REMINDER', ride_id: doc.id });
+      }
+      if (riders.length) notified += 1;
+    }
+
+    return reply.send({ scanned: snap.size, rides_notified: notified });
+  });
 
   // ── GET /vehicle-catalogue — makes, models and size classes ──────────────
   // One source of truth for the driver's pickers and the rider's icons, so the
@@ -766,6 +822,24 @@ export async function rideRoutes(fastify: FastifyInstance) {
 
       if (status !== 'COMPLETED') {
         await rideRef.update({ status, updated_at: new Date().toISOString() });
+
+        // Tell the riders. Fire-and-forget: a push failure must never stop a
+        // driver starting or cancelling their trip.
+        if (status === 'STARTED' || status === 'CANCELLED') {
+          activeRiderUids(id).then((riders) => {
+            for (const rider of riders) {
+              if (status === 'STARTED') {
+                sendPushToUser(rider, '🚗 Your trip has started',
+                  'Your driver has set off. Track the ride live in the app.',
+                  { type: 'RIDE_STARTED', ride_id: id });
+              } else {
+                sendPushToUser(rider, 'Ride cancelled',
+                  'Your driver cancelled this ride. Any amount paid is being refunded.',
+                  { type: 'RIDE_CANCELLED', ride_id: id });
+              }
+            }
+          }).catch(() => { /* notifications are best-effort */ });
+        }
         return reply.send({ id, status, updated: true });
       }
 
@@ -925,6 +999,14 @@ export async function rideRoutes(fastify: FastifyInstance) {
       });
 
       fastify.log.info({ ride_id: id, ...outcome }, 'Settled escrow on ride completion');
+
+      activeRiderUids(id).then((riders) => {
+        for (const rider of riders) {
+          sendPushToUser(rider, '✅ Trip completed',
+            'Hope you had a good ride. Tap to rate your driver.',
+            { type: 'RIDE_COMPLETED', ride_id: id });
+        }
+      }).catch(() => { /* best-effort */ });
 
       return reply.send({
         id,

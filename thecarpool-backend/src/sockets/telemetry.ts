@@ -3,6 +3,7 @@ import * as admin from 'firebase-admin';
 import type { FastifyBaseLogger } from 'fastify';
 import { db } from '../server';
 import { sendPushToUser } from '../lib/fcm';
+import { isArrivingAtPickup } from '../lib/rideNotifications';
 
 // Route-deviation escalation: a single out-of-corridor ping can be GPS noise,
 // but this many consecutive breaches means the vehicle has genuinely left the
@@ -56,6 +57,9 @@ export function setupTelemetrySocket(io: SocketIOServer, log: FastifyBaseLogger)
     // back-to-back rides doesn't carry a stale count across trips).
     const breachStreak = new Map<string, number>();
     const escalatedRides = new Set<string>();
+    // One "driver is arriving" push per booking, per connection. Without this
+    // it would repeat on every telemetry tick while the driver sits waiting.
+    const arrivalNotified = new Set<string>();
 
     // Join ride-specific room for broadcasts
     socket.on('ride:join', (rideId: number) => {
@@ -112,6 +116,35 @@ export function setupTelemetrySocket(io: SocketIOServer, log: FastifyBaseLogger)
             }
 
             const rideKey = String(rideId);
+
+            // ── "Your driver is arriving" ───────────────────────────────────
+            // Runs on EVERY telemetry tick, deliberately outside the
+            // route-deviation branch — a driver approaching the pickup is
+            // normally well ON route, so nesting this under a deviation would
+            // mean it fired only when something had gone wrong.
+            // Once per booking, and only for riders who haven't boarded yet.
+            try {
+              const pending = await db.collection('bookings')
+                .where('ride_id', '==', rideKey)
+                .where('escrow_status', '==', 'HELD')
+                .get();
+              for (const bk of pending.docs) {
+                const b = bk.data();
+                if (b.boarding_verified === true) continue;
+                if (arrivalNotified.has(bk.id)) continue;
+                if (!isArrivingAtPickup({ lat, lng }, b.pickup_point)) continue;
+                arrivalNotified.add(bk.id);
+                sendPushToUser(
+                  String(b.rider_id),
+                  '🚗 Your driver is arriving',
+                  'Your driver is close to the pickup point. Please head out — have your 4-digit boarding code ready.',
+                  { type: 'DRIVER_ARRIVING', ride_id: rideKey, booking_id: bk.id }
+                );
+              }
+            } catch (e) {
+              log.error(e, 'Arrival proximity check failed');
+            }
+
             if (!withinLimits && route_coords.length > 0) {
               // Dispatch geofence breach warning to riders and dashboard alert listeners
               io.to(`ride_${rideId}`).emit('safety:alert', {
