@@ -22,6 +22,14 @@
           }
         },
         {
+          "client_id": "953521578640-ose08qpvcnlmp41k25ee0k00e9lhumf5.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.thecarpool.app",
+            "certificate_hash": "acb38b036f24c2300fe623fd9f06edd510384403"
+          }
+        },
+        {
           "client_id": "953521578640-rl68r8pde1odshskmaguaokjht4qbqic.apps.googleusercontent.com",
           "client_type": 3
         }
