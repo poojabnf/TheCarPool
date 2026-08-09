@@ -104,7 +104,7 @@ export default function AccountInterface() {
   // Two-step by design: this is irreversible, and the first screen tells the
   // user exactly what goes and what is kept before they can reach the button
   // that does it.
-  const performDelete = async () => {
+  const performDelete = async (forfeitBalance = false) => {
     setDeleting(true);
     try {
       // user_id is redundant on the current backend (the token decides), but the
@@ -112,12 +112,13 @@ export default function AccountInterface() {
       // 500 when it is absent. Sending it keeps this working on both.
       const res = await apiFetch('/api/safety/account', {
         method: 'DELETE',
-        body: JSON.stringify({ user_id: user?.uid }),
+        body: JSON.stringify({ user_id: user?.uid, forfeit_balance: forfeitBalance }),
       });
       const data = await res.json().catch(() => ({} as any));
 
       if (res.status === 409 && Array.isArray(data.blockers)) {
-        // Money or passengers still depend on this account.
+        // A genuine obligation to someone else — held escrow, or passengers
+        // booked on an upcoming ride. Not something to override.
         haptics.warning();
         Alert.alert(
           'Sort these out first',
@@ -132,7 +133,15 @@ export default function AccountInterface() {
       }
 
       haptics.success();
-      Alert.alert('Account deleted', 'Your profile and documents have been removed. Thank you for riding with us.');
+      const settled = data.balance_settled;
+      Alert.alert(
+        'Account deleted',
+        'Your profile and documents have been removed.'
+        + (settled?.outcome === 'REFUND_QUEUED'
+          ? `\n\nYour remaining ₹${Number(settled.amount).toFixed(2)} is on its way to your registered account.`
+          : '')
+        + '\n\nThank you for riding with us.'
+      );
       await auth().signOut();
     } catch {
       haptics.error();
@@ -148,7 +157,7 @@ export default function AccountInterface() {
       'Delete your account?',
       'This removes your profile, photo, ID documents and saved places, and cannot be undone.\n\n'
       + 'Completed trips are kept for tax and dispute records, but your name is removed from them.\n\n'
-      + 'Withdraw any wallet balance first — it cannot be recovered afterwards.',
+      + 'Any wallet balance is returned to your registered account. If you have not added one, it cannot be paid out.',
       [
         { text: 'Keep my account', style: 'cancel' },
         {
@@ -159,7 +168,7 @@ export default function AccountInterface() {
             'This is permanent. Delete your account?',
             [
               { text: 'Cancel', style: 'cancel' },
-              { text: 'Delete permanently', style: 'destructive', onPress: performDelete },
+              { text: 'Delete permanently', style: 'destructive', onPress: () => performDelete() },
             ]
           ),
         },

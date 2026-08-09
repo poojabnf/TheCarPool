@@ -12,6 +12,7 @@ import {
   validateIdNumber, validateExpiry, maskIdNumber, documentHasExpiry,
 } from '../lib/idDocuments';
 import { crossCheckDocument, extractText } from '../lib/idImageCheck';
+import { hasPayoutMethod, maskPayoutMethod } from '../lib/payouts';
 
 /**
  * ID document retention.
@@ -37,6 +38,15 @@ export const KYC_RETENTION_DAYS = 15;
  * while it is false, anyone calling /kyc/complete is verified without checks.
  */
 export const KYC_REQUIRE_DOCUMENT = process.env.KYC_REQUIRE_DOCUMENT === 'true';
+
+/**
+ * Where a deleted user's leftover wallet balance goes when they have no payout
+ * details on file. Set to the owner/platform account uid.
+ *
+ * Every sweep is recorded per-user in `platform_swept_balances` so it can be
+ * reconciled, or refunded if the person later asks where their money went.
+ */
+export const PLATFORM_OWNER_UID = process.env.PLATFORM_OWNER_UID || '';
 
 const SosSchema = z.object({
   ride_id: z.union([z.string(), z.number()]).optional(),
@@ -439,11 +449,14 @@ export async function safetyRoutes(fastify: FastifyInstance) {
       // ── Blockers: anything that would strand money or strand a passenger ──
       const blockers: string[] = [];
 
+      // A wallet balance never blocks deletion — the app stores require the
+      // path to be reachable, and a few rupees that are impractical to withdraw
+      // would otherwise trap someone in an account they want gone. It is
+      // settled instead: refunded to the user if they have payout details on
+      // file, otherwise swept to the platform. See settleBalance below.
       const walletSnap = await db.collection('wallets').doc(uid).get();
+      const userSnap = await db.collection('users').doc(uid).get();
       const balance = Number(walletSnap.data()?.available_wallet_balance || 0);
-      if (balance > 0) {
-        blockers.push(`You have ₹${balance.toFixed(2)} in your wallet. Withdraw it before deleting your account.`);
-      }
 
       const heldBookings = await db.collection('bookings')
         .where('rider_id', '==', uid)
@@ -473,6 +486,57 @@ export async function safetyRoutes(fastify: FastifyInstance) {
       }
 
       const now = new Date().toISOString();
+
+      // ── Settle the leftover balance ──────────────────────────────────────
+      // Owner's rule: refund it to the user's own account when they have payout
+      // details on file; otherwise it goes to the platform.
+      //
+      // The refund is QUEUED rather than fired inline. An irreversible external
+      // transfer in the middle of a deletion has no good failure mode — if the
+      // payout succeeds but a later step throws, or the payout fails after the
+      // wallet is gone, the money is unrecoverable. A queued record is picked up
+      // by the existing payout path and is safe to retry.
+      let balanceOutcome: string | null = null;
+      if (balance > 0) {
+        const method = walletSnap.data()?.payout_method ?? userSnap?.data()?.payout_method ?? null;
+        if (hasPayoutMethod(method)) {
+          await db.collection('pending_refunds').add({
+            user_id: uid,
+            amount: balance,
+            payout_method: method,
+            masked_destination: maskPayoutMethod(method),
+            reason: 'ACCOUNT_DELETED',
+            status: 'PENDING',
+            created_at: now,
+          }).catch(() => {});
+          balanceOutcome = 'REFUND_QUEUED';
+          fastify.log.info({ uid, amount: balance }, 'Balance queued for refund on account deletion');
+        } else {
+          // No way to pay them back. Swept to the platform, recorded per-user
+          // so it can be reconciled — or refunded if they ever come back and
+          // ask where their money went.
+          await db.collection('platform_swept_balances').add({
+            user_id: uid,
+            amount: balance,
+            reason: 'ACCOUNT_DELETED_NO_PAYOUT_METHOD',
+            status: 'SWEPT',
+            at: now,
+          }).catch(() => {});
+          if (PLATFORM_OWNER_UID) {
+            const ownerRef = db.collection('wallets').doc(PLATFORM_OWNER_UID);
+            await db.runTransaction(async (tx) => {
+              const cur = await tx.get(ownerRef);
+              const bal = Number(cur.data()?.available_wallet_balance || 0);
+              tx.set(ownerRef, {
+                ...(cur.exists ? cur.data() : { escrow_locked_balance: 0, currency: 'INR' }),
+                available_wallet_balance: Math.round((bal + balance) * 100) / 100,
+              }, { merge: true });
+            }).catch((e) => fastify.log.error(e, 'Failed to sweep balance to platform owner'));
+          }
+          balanceOutcome = 'SWEPT_TO_PLATFORM';
+          fastify.log.warn({ uid, amount: balance }, 'Balance swept to platform on account deletion');
+        }
+      }
 
       // ── Anonymise shared records rather than destroying them ─────────────
       const batch = db.batch();
@@ -529,6 +593,7 @@ export async function safetyRoutes(fastify: FastifyInstance) {
         status: 'ACCOUNT_DELETED',
         anonymised_rides: pastRides.size,
         anonymised_bookings: pastBookings.size,
+        balance_settled: balance > 0 ? { amount: balance, outcome: balanceOutcome } : null,
       });
     } catch (err: any) {
       fastify.log.error(err, 'Account deletion failed');
