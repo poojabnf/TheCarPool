@@ -20,12 +20,16 @@ function round2(n: number): number {
 export const CONVENIENCE_FEE = 0;
 
 // ── Insurance ──────────────────────────────────────────────────────────────
-// PLACEHOLDER RATES. The insurer partnership is not signed yet; these three
-// constants are the only thing that needs to change once a rate card exists.
-// Everything downstream (quote, booking, payout exclusion) is already wired.
-export const INSURANCE_RATE_PER_KM = 0.5;
-export const INSURANCE_MIN_PREMIUM = 10;
-export const INSURANCE_MAX_PREMIUM = 100;
+// ₹1 per 20 km, charged in whole blocks: every started 20 km costs a rupee, so
+// a 12 km hop is ₹1 and a 25 km run is ₹2. Block pricing rather than a linear
+// ₹0.05/km because it keeps the premium a round rupee figure (no ₹0.60 line
+// items) and is a single sentence to explain to a rider.
+//
+// These constants are the whole rate card — change them here when the insurer
+// deal lands and quote/booking/refund/payout-exclusion all follow.
+export const INSURANCE_KM_PER_RUPEE = 20;
+export const INSURANCE_MIN_PREMIUM = 1;
+export const INSURANCE_MAX_PREMIUM = 50; // sanity bound at ~1000 km
 
 /**
  * Optional per-journey insurance premium, priced on trip distance.
@@ -35,8 +39,8 @@ export const INSURANCE_MAX_PREMIUM = 100;
 export function insurancePremium(distanceKm: number): number {
   const km = Number(distanceKm);
   if (!Number.isFinite(km) || km <= 0) return 0;
-  const raw = km * INSURANCE_RATE_PER_KM;
-  return round2(Math.min(INSURANCE_MAX_PREMIUM, Math.max(INSURANCE_MIN_PREMIUM, raw)));
+  const blocks = Math.ceil(km / INSURANCE_KM_PER_RUPEE);
+  return round2(Math.min(INSURANCE_MAX_PREMIUM, Math.max(INSURANCE_MIN_PREMIUM, blocks)));
 }
 
 // ── Cancellation ───────────────────────────────────────────────────────────

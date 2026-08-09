@@ -15,16 +15,30 @@ describe('convenience fee', () => {
 });
 
 describe('insurancePremium', () => {
-  it('applies the per-km rate between the floor and the cap', () => {
-    expect(insurancePremium(40)).toBe(20); // 40km * 0.5
+  it('charges 1 rupee per 20km block', () => {
+    expect(insurancePremium(20)).toBe(1);
+    expect(insurancePremium(40)).toBe(2);
+    expect(insurancePremium(100)).toBe(5);
   });
 
-  it('never charges below the floor for a short trip', () => {
-    expect(insurancePremium(2)).toBe(10);
+  it('rounds a part-used block up to the next rupee', () => {
+    expect(insurancePremium(21)).toBe(2);
+    expect(insurancePremium(39)).toBe(2);
   });
 
-  it('caps the premium on a long trip', () => {
-    expect(insurancePremium(5000)).toBe(100);
+  it('never charges below the 1 rupee minimum on a short trip', () => {
+    expect(insurancePremium(2)).toBe(1);
+    expect(insurancePremium(0.5)).toBe(1);
+  });
+
+  it('caps the premium on a very long trip', () => {
+    expect(insurancePremium(5000)).toBe(50);
+  });
+
+  it('always returns whole rupees', () => {
+    for (const km of [1, 7, 12, 33, 87, 260]) {
+      expect(Number.isInteger(insurancePremium(km))).toBe(true);
+    }
   });
 
   it('returns 0 for unknown or non-positive distance rather than the floor', () => {
