@@ -12,7 +12,10 @@
         "resourceClass": "medium"
       },
       "env": {
-        "EXPO_PUBLIC_API_URL": "http://localhost:5000"
+        "EXPO_PUBLIC_API_URL": "http://localhost:5000",
+        "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "953521578640-rl68r8pde1odshskmaguaokjht4qbqic.apps.googleusercontent.com",
+        "EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID": "953521578640-khu8idmh7f9bmqli6pps2a2bjfmn8p9g.apps.googleusercontent.com",
+        "EXPO_PUBLIC_GOOGLE_MAPS_API_KEY": "AIzaSyBTkNesFuUVR-8u9FNOh4RmsuZn28DT5cM"
       },
       "channel": "development"
     },
@@ -24,7 +27,10 @@
         "resourceClass": "medium"
       },
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://thecarpool-backend-953521578640.asia-south1.run.app"
+        "EXPO_PUBLIC_API_URL": "https://thecarpool-backend-953521578640.asia-south1.run.app",
+        "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "953521578640-rl68r8pde1odshskmaguaokjht4qbqic.apps.googleusercontent.com",
+        "EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID": "953521578640-khu8idmh7f9bmqli6pps2a2bjfmn8p9g.apps.googleusercontent.com",
+        "EXPO_PUBLIC_GOOGLE_MAPS_API_KEY": "AIzaSyBTkNesFuUVR-8u9FNOh4RmsuZn28DT5cM"
       },
       "channel": "preview"
     },
@@ -34,7 +40,10 @@
         "image": "latest"
       },
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://thecarpool-backend-953521578640.asia-south1.run.app"
+        "EXPO_PUBLIC_API_URL": "https://thecarpool-backend-953521578640.asia-south1.run.app",
+        "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "953521578640-rl68r8pde1odshskmaguaokjht4qbqic.apps.googleusercontent.com",
+        "EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID": "953521578640-khu8idmh7f9bmqli6pps2a2bjfmn8p9g.apps.googleusercontent.com",
+        "EXPO_PUBLIC_GOOGLE_MAPS_API_KEY": "AIzaSyBTkNesFuUVR-8u9FNOh4RmsuZn28DT5cM"
       },
       "channel": "simulator"
     },
@@ -49,7 +58,10 @@
         "resourceClass": "medium"
       },
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://thecarpool-backend-953521578640.asia-south1.run.app"
+        "EXPO_PUBLIC_API_URL": "https://thecarpool-backend-953521578640.asia-south1.run.app",
+        "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "953521578640-rl68r8pde1odshskmaguaokjht4qbqic.apps.googleusercontent.com",
+        "EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID": "953521578640-khu8idmh7f9bmqli6pps2a2bjfmn8p9g.apps.googleusercontent.com",
+        "EXPO_PUBLIC_GOOGLE_MAPS_API_KEY": "AIzaSyBTkNesFuUVR-8u9FNOh4RmsuZn28DT5cM"
       },
       "channel": "production"
     }

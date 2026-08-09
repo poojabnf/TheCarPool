@@ -1,9 +1,10 @@
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, ScrollView } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Search, PlusCircle, ChevronRight } from 'lucide-react-native';
 import { c, font, radius, space, shadowSm } from '../../theme/tokens';
+import HapticPressable from '../components/HapticPressable';
 
 /**
  * Rides — the Find + Offer hub. Riders search from Home; this hub routes to
@@ -18,7 +19,7 @@ export default function RidesHub() {
       <Text style={styles.h1}>Rides</Text>
       <Text style={styles.sub}>Find a shared ride, or offer your seats.</Text>
 
-      <TouchableOpacity style={styles.card} activeOpacity={0.9} onPress={() => router.push('/(tabs)')}>
+      <HapticPressable style={styles.card} activeOpacity={0.9} onPress={() => router.push('/(tabs)')}>
         <View style={[styles.iconWrap, { backgroundColor: c.goSoft }]}>
           <Search color={c.goStrong} size={22} strokeWidth={2.2} />
         </View>
@@ -27,9 +28,9 @@ export default function RidesHub() {
           <Text style={styles.cardSub}>Search verified drivers on your route</Text>
         </View>
         <ChevronRight color={c.textDisabled} size={20} />
-      </TouchableOpacity>
+      </HapticPressable>
 
-      <TouchableOpacity style={styles.card} activeOpacity={0.9} onPress={() => router.push('/(tabs)/driver')}>
+      <HapticPressable style={styles.card} activeOpacity={0.9} onPress={() => router.push('/(tabs)/driver')}>
         <View style={[styles.iconWrap, { backgroundColor: c.accentSoft }]}>
           <PlusCircle color={c.textAccent} size={22} strokeWidth={2.2} />
         </View>
@@ -38,7 +39,7 @@ export default function RidesHub() {
           <Text style={styles.cardSub}>Share your commute and split the fare</Text>
         </View>
         <ChevronRight color={c.textDisabled} size={20} />
-      </TouchableOpacity>
+      </HapticPressable>
     </ScrollView>
   );
 }

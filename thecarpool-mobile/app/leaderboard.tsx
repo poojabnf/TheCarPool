@@ -1,10 +1,11 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, RefreshControl } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, ActivityIndicator, RefreshControl } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Leaf, Trophy } from 'lucide-react-native';
 import { apiFetch } from './services/api';
 import { c, font, radius, space, shadowSm } from '../theme/tokens';
+import HapticPressable from './components/HapticPressable';
 
 type Entry = { rank: number; name: string; co2_saved_kg: number; matches: number; points: number };
 
@@ -33,9 +34,9 @@ export default function LeaderboardScreen() {
   return (
     <View style={[styles.screen, { paddingTop: insets.top + space.sm }]}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => (router.canGoBack() ? router.back() : router.replace('/(tabs)'))}>
+        <HapticPressable onPress={() => (router.canGoBack() ? router.back() : router.replace('/(tabs)'))}>
           <Text style={styles.back}>←</Text>
-        </TouchableOpacity>
+        </HapticPressable>
         <View style={{ flex: 1 }}>
           <Text style={styles.title}>Green leaderboard</Text>
           <Text style={styles.subtitle}>Top commuters by CO₂ saved</Text>

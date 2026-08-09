@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Alert, Platform, Share } from 'react-native';
+import { View, Text, StyleSheet, Alert, Platform, Share } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import io from 'socket.io-client';
@@ -11,6 +11,7 @@ import { auth } from '../services/firebase';
 import { API_URL, apiFetch } from '../services/api';
 import * as haptics from '../services/haptics';
 import { c, font, radius, space, shadowSm } from '../../theme/tokens';
+import HapticPressable from '../components/HapticPressable';
 
 const SOCKET_URL = API_URL;
 
@@ -22,12 +23,31 @@ export default function TripScreen() {
   const [speed, setSpeed] = useState(0);
   const [geofenceAlert, setGeofenceAlert] = useState<string | null>(null);
   const [ride, setRide] = useState<any | null>(null);
+  const [boardingOtp, setBoardingOtp] = useState<string | null>(null);
+  const [boardingVerified, setBoardingVerified] = useState<boolean>(false);
 
   useEffect(() => {
     (async () => {
       try {
-        const res = await apiFetch(`/api/rides/${id}`);
-        if (res.ok) setRide(await res.json());
+        // `/api/bookings/for-ride/:id` is the DRIVER's passenger manifest and
+        // 403s for riders (and never carries the boarding code). The rider's own
+        // booking — the only place the code is exposed — comes from /mine.
+        const [rRes, bRes] = await Promise.all([
+          apiFetch(`/api/rides/${id}`),
+          apiFetch('/api/bookings/mine'),
+        ]);
+        if (rRes.ok) setRide(await rRes.json());
+        if (bRes.ok) {
+          const data = await bRes.json();
+          const bookings: any[] = Array.isArray(data?.bookings) ? data.bookings : [];
+          const myBooking = bookings.find(
+            (b) => String(b.ride_id) === String(id) && b.escrow_status === 'HELD'
+          );
+          if (myBooking) {
+            setBoardingOtp(myBooking.boarding_otp || null);
+            setBoardingVerified(myBooking.boarding_verified ?? false);
+          }
+        }
       } catch { /* neutral placeholder */ }
     })();
   }, [id]);
@@ -123,12 +143,12 @@ export default function TripScreen() {
         >
           <Marker coordinate={{ latitude: driverLocation.lat, longitude: driverLocation.lng }} title="Driver" description={`${speed} km/h`} />
         </MapView>
-        <TouchableOpacity
+        <HapticPressable
           style={[styles.backChip, { top: insets.top + 8 }]}
           onPress={() => (router.canGoBack() ? router.back() : router.replace('/(tabs)'))}
         >
           <Text style={styles.backChipText}>← Home</Text>
-        </TouchableOpacity>
+        </HapticPressable>
       </View>
 
       {/* Bottom sheet */}
@@ -152,6 +172,24 @@ export default function TripScreen() {
           </View>
         )}
 
+        {/* 🛡️ Boarding Verification OTP Card */}
+        {boardingOtp && (
+          <View style={styles.otpCard}>
+            <View style={styles.otpCardHeader}>
+              <Text style={styles.otpCardTitle}>🛡️ Boarding Verification OTP</Text>
+              {boardingVerified && <Text style={styles.verifiedBadge}>✓ Verified</Text>}
+            </View>
+            <Text style={styles.otpCardSub}>
+              {boardingVerified
+                ? 'Your identity has been verified by the driver.'
+                : 'Share this 4-digit code with your driver before getting in:'}
+            </Text>
+            <View style={styles.otpBox}>
+              <Text style={styles.otpCode}>{boardingOtp}</Text>
+            </View>
+          </View>
+        )}
+
         <View style={styles.tripCard}>
           <View style={styles.tripIcon}><MapPin color={c.textSecondary} size={18} /></View>
           <View style={{ flex: 1 }}>
@@ -165,51 +203,51 @@ export default function TripScreen() {
         {!showRating ? (
           <>
             <View style={styles.actions}>
-              <TouchableOpacity style={styles.sos} onPress={triggerSOS} activeOpacity={0.9}>
+              <HapticPressable style={styles.sos} onPress={triggerSOS} activeOpacity={0.9}>
                 <ShieldAlert color="#fff" size={18} strokeWidth={2.4} />
                 <Text style={styles.sosText}>SOS</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.share} onPress={shareTrip} activeOpacity={0.9}>
+              </HapticPressable>
+              <HapticPressable style={styles.share} onPress={shareTrip} activeOpacity={0.9}>
                 <Share2 color={c.textPrimary} size={17} strokeWidth={2.2} />
                 <Text style={styles.shareText}>Share live trip</Text>
-              </TouchableOpacity>
+              </HapticPressable>
             </View>
-            <TouchableOpacity style={styles.chatBtn} onPress={() => router.push(`/chat/${id}`)} activeOpacity={0.9}>
+            <HapticPressable style={styles.chatBtn} onPress={() => router.push(`/chat/${id}`)} activeOpacity={0.9}>
               <MessageCircle color={c.textPrimary} size={17} strokeWidth={2.2} />
               <Text style={styles.shareText}>Message co-travellers</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.endTrip} onPress={() => setShowRating(true)}>
+            </HapticPressable>
+            <HapticPressable style={styles.endTrip} onPress={() => setShowRating(true)}>
               <Text style={styles.endTripText}>End trip & rate</Text>
-            </TouchableOpacity>
+            </HapticPressable>
           </>
         ) : (
           <View>
             <Text style={styles.rateTitle}>How was your ride?</Text>
             <View style={styles.starsRow}>
               {[1, 2, 3, 4, 5].map((n) => (
-                <TouchableOpacity key={n} onPress={() => { haptics.tap(); setStars(n); }}>
+                <HapticPressable key={n} onPress={() => { haptics.tap(); setStars(n); }}>
                   <Text style={[styles.star, n <= stars && styles.starOn]}>★</Text>
-                </TouchableOpacity>
+                </HapticPressable>
               ))}
             </View>
             <Text style={styles.rateSub}>Did you feel safe on this trip?</Text>
             <View style={styles.safeRow}>
-              <TouchableOpacity
+              <HapticPressable
                 style={[styles.safeBtn, feltSafe === true && styles.safeBtnOn]}
                 onPress={() => setFeltSafe(true)}
               >
                 <Text style={[styles.safeBtnText, feltSafe === true && { color: '#fff' }]}>Yes, felt safe</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
+              </HapticPressable>
+              <HapticPressable
                 style={[styles.safeBtn, feltSafe === false && styles.safeBtnDanger]}
                 onPress={() => setFeltSafe(false)}
               >
                 <Text style={[styles.safeBtnText, feltSafe === false && { color: '#fff' }]}>No</Text>
-              </TouchableOpacity>
+              </HapticPressable>
             </View>
-            <TouchableOpacity style={styles.submitRating} onPress={submitRating} disabled={submittingRating} activeOpacity={0.9}>
+            <HapticPressable style={styles.submitRating} onPress={submitRating} disabled={submittingRating} activeOpacity={0.9}>
               <Text style={styles.submitRatingText}>{submittingRating ? 'Submitting…' : 'Submit rating'}</Text>
-            </TouchableOpacity>
+            </HapticPressable>
           </View>
         )}
       </View>
@@ -241,6 +279,13 @@ const styles = StyleSheet.create({
   okText: { fontFamily: font.sansMedium, fontSize: 12, color: c.goStrong, textAlign: 'center' },
 
   tripCard: { flexDirection: 'row', alignItems: 'center', gap: space.md, backgroundColor: c.surfaceSunken, borderRadius: radius.md, padding: space.md, marginBottom: space.md },
+  otpCard: { backgroundColor: c.accentSoft, borderRadius: radius.md, padding: space.md, marginBottom: space.md, borderWidth: 1, borderColor: c.borderSubtle },
+  otpCardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 },
+  otpCardTitle: { fontFamily: font.sansBold, fontSize: 14, color: c.textAccent },
+  verifiedBadge: { fontFamily: font.sansBold, fontSize: 12, color: c.goStrong, backgroundColor: c.goSoft, paddingHorizontal: 8, paddingVertical: 2, borderRadius: radius.pill },
+  otpCardSub: { fontFamily: font.sans, fontSize: 12, color: c.textSecondary, marginBottom: 8 },
+  otpBox: { backgroundColor: c.bgBase, borderRadius: radius.sm, paddingVertical: 10, alignItems: 'center', borderWidth: 1, borderColor: c.borderSubtle },
+  otpCode: { fontFamily: font.monoBold, fontSize: 26, color: c.textAccent, letterSpacing: 8 },
   tripIcon: { width: 40, height: 40, borderRadius: radius.sm, backgroundColor: c.bgBase, alignItems: 'center', justifyContent: 'center' },
   tripId: { fontFamily: font.monoBold, fontSize: 14, color: c.textPrimary },
   tripVehicle: { fontFamily: font.sans, fontSize: 12.5, color: c.textTertiary, marginTop: 1 },

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Alert, Image, ActivityIndicator, TextInput } from 'react-native';
+import { View, Text, StyleSheet, Alert, Image, ActivityIndicator, TextInput } from 'react-native';
 import { apiFetch } from '../services/api';
+import HapticPressable from '../components/HapticPressable';
 
 export default function KycScreen() {
   const [rcScanned, setRcScanned] = useState(false);
@@ -92,9 +93,9 @@ export default function KycScreen() {
             <Text style={styles.stepDesc}>{rcScanned ? 'Extracted successfully' : 'Scan R.C. via Computer Vision'}</Text>
           </View>
         </View>
-        <TouchableOpacity style={styles.actionBtn} onPress={handleDocumentScan} disabled={rcScanned || !!loading}>
+        <HapticPressable style={styles.actionBtn} onPress={handleDocumentScan} disabled={rcScanned || !!loading}>
           {loading === 'ocr' ? <ActivityIndicator color="#fff" /> : <Text style={styles.actionBtnText}>{rcScanned ? 'Done' : 'Scan document'}</Text>}
-        </TouchableOpacity>
+        </HapticPressable>
       </View>
 
       {/* 2. Facial Recognition */}
@@ -106,9 +107,9 @@ export default function KycScreen() {
             <Text style={styles.stepDesc}>{faceVerified ? 'Liveness and identity verified' : 'Selfie biometric check'}</Text>
           </View>
         </View>
-        <TouchableOpacity style={styles.actionBtn} onPress={handleFaceMatch} disabled={faceVerified || !!loading}>
+        <HapticPressable style={styles.actionBtn} onPress={handleFaceMatch} disabled={faceVerified || !!loading}>
           {loading === 'face' ? <ActivityIndicator color="#fff" /> : <Text style={styles.actionBtnText}>{faceVerified ? 'Done' : 'Verify Liveness'}</Text>}
-        </TouchableOpacity>
+        </HapticPressable>
       </View>
 
       {/* 3. UPI Link */}
@@ -120,9 +121,9 @@ export default function KycScreen() {
             <Text style={styles.stepDesc}>{upiLinked ? 'Bank verified' : 'Link UPI ID via penny deposit'}</Text>
           </View>
         </View>
-        <TouchableOpacity style={styles.actionBtn} onPress={handleUpiVerification} disabled={upiLinked || !!loading}>
+        <HapticPressable style={styles.actionBtn} onPress={handleUpiVerification} disabled={upiLinked || !!loading}>
           {loading === 'upi' ? <ActivityIndicator color="#fff" /> : <Text style={styles.actionBtnText}>{upiLinked ? 'Done' : 'Verify UPI ID'}</Text>}
-        </TouchableOpacity>
+        </HapticPressable>
       </View>
 
       {/* 4. Vehicle insurance (drivers) */}

@@ -5,7 +5,8 @@
     "app/**/*.ts",
     "app/**/*.tsx",
     "theme/**/*.ts",
-    "theme/**/*.tsx"
+    "theme/**/*.tsx",
+    "types/**/*.d.ts"
   ],
   "exclude": [
     "node_modules",

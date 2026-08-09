@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { StyleSheet, View, Text, TouchableOpacity, ScrollView, Dimensions, TextInput, Switch, Alert, ActivityIndicator } from 'react-native';
+import { StyleSheet, View, Text, ScrollView, Dimensions, TextInput, Switch, Alert, ActivityIndicator, Modal } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Lock, FileText, CheckCircle, PlusCircle, Activity, Navigation, MapPin, Calendar, Users, X, Check, Car, Bike, Shield } from 'lucide-react-native';
 import { colors } from '../../theme/colors';
 import { apiFetch } from '../services/api';
 import * as haptics from '../services/haptics';
+import HapticPressable from '../components/HapticPressable';
 import auth from '@react-native-firebase/auth';
 import io from 'socket.io-client';
 import { API_URL } from '../services/api';
@@ -121,16 +122,105 @@ export default function DriverInterface() {
   };
   useEffect(() => { loadMyRides(); }, []);
 
+  // ── Boarding verification ────────────────────────────────────────────────
+  // Each rider reads out a 4-digit code from their trip screen before the
+  // driver starts. Rendered as a real modal rather than Alert.prompt, which
+  // exists only on iOS — on Android it is a no-op, so drivers could never
+  // start a trip at all.
+  const [boardingRideId, setBoardingRideId] = useState<string | null>(null);
+  const [otpTarget, setOtpTarget] = useState<any | null>(null);
+  const [otpInput, setOtpInput] = useState('');
+  const [otpBusy, setOtpBusy] = useState(false);
+
+  const closeBoarding = () => {
+    setBoardingRideId(null);
+    setOtpTarget(null);
+    setOtpInput('');
+    setOtpBusy(false);
+  };
+
+  const boardingPassengers: any[] =
+    (boardingRideId && manifests[boardingRideId]?.passengers) || [];
+
+  const commitStart = async (rideId: string) => {
+    try {
+      const res = await apiFetch(`/api/rides/${rideId}/status`, {
+        method: 'PATCH',
+        body: JSON.stringify({ status: 'STARTED' }),
+      });
+      if (res.ok) {
+        haptics.success();
+        setActiveRideId(rideId);
+        closeBoarding();
+        loadMyRides();
+        Alert.alert('Trip started', 'Have a safe journey!');
+      } else {
+        haptics.error();
+        const e = await res.json().catch(() => ({}));
+        Alert.alert('Could not start', e.message || e.error || `Server error (${res.status}).`);
+      }
+    } catch {
+      haptics.error();
+      Alert.alert('Could not start', 'Network error. Please try again.');
+    }
+  };
+
+  const verifyPassengerOtp = async () => {
+    if (!otpTarget) return;
+    const code = otpInput.trim();
+    if (!/^\d{4}$/.test(code)) {
+      haptics.warning();
+      Alert.alert('Invalid code', 'Please enter the rider’s 4-digit code.');
+      return;
+    }
+    setOtpBusy(true);
+    try {
+      const res = await apiFetch(`/api/bookings/${otpTarget.booking_id}/verify-boarding-otp`, {
+        method: 'POST',
+        body: JSON.stringify({ otp: code }),
+      });
+      const data = await res.json().catch(() => ({} as any));
+      if (!res.ok) {
+        haptics.error();
+        Alert.alert('Verification failed', data.message || data.error || 'Incorrect boarding code.');
+        return;
+      }
+      haptics.success();
+      setOtpInput('');
+      setOtpTarget(null);
+      await loadMyRides();
+    } catch {
+      haptics.error();
+      Alert.alert('Verification failed', 'Network error. Please try again.');
+    } finally {
+      setOtpBusy(false);
+    }
+  };
+
   // Driver moves the ride through its lifecycle; COMPLETED settles escrow.
   const updateRideStatus = (rideId: string, status: 'STARTED' | 'COMPLETED') => {
-    const label = status === 'STARTED' ? 'Start this trip?' : 'Complete this trip?';
-    const detail = status === 'STARTED'
-      ? 'Passengers will see the ride as live and can track you.'
-      : 'Escrow for all passengers is released to your wallet.';
-    Alert.alert(label, detail, [
+    if (status === 'STARTED') {
+      const passengers: any[] = manifests[rideId]?.passengers || [];
+      if (passengers.length === 0) {
+        // Nobody booked — nothing to verify, just confirm.
+        Alert.alert('Start this trip?', 'No passengers have booked yet.', [
+          { text: 'Not yet', style: 'cancel' },
+          { text: 'Start trip', onPress: () => commitStart(rideId) },
+        ]);
+        return;
+      }
+      haptics.tap();
+      setOtpInput('');
+      setOtpTarget(null);
+      setBoardingRideId(rideId);
+      return;
+    }
+
+    // COMPLETED status
+    Alert.alert('Complete this trip?', 'Escrow for all passengers is released to your wallet.', [
       { text: 'Not yet', style: 'cancel' },
       {
-        text: status === 'STARTED' ? 'Start trip' : 'Complete trip',
+        text: 'Complete trip',
         onPress: async () => {
           try {
             const res = await apiFetch(`/api/rides/${rideId}/status`, {
@@ -139,17 +229,51 @@ export default function DriverInterface() {
             });
             if (res.ok) {
               haptics.success();
-              if (status === 'STARTED') setActiveRideId(rideId);
+              setActiveRideId(null);
               loadMyRides();
             } else {
+              haptics.error();
               const e = await res.json().catch(() => ({}));
-              Alert.alert('Could not update', e.error || `Server error (${res.status}).`);
+              Alert.alert('Could not update', e.message || e.error || `Server error (${res.status}).`);
             }
-          } catch { Alert.alert('Could not update', 'Network error. Please try again.'); }
+          } catch {
+            haptics.error();
+            Alert.alert('Could not update', 'Network error. Please try again.');
+          }
         },
       },
     ]);
   };
+
+  // Haversine distance formula to auto-calculate route length (in KM)
+  const calculateHaversineDistance = (lat1: number, lon1: number, lat2: number, lon2: number) => {
+    const R = 6371; // Earth's radius in km
+    const dLat = (lat2 - lat1) * (Math.PI / 180);
+    const dLon = (lon2 - lon1) * (Math.PI / 180);
+    const a =
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos(lat1 * (Math.PI / 180)) * Math.cos(lat2 * (Math.PI / 180)) *
+      Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    const dist = R * c;
+    // Add 20% to account for actual road route distance vs straight line
+    return Math.round(dist * 1.2 * 10) / 10;
+  };
+
+  // Automatically update route length (distanceKm) when source and destination are chosen
+  useEffect(() => {
+    if (sourceCoords && destCoords) {
+      const km = calculateHaversineDistance(
+        sourceCoords.lat,
+        sourceCoords.lng,
+        destCoords.lat,
+        destCoords.lng
+      );
+      if (km > 0) {
+        setDistanceKm(km.toString());
+      }
+    }
+  }, [sourceCoords, destCoords]);
 
   // Calculate suggested pricing on the fly
   useEffect(() => {
@@ -158,7 +282,7 @@ export default function DriverInterface() {
       const baseRate = vehicleType === 'BIKE' ? 6 : 12;
       const acAddon = (vehicleType === 'CAR' && acAvailable) ? 2 : 0;
       const rate = baseRate + acAddon;
-      const suggested = dist * rate;
+      const suggested = Math.round(dist * rate);
       setSuggestedPrice(suggested);
       setCustomPrice(suggested.toString());
     } else {
@@ -327,9 +451,9 @@ export default function DriverInterface() {
           </View>
         </View>
 
-        <TouchableOpacity style={styles.upgradeBtn} onPress={() => router.push('/onboarding')}>
+        <HapticPressable style={styles.upgradeBtn} onPress={() => router.push('/onboarding')}>
           <Text style={styles.upgradeBtnText}>Complete Verification Now</Text>
-        </TouchableOpacity>
+        </HapticPressable>
       </View>
     );
   }
@@ -339,7 +463,7 @@ export default function DriverInterface() {
     <View style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Driver Dashboard</Text>
-        <TouchableOpacity 
+        <HapticPressable 
           style={[styles.onlineToggle, isOnline ? styles.onlineActive : styles.onlineInactive]}
           onPress={() => setIsOnline(!isOnline)}
         >
@@ -347,20 +471,20 @@ export default function DriverInterface() {
           <Text style={[styles.onlineText, isOnline ? { color: 'white' } : { color: colors.textMuted }]}>
             {isOnline ? 'Online' : 'Go Online'}
           </Text>
-        </TouchableOpacity>
+        </HapticPressable>
       </View>
 
       {/* Top Segmented Control */}
       <View style={styles.segmentedControl}>
-        <TouchableOpacity style={[styles.segmentBtn, activeTab === 'overview' && styles.segmentActive]} onPress={() => setActiveTab('overview')}>
+        <HapticPressable style={[styles.segmentBtn, activeTab === 'overview' && styles.segmentActive]} onPress={() => setActiveTab('overview')}>
           <Text style={[styles.segmentText, activeTab === 'overview' && styles.segmentTextActive]}>Overview</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={[styles.segmentBtn, activeTab === 'requests' && styles.segmentActive]} onPress={() => setActiveTab('requests')}>
+        </HapticPressable>
+        <HapticPressable style={[styles.segmentBtn, activeTab === 'requests' && styles.segmentActive]} onPress={() => setActiveTab('requests')}>
           <Text style={[styles.segmentText, activeTab === 'requests' && styles.segmentTextActive]}>Requests (2)</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={[styles.segmentBtn, activeTab === 'drive' && styles.segmentActive]} onPress={() => setActiveTab('drive')}>
+        </HapticPressable>
+        <HapticPressable style={[styles.segmentBtn, activeTab === 'drive' && styles.segmentActive]} onPress={() => setActiveTab('drive')}>
           <Text style={[styles.segmentText, activeTab === 'drive' && styles.segmentTextActive]}>Drive</Text>
-        </TouchableOpacity>
+        </HapticPressable>
       </View>
 
       <View style={styles.content}>
@@ -376,10 +500,10 @@ export default function DriverInterface() {
               </View>
             </View>
 
-            <TouchableOpacity style={styles.postRideBtn} onPress={() => setShowPostModal(true)}>
+            <HapticPressable haptic="press" style={styles.postRideBtn} onPress={() => setShowPostModal(true)}>
               <PlusCircle color="white" size={20} />
               <Text style={styles.postRideText}>Offer a New Ride</Text>
-            </TouchableOpacity>
+            </HapticPressable>
 
             <Text style={styles.sectionTitle}>My Upcoming Rides</Text>
 
@@ -426,18 +550,18 @@ export default function DriverInterface() {
                   {/* Lifecycle controls */}
                   <View style={{ flexDirection: 'row', gap: 8, marginTop: 12 }}>
                     {r.status === 'SCHEDULED' && (
-                      <TouchableOpacity style={styles.startBtn} onPress={() => updateRideStatus(r.id, 'STARTED')} activeOpacity={0.9}>
+                      <HapticPressable haptic="press" style={styles.startBtn} onPress={() => updateRideStatus(r.id, 'STARTED')} activeOpacity={0.9}>
                         <Text style={styles.startBtnText}>▶ Start trip</Text>
-                      </TouchableOpacity>
+                      </HapticPressable>
                     )}
                     {r.status === 'STARTED' && (
-                      <TouchableOpacity style={styles.completeBtn} onPress={() => updateRideStatus(r.id, 'COMPLETED')} activeOpacity={0.9}>
+                      <HapticPressable haptic="press" style={styles.completeBtn} onPress={() => updateRideStatus(r.id, 'COMPLETED')} activeOpacity={0.9}>
                         <Text style={styles.startBtnText}>✓ Complete trip · release escrow</Text>
-                      </TouchableOpacity>
+                      </HapticPressable>
                     )}
-                    <TouchableOpacity style={styles.chatMiniBtn} onPress={() => router.push(`/chat/${r.id}`)} activeOpacity={0.9}>
+                    <HapticPressable style={styles.chatMiniBtn} onPress={() => router.push(`/chat/${r.id}`)} activeOpacity={0.9}>
                       <Text style={styles.chatMiniText}>💬</Text>
-                    </TouchableOpacity>
+                    </HapticPressable>
                   </View>
                 </View>
               );
@@ -450,9 +574,9 @@ export default function DriverInterface() {
           <ScrollView showsVerticalScrollIndicator={false} style={styles.formContainer}>
             <View style={styles.formHeader}>
               <Text style={styles.formTitle}>Offer Commute Details</Text>
-              <TouchableOpacity onPress={() => setShowPostModal(false)}>
+              <HapticPressable onPress={() => setShowPostModal(false)}>
                 <X color={colors.textMuted} size={24} />
-              </TouchableOpacity>
+              </HapticPressable>
             </View>
 
             <View style={styles.formGroup}>
@@ -467,13 +591,13 @@ export default function DriverInterface() {
               {sourceSug.length > 0 && (
                 <View style={styles.suggBox}>
                   {sourceSug.slice(0, 5).map((s, i) => (
-                    <TouchableOpacity key={i} style={styles.suggItem} onPress={() => {
+                    <HapticPressable key={i} style={styles.suggItem} onPress={() => {
                       setSource(`${s.place_name}${s.postal_code ? ` (${s.postal_code})` : ''}`);
                       setSourceCoords({ lat: s.latitude ?? s.lat ?? 0, lng: s.longitude ?? s.lng ?? 0 });
                       setSourceSug([]);
                     }}>
                       <Text style={styles.suggText} numberOfLines={1}>{s.place_name}{s.state_name ? `, ${s.state_name}` : ''}</Text>
-                    </TouchableOpacity>
+                    </HapticPressable>
                   ))}
                 </View>
               )}
@@ -491,13 +615,13 @@ export default function DriverInterface() {
               {destSug.length > 0 && (
                 <View style={styles.suggBox}>
                   {destSug.slice(0, 5).map((s, i) => (
-                    <TouchableOpacity key={i} style={styles.suggItem} onPress={() => {
+                    <HapticPressable key={i} style={styles.suggItem} onPress={() => {
                       setDestination(`${s.place_name}${s.postal_code ? ` (${s.postal_code})` : ''}`);
                       setDestCoords({ lat: s.latitude ?? s.lat ?? 0, lng: s.longitude ?? s.lng ?? 0 });
                       setDestSug([]);
                     }}>
                       <Text style={styles.suggText} numberOfLines={1}>{s.place_name}{s.state_name ? `, ${s.state_name}` : ''}</Text>
-                    </TouchableOpacity>
+                    </HapticPressable>
                   ))}
                 </View>
               )}
@@ -518,21 +642,21 @@ export default function DriverInterface() {
             <View style={styles.formGroup}>
               <Text style={styles.formLabel}>Seats Offered</Text>
               <View style={styles.seatRow}>
-                <TouchableOpacity
+                <HapticPressable
                   style={[styles.seatBtn, seatsTotal <= 1 && styles.seatBtnDisabled]}
                   onPress={() => setSeatsTotal((s) => Math.max(1, s - 1))}
                   disabled={seatsTotal <= 1}
                 >
                   <Text style={styles.seatBtnText}>−</Text>
-                </TouchableOpacity>
+                </HapticPressable>
                 <Text style={styles.seatCount}>{seatsTotal}</Text>
-                <TouchableOpacity
+                <HapticPressable
                   style={[styles.seatBtn, seatsTotal >= 6 && styles.seatBtnDisabled]}
                   onPress={() => setSeatsTotal((s) => Math.min(6, s + 1))}
                   disabled={seatsTotal >= 6}
                 >
                   <Text style={styles.seatBtnText}>+</Text>
-                </TouchableOpacity>
+                </HapticPressable>
               </View>
             </View>
 
@@ -542,13 +666,13 @@ export default function DriverInterface() {
                 {departurePresets().map((p) => {
                   const active = departure.label === p.label;
                   return (
-                    <TouchableOpacity
+                    <HapticPressable
                       key={p.label}
                       style={[styles.depChip, active && styles.depChipActive]}
                       onPress={() => setDeparture(p)}
                     >
                       <Text style={[styles.depChipText, active && styles.depChipTextActive]}>{p.label}</Text>
-                    </TouchableOpacity>
+                    </HapticPressable>
                   );
                 })}
               </View>
@@ -558,20 +682,20 @@ export default function DriverInterface() {
             <View style={styles.formGroup}>
               <Text style={styles.formLabel}>Vehicle Mode</Text>
               <View style={styles.vehicleSelectRow}>
-                <TouchableOpacity 
+                <HapticPressable 
                   style={[styles.vehicleSelectBtn, vehicleType === 'CAR' && styles.vehicleSelectBtnActive]}
                   onPress={() => setVehicleType('CAR')}
                 >
                   <Car color={vehicleType === 'CAR' ? '#fff' : colors.textMuted} size={18} style={{marginRight: 6}} />
                   <Text style={[styles.vehicleSelectBtnText, vehicleType === 'CAR' && styles.vehicleSelectBtnTextActive]}>Car Pool</Text>
-                </TouchableOpacity>
-                <TouchableOpacity 
+                </HapticPressable>
+                <HapticPressable 
                   style={[styles.vehicleSelectBtn, vehicleType === 'BIKE' && styles.vehicleSelectBtnActive]}
                   onPress={() => setVehicleType('BIKE')}
                 >
                   <Bike color={vehicleType === 'BIKE' ? '#fff' : colors.textMuted} size={18} style={{marginRight: 6}} />
                   <Text style={[styles.vehicleSelectBtnText, vehicleType === 'BIKE' && styles.vehicleSelectBtnTextActive]}>Bike Pool</Text>
-                </TouchableOpacity>
+                </HapticPressable>
               </View>
             </View>
 
@@ -612,13 +736,13 @@ export default function DriverInterface() {
                 {['M', 'T', 'W', 'Th', 'F', 'Sa', 'Su'].map((day, idx) => {
                   const active = selectedDays.includes(idx);
                   return (
-                    <TouchableOpacity 
+                    <HapticPressable 
                       key={day} 
                       style={[styles.dayChip, active && styles.dayChipActive]}
                       onPress={() => toggleDay(idx)}
                     >
                       <Text style={[styles.dayChipText, active && styles.dayChipTextActive]}>{day}</Text>
-                    </TouchableOpacity>
+                    </HapticPressable>
                   );
                 })}
               </View>
@@ -671,7 +795,7 @@ export default function DriverInterface() {
                 {(['COMMUTE', 'INTERCITY', 'EVENT'] as const).map(mode => {
                   const active = rideType === mode;
                   return (
-                    <TouchableOpacity
+                    <HapticPressable
                       key={mode}
                       style={[styles.chatBtn, active && styles.chatBtnActive]}
                       onPress={() => setRideType(mode)}
@@ -679,7 +803,7 @@ export default function DriverInterface() {
                       <Text style={[styles.chatBtnText, active && styles.chatBtnTextActive]}>
                         {mode === 'COMMUTE' ? 'Commute' : mode === 'INTERCITY' ? 'Intercity' : 'Event'}
                       </Text>
-                    </TouchableOpacity>
+                    </HapticPressable>
                   );
                 })}
               </View>
@@ -701,21 +825,21 @@ export default function DriverInterface() {
                 {(['QUIET', 'MEDIUM', 'TALKATIVE'] as const).map(level => {
                   const active = chattiness === level;
                   return (
-                    <TouchableOpacity 
+                    <HapticPressable 
                       key={level} 
                       style={[styles.chatBtn, active && styles.chatBtnActive]}
                       onPress={() => setChattiness(level)}
                     >
                       <Text style={[styles.chatBtnText, active && styles.chatBtnTextActive]}>{level}</Text>
-                    </TouchableOpacity>
+                    </HapticPressable>
                   );
                 })}
               </View>
             </View>
 
-            <TouchableOpacity style={styles.submitBtn} onPress={handlePostRide}>
+            <HapticPressable haptic="press" style={styles.submitBtn} onPress={handlePostRide}>
               <Text style={styles.submitBtnText}>Post Commute Route</Text>
-            </TouchableOpacity>
+            </HapticPressable>
           </ScrollView>
         )}
 
@@ -746,8 +870,8 @@ export default function DriverInterface() {
                   <Text style={styles.reqRouteText}>{req.route}</Text>
                 </View>
                 <View style={styles.actionRow}>
-                  <TouchableOpacity style={styles.declineBtn}><X color="#ef4444" size={24} /></TouchableOpacity>
-                  <TouchableOpacity style={styles.acceptBtn}><Check color="#fff" size={24} /><Text style={styles.acceptText}>Accept Rider</Text></TouchableOpacity>
+                  <HapticPressable style={styles.declineBtn}><X color="#ef4444" size={24} /></HapticPressable>
+                  <HapticPressable style={styles.acceptBtn}><Check color="#fff" size={24} /><Text style={styles.acceptText}>Accept Rider</Text></HapticPressable>
                 </View>
               </View>
             ))}
@@ -775,12 +899,117 @@ export default function DriverInterface() {
               </View>
             </View>
 
-            <TouchableOpacity style={styles.hugeActionBtn}>
+            <HapticPressable haptic="press" style={styles.hugeActionBtn}>
               <Text style={styles.hugeActionText}>Passenger Picked Up</Text>
-            </TouchableOpacity>
+            </HapticPressable>
           </View>
         )}
       </View>
+
+      {/* Boarding verification — cross-platform (Alert.prompt is iOS-only) */}
+      <Modal
+        visible={boardingRideId !== null}
+        transparent
+        animationType="fade"
+        onRequestClose={closeBoarding}
+      >
+        <View style={styles.otpBackdrop}>
+          <View style={styles.otpSheet}>
+            <View style={styles.otpHeader}>
+              <Text style={styles.otpTitle}>Verify boarding</Text>
+              <HapticPressable onPress={closeBoarding} accessibilityLabel="Close">
+                <X color={colors.textMuted} size={22} />
+              </HapticPressable>
+            </View>
+
+            {otpTarget ? (
+              <>
+                <Text style={styles.otpSub}>
+                  Ask {otpTarget.rider_name} for the 4-digit code on their trip screen.
+                </Text>
+                <TextInput
+                  style={styles.otpInput}
+                  value={otpInput}
+                  onChangeText={(t) => setOtpInput(t.replace(/\D/g, '').slice(0, 4))}
+                  keyboardType="number-pad"
+                  maxLength={4}
+                  autoFocus
+                  placeholder="––––"
+                  placeholderTextColor={colors.textMuted}
+                  editable={!otpBusy}
+                />
+                <View style={{ flexDirection: 'row', gap: 8 }}>
+                  <HapticPressable
+                    style={[styles.otpGhostBtn, { flex: 1 }]}
+                    onPress={() => { setOtpTarget(null); setOtpInput(''); }}
+                    disabled={otpBusy}
+                  >
+                    <Text style={styles.otpGhostText}>Back</Text>
+                  </HapticPressable>
+                  <HapticPressable
+                    haptic="press"
+                    style={[styles.otpPrimaryBtn, { flex: 2 }, otpBusy && { opacity: 0.6 }]}
+                    onPress={verifyPassengerOtp}
+                    disabled={otpBusy}
+                  >
+                    {otpBusy
+                      ? <ActivityIndicator color="#fff" />
+                      : <Text style={styles.otpPrimaryText}>Verify</Text>}
+                  </HapticPressable>
+                </View>
+              </>
+            ) : (
+              <>
+                <Text style={styles.otpSub}>
+                  Confirm each rider is in the vehicle before you start.
+                </Text>
+                {boardingPassengers.map((p) => (
+                  <View key={p.booking_id} style={styles.otpRow}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.otpRowName}>{p.rider_name}</Text>
+                      <Text style={styles.otpRowMeta}>
+                        {p.seats_booked} seat{p.seats_booked > 1 ? 's' : ''}
+                      </Text>
+                    </View>
+                    {p.boarding_verified ? (
+                      <Text style={styles.otpVerified}>✓ Verified</Text>
+                    ) : (
+                      <HapticPressable
+                        style={styles.otpVerifyBtn}
+                        onPress={() => { setOtpInput(''); setOtpTarget(p); }}
+                      >
+                        <Text style={styles.otpVerifyText}>Verify</Text>
+                      </HapticPressable>
+                    )}
+                  </View>
+                ))}
+
+                <HapticPressable
+                  haptic="press"
+                  style={styles.otpPrimaryBtn}
+                  onPress={() => {
+                    const pending = boardingPassengers.filter((p) => !p.boarding_verified);
+                    if (pending.length === 0) {
+                      commitStart(boardingRideId!);
+                      return;
+                    }
+                    Alert.alert(
+                      'Start without verifying?',
+                      `${pending.length} rider${pending.length > 1 ? 's have' : ' has'} not been verified. You can still start, but boarding won't be confirmed for them.`,
+                      [
+                        { text: 'Keep verifying', style: 'cancel' },
+                        { text: 'Start anyway', style: 'destructive', onPress: () => commitStart(boardingRideId!) },
+                      ]
+                    );
+                  }}
+                >
+                  <Text style={styles.otpPrimaryText}>Start trip</Text>
+                </HapticPressable>
+              </>
+            )}
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -820,6 +1049,24 @@ const styles = StyleSheet.create({
   routeDest: { fontSize: 18, fontWeight: 'bold', color: colors.text },
   noRidesText: { color: colors.textMuted, fontSize: 13, marginTop: 8 },
   manifestRow: { color: colors.textMuted, fontSize: 12, marginBottom: 2 },
+
+  // Boarding verification modal
+  otpBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'center', paddingHorizontal: 20 },
+  otpSheet: { backgroundColor: colors.card, borderRadius: 16, padding: 18 },
+  otpHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 },
+  otpTitle: { color: colors.text, fontSize: 18, fontWeight: '700' },
+  otpSub: { color: colors.textMuted, fontSize: 13, marginBottom: 14 },
+  otpRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: colors.cardBorder },
+  otpRowName: { color: colors.text, fontSize: 14, fontWeight: '600' },
+  otpRowMeta: { color: colors.textMuted, fontSize: 12, marginTop: 1 },
+  otpVerified: { color: colors.success, fontSize: 13, fontWeight: '700' },
+  otpVerifyBtn: { backgroundColor: colors.background, borderWidth: 1, borderColor: colors.cardBorder, borderRadius: 8, paddingHorizontal: 14, paddingVertical: 7 },
+  otpVerifyText: { color: colors.text, fontSize: 13, fontWeight: '600' },
+  otpInput: { backgroundColor: colors.background, borderWidth: 1, borderColor: colors.cardBorder, borderRadius: 10, color: colors.text, fontSize: 30, letterSpacing: 14, textAlign: 'center', paddingVertical: 12, marginBottom: 14 },
+  otpPrimaryBtn: { backgroundColor: colors.success, borderRadius: 10, paddingVertical: 14, alignItems: 'center', marginTop: 14 },
+  otpPrimaryText: { color: '#fff', fontSize: 15, fontWeight: '700' },
+  otpGhostBtn: { backgroundColor: colors.background, borderWidth: 1, borderColor: colors.cardBorder, borderRadius: 10, paddingVertical: 14, alignItems: 'center' },
+  otpGhostText: { color: colors.textMuted, fontSize: 15, fontWeight: '600' },
   startBtn: { flex: 1, backgroundColor: colors.success, borderRadius: 8, height: 42, alignItems: 'center', justifyContent: 'center' },
   completeBtn: { flex: 1, backgroundColor: '#1E4E8C', borderRadius: 8, height: 42, alignItems: 'center', justifyContent: 'center' },
   startBtnText: { color: '#fff', fontSize: 13, fontWeight: '700' },

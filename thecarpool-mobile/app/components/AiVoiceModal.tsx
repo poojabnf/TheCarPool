@@ -1,9 +1,10 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { StyleSheet, View, Text, TouchableOpacity, Animated } from 'react-native';
+import { StyleSheet, View, Text, Animated } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Mic, Check, Clock, X } from 'lucide-react-native';
 import { c, font, radius, space } from '../../theme/tokens';
+import HapticPressable from './HapticPressable';
 
 export default function AiVoiceModal() {
   const router = useRouter();
@@ -40,16 +41,16 @@ export default function AiVoiceModal() {
       </View>
 
       <View style={styles.actions}>
-        <TouchableOpacity style={[styles.action, styles.confirm]} onPress={() => router.back()} activeOpacity={0.9}>
+        <HapticPressable style={[styles.action, styles.confirm]} onPress={() => router.back()} activeOpacity={0.9}>
           <Check color="#fff" size={18} strokeWidth={2.6} /><Text style={styles.confirmText}>Confirm ride</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={[styles.action, styles.secondary]} onPress={() => router.back()} activeOpacity={0.9}>
+        </HapticPressable>
+        <HapticPressable style={[styles.action, styles.secondary]} onPress={() => router.back()} activeOpacity={0.9}>
           <Clock color={c.textPrimary} size={17} strokeWidth={2.2} /><Text style={styles.secondaryText}>Delay 10 min</Text>
-        </TouchableOpacity>
+        </HapticPressable>
       </View>
-      <TouchableOpacity style={styles.cancel} onPress={() => router.back()}>
+      <HapticPressable style={styles.cancel} onPress={() => router.back()}>
         <X color={c.danger} size={16} strokeWidth={2.4} /><Text style={styles.cancelText}>Cancel call</Text>
-      </TouchableOpacity>
+      </HapticPressable>
     </View>
   );
 }

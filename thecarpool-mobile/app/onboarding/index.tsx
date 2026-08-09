@@ -3,7 +3,6 @@ import {
   View,
   Text,
   TextInput,
-  TouchableOpacity,
   StyleSheet,
   StatusBar,
   ScrollView,
@@ -17,6 +16,7 @@ import { apiFetch } from '../services/api';
 import { useRouter } from 'expo-router';
 import { useAuthStore } from '../store/authStore';
 import { CameraView, useCameraPermissions } from 'expo-camera';
+import HapticPressable from '../components/HapticPressable';
 
 const { width } = Dimensions.get('window');
 const TOTAL_STEPS = 5;
@@ -80,7 +80,7 @@ function StepRole({ onNext }: { onNext: (data: any) => void }) {
         Are you looking for a ride, or do you want to offer rides to your co-workers?
       </Text>
 
-      <TouchableOpacity 
+      <HapticPressable 
         style={[styles.roleCard, selectedRole === 'rider' && styles.roleCardActive]} 
         onPress={() => setSelectedRole('rider')}
         activeOpacity={0.8}
@@ -90,9 +90,9 @@ function StepRole({ onNext }: { onNext: (data: any) => void }) {
           <Text style={styles.roleTitle}>Rider</Text>
           <Text style={styles.roleDesc}>Find verified carpools on your daily route and save money.</Text>
         </View>
-      </TouchableOpacity>
+      </HapticPressable>
 
-      <TouchableOpacity 
+      <HapticPressable 
         style={[styles.roleCard, selectedRole === 'partner' && styles.roleCardActive]} 
         onPress={() => setSelectedRole('partner')}
         activeOpacity={0.8}
@@ -102,15 +102,15 @@ function StepRole({ onNext }: { onNext: (data: any) => void }) {
           <Text style={styles.roleTitle}>Partner</Text>
           <Text style={styles.roleDesc}>Offer empty seats in your car and split commuting costs.</Text>
         </View>
-      </TouchableOpacity>
+      </HapticPressable>
 
-      <TouchableOpacity
+      <HapticPressable haptic="press"
         style={[styles.nextBtn, !selectedRole && styles.nextBtnDisabled]}
         onPress={() => selectedRole && onNext({ role: selectedRole })}
         activeOpacity={0.8}
       >
         <Text style={styles.nextBtnText}>Continue →</Text>
-      </TouchableOpacity>
+      </HapticPressable>
     </ScrollView>
   );
 }
@@ -156,13 +156,13 @@ function StepProfile({ onNext }: { onNext: (data: any) => void }) {
         onChangeText={setWorkLocation}
       />
 
-      <TouchableOpacity
+      <HapticPressable haptic="press"
         style={[styles.nextBtn, !isValid && styles.nextBtnDisabled]}
         onPress={() => isValid && onNext({ name, employeeId, company, workLocation })}
         activeOpacity={0.8}
       >
         <Text style={styles.nextBtnText}>Continue →</Text>
-      </TouchableOpacity>
+      </HapticPressable>
     </ScrollView>
   );
 }
@@ -215,13 +215,13 @@ function StepAadhaar({ onNext }: { onNext: (data: any) => void }) {
           Identity confirmed with UIDAI registry.{'\n'}Last 4 digits: ••••{' '}
           {aadhaar.slice(-4)}
         </Text>
-        <TouchableOpacity
+        <HapticPressable haptic="press"
           style={styles.nextBtn}
           onPress={() => onNext({ aadhaarLast4: aadhaar.slice(-4) })}
           activeOpacity={0.8}
         >
           <Text style={styles.nextBtnText}>Continue to PAN →</Text>
-        </TouchableOpacity>
+        </HapticPressable>
       </View>
     );
   }
@@ -247,7 +247,7 @@ function StepAadhaar({ onNext }: { onNext: (data: any) => void }) {
             keyboardType="number-pad"
             maxLength={14}
           />
-          <TouchableOpacity
+          <HapticPressable haptic="press"
             style={[
               styles.nextBtn,
               aadhaar.length < 12 && styles.nextBtnDisabled,
@@ -261,7 +261,7 @@ function StepAadhaar({ onNext }: { onNext: (data: any) => void }) {
             ) : (
               <Text style={styles.nextBtnText}>Send OTP to Linked Mobile →</Text>
             )}
-          </TouchableOpacity>
+          </HapticPressable>
         </>
       ) : (
         <>
@@ -277,7 +277,7 @@ function StepAadhaar({ onNext }: { onNext: (data: any) => void }) {
             keyboardType="number-pad"
             maxLength={6}
           />
-          <TouchableOpacity
+          <HapticPressable haptic="press"
             style={[styles.nextBtn, otp.length < 6 && styles.nextBtnDisabled]}
             onPress={handleVerifyOtp}
             disabled={loading || otp.length < 6}
@@ -288,7 +288,7 @@ function StepAadhaar({ onNext }: { onNext: (data: any) => void }) {
             ) : (
               <Text style={styles.nextBtnText}>Verify Aadhaar →</Text>
             )}
-          </TouchableOpacity>
+          </HapticPressable>
         </>
       )}
     </ScrollView>
@@ -323,13 +323,13 @@ function StepPan({ onNext }: { onNext: (data: any) => void }) {
           Name on PAN: <Text style={{ color: '#0E8A5F', fontWeight: '700' }}>{fetchedName}</Text>
           {'\n'}PAN: {panFormatted}
         </Text>
-        <TouchableOpacity
+        <HapticPressable haptic="press"
           style={styles.nextBtn}
           onPress={() => onNext({ panNumber: panFormatted })}
           activeOpacity={0.8}
         >
           <Text style={styles.nextBtnText}>Continue to Selfie →</Text>
-        </TouchableOpacity>
+        </HapticPressable>
       </View>
     );
   }
@@ -361,7 +361,7 @@ function StepPan({ onNext }: { onNext: (data: any) => void }) {
         </Text>
       )}
 
-      <TouchableOpacity
+      <HapticPressable haptic="press"
         style={[styles.nextBtn, !isValidPan && styles.nextBtnDisabled]}
         onPress={handleVerify}
         disabled={loading || !isValidPan}
@@ -372,7 +372,7 @@ function StepPan({ onNext }: { onNext: (data: any) => void }) {
         ) : (
           <Text style={styles.nextBtnText}>Verify PAN →</Text>
         )}
-      </TouchableOpacity>
+      </HapticPressable>
     </ScrollView>
   );
 }
@@ -468,7 +468,7 @@ function StepSelfie({ onNext }: { onNext: () => void }) {
       />
 
       {stage !== 'done' ? (
-        <TouchableOpacity
+        <HapticPressable haptic="press"
           style={[styles.nextBtn, stage === 'scanning' && styles.nextBtnDisabled, { width: '100%' }]}
           onPress={handleTakeSelfie}
           disabled={stage === 'scanning'}
@@ -477,15 +477,15 @@ function StepSelfie({ onNext }: { onNext: () => void }) {
           <Text style={styles.nextBtnText}>
             {stage === 'idle' ? '📸 Take Selfie' : '⏳ Scanning…'}
           </Text>
-        </TouchableOpacity>
+        </HapticPressable>
       ) : (
-        <TouchableOpacity
+        <HapticPressable haptic="press"
           style={[styles.nextBtn, { width: '100%', backgroundColor: '#0E8A5F' }]}
           onPress={onNext}
           activeOpacity={0.8}
         >
           <Text style={styles.nextBtnText}>🎉 Activate My Account →</Text>
-        </TouchableOpacity>
+        </HapticPressable>
       )}
     </ScrollView>
   );
@@ -604,7 +604,7 @@ export default function OnboardingScreen() {
 
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => {
+        <HapticPressable onPress={() => {
           Alert.alert(
             'Skip KYC Setup?',
             'You can browse rides but will need to complete identity verification before booking your first ride.',
@@ -615,7 +615,7 @@ export default function OnboardingScreen() {
           );
         }}>
           <Text style={styles.skipText}>Skip for now</Text>
-        </TouchableOpacity>
+        </HapticPressable>
         <Text style={styles.headerTitle}>Account Setup</Text>
         <Text style={styles.stepCounter}>{currentStep + 1}/{TOTAL_STEPS}</Text>
       </View>

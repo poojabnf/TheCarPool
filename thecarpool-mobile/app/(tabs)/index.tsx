@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import {
-  View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView, Alert, ActivityIndicator, Image,
+  View, Text, StyleSheet, TextInput, ScrollView, Alert, ActivityIndicator, Image,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -11,6 +11,7 @@ import { useAuthStore } from '../store/authStore';
 import { useI18n } from '../services/i18n';
 import * as haptics from '../services/haptics';
 import { c, font, radius, space, shadowSm, brass } from '../../theme/tokens';
+import HapticPressable from '../components/HapticPressable';
 
 // Offline-cached search (roadmap Phase 1, session-scoped): module-level so it
 // survives tab switches. A persistent cache needs AsyncStorage, which is a
@@ -51,12 +52,12 @@ function Suggestions({ items, onPick }: { items: any[]; onPick: (s: any) => void
   return (
     <View style={styles.suggBox}>
       {items.slice(0, 5).map((s, i) => (
-        <TouchableOpacity key={i} style={styles.suggItem} onPress={() => onPick(s)}>
+        <HapticPressable key={i} style={styles.suggItem} onPress={() => onPick(s)}>
           <MapPin color={c.textDisabled} size={14} />
           <Text style={styles.suggText} numberOfLines={1}>
             {s.place_name}{s.state_name ? `, ${s.state_name}` : ''}
           </Text>
-        </TouchableOpacity>
+        </HapticPressable>
       ))}
     </View>
   );
@@ -184,11 +185,11 @@ export default function HomeScreen() {
           <Text style={styles.greeting}>{t(greetingKey())}</Text>
           <Text style={styles.name}>{name}</Text>
         </View>
-        <TouchableOpacity style={styles.avatar} onPress={() => router.push('/(tabs)/account')} activeOpacity={0.8}>
+        <HapticPressable style={styles.avatar} onPress={() => router.push('/(tabs)/account')} activeOpacity={0.8}>
           {userProfile?.photoUrl
             ? <Image source={{ uri: userProfile.photoUrl }} style={styles.avatarImg} />
             : <Text style={styles.avatarText}>{initials(userProfile?.name)}</Text>}
-        </TouchableOpacity>
+        </HapticPressable>
       </View>
 
       {/* Search card */}
@@ -221,23 +222,23 @@ export default function HomeScreen() {
         <View style={styles.optRow}>
           <View style={styles.seatBox}>
             <Users color={c.textTertiary} size={15} />
-            <TouchableOpacity onPress={() => setSeats((s) => Math.max(1, s - 1))}><Text style={styles.stepper}>−</Text></TouchableOpacity>
+            <HapticPressable onPress={() => setSeats((s) => Math.max(1, s - 1))}><Text style={styles.stepper}>−</Text></HapticPressable>
             <Text style={styles.seatCount}>{seats}</Text>
-            <TouchableOpacity onPress={() => setSeats((s) => Math.min(4, s + 1))}><Text style={styles.stepper}>+</Text></TouchableOpacity>
+            <HapticPressable onPress={() => setSeats((s) => Math.min(4, s + 1))}><Text style={styles.stepper}>+</Text></HapticPressable>
           </View>
-          <TouchableOpacity
+          <HapticPressable
             style={[styles.womenChip, womenOnly && styles.womenChipOn]}
             onPress={() => setWomenOnly((v) => !v)} activeOpacity={0.85}
           >
             <Venus color={womenOnly ? '#fff' : c.textAccent} size={14} strokeWidth={2.4} />
             <Text style={[styles.womenChipText, womenOnly && { color: '#fff' }]}>{t('women_only')}</Text>
-          </TouchableOpacity>
+          </HapticPressable>
         </View>
 
-        <TouchableOpacity style={styles.findBtn} onPress={findRides} disabled={searching} activeOpacity={0.9}>
+        <HapticPressable style={styles.findBtn} onPress={findRides} disabled={searching} activeOpacity={0.9}>
           {searching ? <ActivityIndicator color={c.actionPrimaryText} />
             : <><Search color={c.actionPrimaryText} size={17} strokeWidth={2.4} /><Text style={styles.findBtnText}>{t('find_rides')}</Text></>}
-        </TouchableOpacity>
+        </HapticPressable>
       </View>
 
       {/* Results */}
@@ -286,9 +287,9 @@ export default function HomeScreen() {
                 {(ride as any).ride_type === 'EVENT' && <View style={styles.badge}><Text style={styles.badgeText}>🎪 {(ride as any).event_tag || 'Event'}</Text></View>}
                 {ride.pickup_deviation != null && <Text style={styles.detour}>{Math.round(ride.pickup_deviation)}m detour</Text>}
               </View>
-              <TouchableOpacity style={styles.bookBtn} onPress={() => bookRide(ride)} activeOpacity={0.9}>
+              <HapticPressable haptic="press" style={styles.bookBtn} onPress={() => bookRide(ride)} activeOpacity={0.9}>
                 <Text style={styles.bookBtnText}>{t('book_ride')} · ₹{Number(ride.price_split).toFixed(0)}</Text>
-              </TouchableOpacity>
+              </HapticPressable>
             </View>
           ))}
         </View>

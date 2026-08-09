@@ -1,6 +1,6 @@
 import React, { useState, useCallback } from 'react';
 import {
-  View, Text, StyleSheet, TouchableOpacity, ScrollView,
+  View, Text, StyleSheet, ScrollView,
   RefreshControl, ActivityIndicator, Alert,
 } from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
@@ -9,6 +9,7 @@ import { Route, MapPin, Clock, CheckCircle, Circle, ChevronRight } from 'lucide-
 import { c, font, radius, space, shadowSm } from '../../theme/tokens';
 import { apiFetch } from '../services/api';
 import * as haptics from '../services/haptics';
+import HapticPressable from '../components/HapticPressable';
 
 interface Booking {
   id: string;
@@ -74,44 +75,60 @@ export default function TripsScreen() {
   // Reload every time the tab comes into focus
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
-  // Cancel an upcoming booking. The backend derives the late-cancel fee (₹50
-  // inside 2h of departure) and refunds the escrow accordingly.
-  const cancelBooking = (b: Booking) => {
-    const isLate = b.departure_time
-      ? new Date(b.departure_time).getTime() - Date.now() < 2 * 60 * 60 * 1000
-      : false;
+  // Cancel an upcoming booking. The exact charge is quoted by the server first
+  // and shown to the rider before they commit — the quote and the charge share
+  // the same server-side maths, so the figure in this dialog is the figure
+  // actually applied.
+  const cancelBooking = async (b: Booking) => {
     haptics.warning();
+
+    let q: any = null;
+    try {
+      const qRes = await apiFetch(`/api/bookings/${b.id}/cancellation-quote`);
+      if (qRes.ok) {
+        q = await qRes.json();
+      } else {
+        const e = await qRes.json().catch(() => ({}));
+        Alert.alert('Could not cancel', e.message || e.error || 'This booking is no longer cancellable.');
+        return;
+      }
+    } catch {
+      Alert.alert('Could not cancel', 'Network error. Please try again.');
+      return;
+    }
+
+    const confirmLabel = q.cancellation_fee > 0
+      ? `Cancel (₹${q.cancellation_fee} charge)`
+      : 'Cancel booking';
+
     Alert.alert(
-      'Cancel this booking?',
-      isLate
-        ? 'Departure is under 2 hours away — a ₹50 late-cancellation fee applies. The rest of your escrow is refunded to your wallet.'
-        : 'Your full escrow amount will be refunded to your wallet.',
+      q.headline || 'Cancel this booking?',
+      `${q.detail}\n\nRefunds reach your wallet immediately. You can withdraw to your bank 24 hours after the ride.`,
       [
         { text: 'Keep booking', style: 'cancel' },
         {
-          text: isLate ? 'Cancel (₹50 fee)' : 'Cancel booking',
+          text: confirmLabel,
           style: 'destructive',
           onPress: async () => {
             try {
-              const res = await apiFetch('/api/payments/escrow/cancellation-charge', {
-                method: 'POST',
-                body: JSON.stringify({ booking_id: b.id }),
-              });
+              const res = await apiFetch(`/api/bookings/${b.id}/cancel`, { method: 'PATCH' });
               if (res.ok) {
                 const d = await res.json().catch(() => ({}));
                 haptics.success();
                 Alert.alert(
                   'Booking cancelled',
                   d.cancellation_fee > 0
-                    ? `A ₹${d.cancellation_fee} late-cancellation fee was applied. The remaining escrow has been refunded to your wallet.`
-                    : 'Your full escrow has been refunded to your wallet.'
+                    ? `A ₹${d.cancellation_fee} cancellation charge (${d.cancellation_fee_pct}%) was applied. ₹${d.refunded_amount} has been refunded to your wallet.`
+                    : `₹${d.refunded_amount} has been refunded to your wallet in full.`
                 );
                 load(true);
               } else {
+                haptics.error();
                 const e = await res.json().catch(() => ({}));
-                Alert.alert('Could not cancel', e.error || `Server error (${res.status}).`);
+                Alert.alert('Could not cancel', e.message || e.error || `Server error (${res.status}).`);
               }
             } catch {
+              haptics.error();
               Alert.alert('Could not cancel', 'Network error. Please try again.');
             }
           },
@@ -134,9 +151,9 @@ export default function TripsScreen() {
       ) : error ? (
         <View style={styles.centred}>
           <Text style={styles.errorText}>{error}</Text>
-          <TouchableOpacity style={styles.retryBtn} onPress={() => load()}>
+          <HapticPressable style={styles.retryBtn} onPress={() => load()}>
             <Text style={styles.retryText}>Retry</Text>
-          </TouchableOpacity>
+          </HapticPressable>
         </View>
       ) : bookings.length === 0 ? (
         <View style={styles.centred}>
@@ -147,9 +164,9 @@ export default function TripsScreen() {
           <Text style={styles.emptySub}>
             Book a shared ride and it'll show up here — live tracking, ETA and trip history.
           </Text>
-          <TouchableOpacity style={styles.cta} activeOpacity={0.9} onPress={() => router.push('/(tabs)')}>
+          <HapticPressable style={styles.cta} activeOpacity={0.9} onPress={() => router.push('/(tabs)')}>
             <Text style={styles.ctaText}>Find a ride</Text>
-          </TouchableOpacity>
+          </HapticPressable>
         </View>
       ) : (
         <ScrollView
@@ -187,7 +204,7 @@ function BookingCard({ b, onPress, onCancel }: { b: Booking; onPress: () => void
   const isLive = b.ride_status === 'STARTED';
 
   return (
-    <TouchableOpacity style={styles.card} onPress={onPress} activeOpacity={0.85}>
+    <HapticPressable style={styles.card} onPress={onPress} activeOpacity={0.85}>
       <View style={styles.cardTop}>
         <View style={[styles.statusDot, { backgroundColor: color }]} />
         <Text style={[styles.statusText, { color }]}>{label}</Text>
@@ -219,11 +236,11 @@ function BookingCard({ b, onPress, onCancel }: { b: Booking; onPress: () => void
       </View>
 
       {onCancel && (
-        <TouchableOpacity style={styles.cancelBtn} onPress={onCancel} activeOpacity={0.85}>
+        <HapticPressable style={styles.cancelBtn} onPress={onCancel} activeOpacity={0.85}>
           <Text style={styles.cancelText}>Cancel booking</Text>
-        </TouchableOpacity>
+        </HapticPressable>
       )}
-    </TouchableOpacity>
+    </HapticPressable>
   );
 }
 

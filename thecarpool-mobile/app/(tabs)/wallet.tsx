@@ -1,10 +1,12 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, RefreshControl, ActivityIndicator, Modal, TextInput, Linking, Alert } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, RefreshControl, ActivityIndicator, Modal, TextInput, Linking, Alert } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import auth from '@react-native-firebase/auth';
 import { ArrowDownLeft, ArrowUpRight, Smartphone, Landmark, CreditCard, Wallet as WalletIcon, X, Check } from 'lucide-react-native';
+import RazorpayCheckout from 'react-native-razorpay';
 import { apiFetch } from '../services/api';
 import { c, font, radius, space, shadowSm } from '../../theme/tokens';
+import HapticPressable from '../components/HapticPressable';
 
 interface Txn { id: string; type: string; label: string; amount: number; status: string; at: string | null; }
 
@@ -48,20 +50,62 @@ export default function WalletScreen() {
     if (!amt || amt <= 0) { Alert.alert('Enter an amount', 'Please enter how much you want to add.'); return; }
     setPaying(true);
     try {
-      // Create a Razorpay order on the backend (once Razorpay keys are set).
+      // Step 1: Create a Razorpay order on the backend
       const res = await apiFetch('/api/payments/order', {
         method: 'POST',
         body: JSON.stringify({ amount: amt, currency: 'INR' }),
       });
-      // In-app native checkout needs the Razorpay SDK (added in a native build);
-      // for now route to the secure Razorpay hosted page to complete payment.
-      const url = `https://rzp.io/l/thecarpool-topup`;
-      Linking.openURL(url).catch(() => Alert.alert('Error', 'Could not open the payment page.'));
+      if (!res.ok) {
+        const e = await res.json().catch(() => ({}));
+        Alert.alert('Payment unavailable', e.error || 'Payments are currently being configured.');
+        return;
+      }
+      const order = await res.json();
+
+      // Step 2: Open native Razorpay checkout
+      const options = {
+        key: order.key_id,
+        order_id: order.order_id,
+        amount: order.amount,
+        currency: order.currency || 'INR',
+        name: 'TheCarPool Wallet',
+        description: `Add ₹${amt} to your CarPool Wallet`,
+        prefill: {
+          contact: auth().currentUser?.phoneNumber || '',
+          email: auth().currentUser?.email || '',
+        },
+        theme: { color: '#16A34A' },
+      };
+
+      let paymentData: { razorpay_payment_id: string; razorpay_order_id: string; razorpay_signature: string };
+      try {
+        paymentData = await RazorpayCheckout.open(options);
+      } catch (checkoutErr: any) {
+        const desc = checkoutErr?.error?.description || checkoutErr?.description || 'Payment was cancelled.';
+        Alert.alert('Payment cancelled', desc);
+        return;
+      }
+
+      // Step 3: Verify payment signature and credit wallet
+      const verifyRes = await apiFetch('/api/payments/verify', {
+        method: 'POST',
+        body: JSON.stringify({
+          razorpay_order_id: paymentData.razorpay_order_id,
+          razorpay_payment_id: paymentData.razorpay_payment_id,
+          razorpay_signature: paymentData.razorpay_signature,
+        }),
+      });
+
+      if (!verifyRes.ok) {
+        const e = await verifyRes.json().catch(() => ({}));
+        Alert.alert('Verification failed', e.error || 'Could not verify payment. Contact support if debited.');
+        return;
+      }
+
+      Alert.alert('Success!', `₹${amt} credited to your wallet.`);
       setShowAdd(false);
       setAmount('');
-      if (res.status === 503) {
-        // expected until Razorpay keys are configured server-side
-      }
+      load(); // refresh balance & transactions
     } catch {
       Alert.alert('Payment failed', 'Network error. Please try again.');
     } finally {
@@ -84,11 +128,11 @@ export default function WalletScreen() {
           ? <ActivityIndicator color={c.accent} style={{ alignSelf: 'flex-start', marginVertical: 8 }} />
           : <Text style={styles.balanceValue}>₹{(balance ?? 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</Text>}
         <View style={styles.actionRow}>
-          <TouchableOpacity style={[styles.actionBtn, styles.actionPrimary]} activeOpacity={0.85} onPress={() => setShowAdd(true)}>
+          <HapticPressable style={[styles.actionBtn, styles.actionPrimary]} activeOpacity={0.85} onPress={() => setShowAdd(true)}>
             <ArrowDownLeft color={c.actionPrimaryText} size={16} strokeWidth={2.4} />
             <Text style={styles.actionPrimaryText}>Add money</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
+          </HapticPressable>
+          <HapticPressable
             style={[styles.actionBtn, styles.actionSecondary]}
             activeOpacity={0.85}
             onPress={() => Alert.alert(
@@ -99,7 +143,7 @@ export default function WalletScreen() {
           >
             <ArrowUpRight color={c.textPrimary} size={16} strokeWidth={2.4} />
             <Text style={styles.actionSecondaryText}>Withdraw</Text>
-          </TouchableOpacity>
+          </HapticPressable>
         </View>
       </View>
 
@@ -132,7 +176,7 @@ export default function WalletScreen() {
           <View style={[styles.sheet, { paddingBottom: insets.bottom + space.lg }]}>
             <View style={styles.sheetHeader}>
               <Text style={styles.sheetTitle}>Add money</Text>
-              <TouchableOpacity onPress={() => setShowAdd(false)}><X color={c.textTertiary} size={22} /></TouchableOpacity>
+              <HapticPressable onPress={() => setShowAdd(false)}><X color={c.textTertiary} size={22} /></HapticPressable>
             </View>
 
             <Text style={styles.label}>Amount</Text>
@@ -149,9 +193,9 @@ export default function WalletScreen() {
             </View>
             <View style={styles.quickRow}>
               {QUICK_AMOUNTS.map((q) => (
-                <TouchableOpacity key={q} style={styles.quickChip} onPress={() => setAmount(String(q))}>
+                <HapticPressable key={q} style={styles.quickChip} onPress={() => setAmount(String(q))}>
                   <Text style={styles.quickText}>₹{q}</Text>
-                </TouchableOpacity>
+                </HapticPressable>
               ))}
             </View>
 
@@ -159,20 +203,20 @@ export default function WalletScreen() {
             {PAY_METHODS.map((m) => {
               const on = method === m.key;
               return (
-                <TouchableOpacity key={m.key} style={[styles.methodRow, on && styles.methodRowOn]} onPress={() => setMethod(m.key)} activeOpacity={0.85}>
+                <HapticPressable key={m.key} style={[styles.methodRow, on && styles.methodRowOn]} onPress={() => setMethod(m.key)} activeOpacity={0.85}>
                   <View style={styles.methodIcon}><m.Icon color={c.textSecondary} size={18} /></View>
                   <View style={{ flex: 1 }}>
                     <Text style={styles.methodTitle}>{m.title}</Text>
                     <Text style={styles.methodSub}>{m.sub}</Text>
                   </View>
                   <View style={[styles.radio, on && styles.radioOn]}>{on && <Check color="#fff" size={12} strokeWidth={3} />}</View>
-                </TouchableOpacity>
+                </HapticPressable>
               );
             })}
 
-            <TouchableOpacity style={[styles.proceed, (!amount || paying) && styles.proceedDisabled]} onPress={proceedAdd} disabled={!amount || paying} activeOpacity={0.9}>
+            <HapticPressable style={[styles.proceed, (!amount || paying) && styles.proceedDisabled]} onPress={proceedAdd} disabled={!amount || paying} activeOpacity={0.9}>
               {paying ? <ActivityIndicator color="#fff" /> : <Text style={styles.proceedText}>Add {amount ? `₹${amount}` : 'money'}</Text>}
-            </TouchableOpacity>
+            </HapticPressable>
           </View>
         </View>
       </Modal>

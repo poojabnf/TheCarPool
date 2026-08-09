@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import { StyleSheet, View, Text, TouchableOpacity } from 'react-native';
+import { StyleSheet, View, Text } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Camera, CheckCircle, X } from 'lucide-react-native';
+import HapticPressable from './HapticPressable';
 
 export default function KycUploadModal() {
   const router = useRouter();
@@ -17,9 +18,9 @@ export default function KycUploadModal() {
 
   return (
     <View style={styles.container}>
-      <TouchableOpacity style={styles.closeBtn} onPress={() => router.back()}>
+      <HapticPressable style={styles.closeBtn} onPress={() => router.back()}>
         <X color="#64748b" size={24} />
-      </TouchableOpacity>
+      </HapticPressable>
       
       <Text style={styles.title}>Action Required</Text>
       <Text style={styles.subText}>You must verify your identity with a Government ID before booking your first ride.</Text>
@@ -29,9 +30,9 @@ export default function KycUploadModal() {
           <>
             <Camera color="#94a3b8" size={48} style={{ marginBottom: 16 }} />
             <Text style={styles.uploadText}>Tap to scan Govt ID</Text>
-            <TouchableOpacity style={styles.actionBtn} onPress={handleUpload}>
+            <HapticPressable style={styles.actionBtn} onPress={handleUpload}>
               <Text style={styles.actionBtnText}>Open Camera</Text>
-            </TouchableOpacity>
+            </HapticPressable>
           </>
         )}
 
@@ -46,9 +47,9 @@ export default function KycUploadModal() {
           <View style={styles.centerBox}>
             <CheckCircle color="#10b981" size={56} style={{ marginBottom: 16 }} />
             <Text style={[styles.uploadText, { color: '#10b981', fontWeight: 'bold' }]}>Verification Successful</Text>
-            <TouchableOpacity style={[styles.actionBtn, { backgroundColor: '#10b981', marginTop: 20 }]} onPress={() => router.back()}>
+            <HapticPressable style={[styles.actionBtn, { backgroundColor: '#10b981', marginTop: 20 }]} onPress={() => router.back()}>
               <Text style={styles.actionBtnText}>Continue to Booking</Text>
-            </TouchableOpacity>
+            </HapticPressable>
           </View>
         )}
       </View>

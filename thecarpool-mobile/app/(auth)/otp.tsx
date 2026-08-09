@@ -1,9 +1,10 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, StatusBar, Animated } from 'react-native';
+import { View, Text, TextInput, StyleSheet, StatusBar, Animated } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import auth from '@react-native-firebase/auth';
 import { c, font, radius, space } from '../../theme/tokens';
+import HapticPressable from '../components/HapticPressable';
 
 const OTP_LENGTH = 6;
 const RESEND_SECONDS = 30;
@@ -54,6 +55,20 @@ export default function OtpScreen() {
   };
 
   const handleChange = (value: string, i: number) => {
+    // Support full 6-digit paste / auto-fill from SMS prompt
+    if (value.length > 1) {
+      const digits = value.replace(/\D/g, '').slice(0, OTP_LENGTH).split('');
+      const next = [...otp];
+      digits.forEach((d, idx) => {
+        if (idx < OTP_LENGTH) next[idx] = d;
+      });
+      setOtp(next);
+      setError('');
+      const lastIndex = Math.min(digits.length - 1, OTP_LENGTH - 1);
+      inputs.current[lastIndex]?.focus();
+      return;
+    }
+
     if (!/^\d*$/.test(value)) return;
     const next = [...otp];
     next[i] = value.slice(-1);
@@ -83,9 +98,9 @@ export default function OtpScreen() {
   return (
     <View style={[styles.screen, { paddingTop: insets.top + space.sm }]}>
       <StatusBar barStyle="dark-content" backgroundColor={c.bgApp} />
-      <TouchableOpacity style={styles.back} onPress={() => (router.canGoBack() ? router.back() : router.replace('/(auth)/login'))}>
+      <HapticPressable style={styles.back} onPress={() => (router.canGoBack() ? router.back() : router.replace('/(auth)/login'))}>
         <Text style={styles.backText}>← Back</Text>
-      </TouchableOpacity>
+      </HapticPressable>
 
       <View style={styles.body}>
         <Text style={styles.h1}>Enter the code</Text>
@@ -100,26 +115,31 @@ export default function OtpScreen() {
               value={otp[i]}
               onChangeText={(v) => handleChange(v, i)}
               onKeyPress={(e) => handleKey(e, i)}
-              keyboardType="number-pad" maxLength={1} selectTextOnFocus caretHidden
+              keyboardType="number-pad"
+              maxLength={i === 0 ? OTP_LENGTH : 1}
+              selectTextOnFocus
+              caretHidden
+              textContentType="oneTimeCode"
+              autoComplete="sms-otp"
             />
           ))}
         </Animated.View>
         {error ? <Text style={styles.error}>{error}</Text> : null}
 
-        <TouchableOpacity
+        <HapticPressable haptic="press"
           style={[styles.verifyBtn, (isVerifying || otp.some((d) => !d)) && styles.disabled]}
           onPress={handleVerify} disabled={isVerifying || otp.some((d) => !d)} activeOpacity={0.9}
         >
           <Text style={styles.verifyText}>{isVerifying ? 'Verifying…' : 'Verify & continue'}</Text>
-        </TouchableOpacity>
+        </HapticPressable>
 
         <View style={styles.resendRow}>
           <Text style={styles.resendLabel}>Didn't get it? </Text>
-          <TouchableOpacity onPress={handleResend} disabled={countdown > 0}>
+          <HapticPressable onPress={handleResend} disabled={countdown > 0}>
             <Text style={[styles.resendLink, countdown > 0 && styles.resendDisabled]}>
               {countdown > 0 ? `Resend in ${countdown}s` : 'Resend code'}
             </Text>
-          </TouchableOpacity>
+          </HapticPressable>
         </View>
       </View>
     </View>

@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import {
-  View, Text, StyleSheet, TouchableOpacity, TextInput, FlatList,
+  View, Text, StyleSheet, TextInput, FlatList,
   KeyboardAvoidingView, Platform, ActivityIndicator,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -11,6 +11,7 @@ import { auth } from '../services/firebase';
 import { API_URL, apiFetch } from '../services/api';
 import * as haptics from '../services/haptics';
 import { c, font, radius, space } from '../../theme/tokens';
+import HapticPressable from '../components/HapticPressable';
 
 type ChatMessage = {
   id: string;
@@ -109,9 +110,9 @@ export default function ChatScreen() {
     >
       {/* Header */}
       <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
-        <TouchableOpacity onPress={() => (router.canGoBack() ? router.back() : router.replace('/(tabs)'))}>
+        <HapticPressable onPress={() => (router.canGoBack() ? router.back() : router.replace('/(tabs)'))}>
           <Text style={styles.back}>←</Text>
-        </TouchableOpacity>
+        </HapticPressable>
         <View style={{ flex: 1 }}>
           <Text style={styles.title}>Trip chat</Text>
           <Text style={styles.subtitle}>Trip #{String(id).slice(0, 8)} · numbers stay private</Text>
@@ -153,14 +154,14 @@ export default function ChatScreen() {
             multiline
             maxLength={1000}
           />
-          <TouchableOpacity
+          <HapticPressable haptic="press"
             style={[styles.sendBtn, (!draft.trim() || sending) && { opacity: 0.4 }]}
             onPress={send}
             disabled={!draft.trim() || sending}
             activeOpacity={0.9}
           >
             <Send color="#fff" size={18} strokeWidth={2.2} />
-          </TouchableOpacity>
+          </HapticPressable>
         </View>
       )}
     </KeyboardAvoidingView>

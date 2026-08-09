@@ -13,3 +13,6 @@ web-build/
 # native (managed workflow regenerates these)
 /ios
 /android
+
+# local scratch payloads (API request bodies, etc.)
+scratch_payload.json

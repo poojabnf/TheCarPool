@@ -9,11 +9,11 @@ import auth from '@react-native-firebase/auth';
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
 import * as AppleAuthentication from 'expo-apple-authentication';
 import { Leaf } from 'lucide-react-native';
+import HapticPressable from '../components/HapticPressable';
 import { c, font, radius, space, shadowSm } from '../../theme/tokens';
 
-// TODO: Move these to EXPO_PUBLIC_* env vars in eas.json before open-sourcing.
-const GOOGLE_WEB_CLIENT_ID = '953521578640-rl68r8pde1odshskmaguaokjht4qbqic.apps.googleusercontent.com';
-const GOOGLE_IOS_CLIENT_ID = '953521578640-khu8idmh7f9bmqli6pps2a2bjfmn8p9g.apps.googleusercontent.com';
+const GOOGLE_WEB_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID || '';
+const GOOGLE_IOS_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID || '';
 const TERMS_URL = 'https://thecarpool.in/terms';
 const PRIVACY_URL = 'https://thecarpool.in/privacy';
 
@@ -62,7 +62,9 @@ export default function LoginScreen() {
   const handleGoogleSignIn = async () => {
     setIsGoogleLoading(true);
     try {
-      await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
+      if (Platform.OS === 'android') {
+        await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
+      }
       const response = await GoogleSignin.signIn();
       const idToken = response.data?.idToken;
       if (!idToken) throw new Error('Google Sign-In was cancelled or returned no token.');
@@ -113,25 +115,26 @@ export default function LoginScreen() {
           />
         </View>
 
-        <TouchableOpacity
+        <HapticPressable
+          haptic="press"
           style={[styles.primaryBtn, (phone.length < 10 || isSending) && styles.disabled]}
           onPress={handleSendOtp} disabled={phone.length < 10 || isSending} activeOpacity={0.9}
         >
           {isSending ? <ActivityIndicator color={c.actionPrimaryText} /> : <Text style={styles.primaryBtnText}>Continue with OTP</Text>}
-        </TouchableOpacity>
+        </HapticPressable>
 
         <View style={styles.dividerRow}>
           <View style={styles.line} /><Text style={styles.or}>or</Text><View style={styles.line} />
         </View>
 
-        <TouchableOpacity style={styles.socialBtn} onPress={handleGoogleSignIn} disabled={isGoogleLoading} activeOpacity={0.9}>
+        <HapticPressable haptic="press" style={styles.socialBtn} onPress={handleGoogleSignIn} disabled={isGoogleLoading} activeOpacity={0.9}>
           {isGoogleLoading ? <ActivityIndicator color={c.textPrimary} /> : <><Text style={styles.gIcon}>G</Text><Text style={styles.socialText}>Continue with Google</Text></>}
-        </TouchableOpacity>
+        </HapticPressable>
 
         {appleAvailable && (
-          <TouchableOpacity style={[styles.socialBtn, styles.appleBtn]} onPress={handleAppleSignIn} disabled={isAppleLoading} activeOpacity={0.9}>
+          <HapticPressable haptic="press" style={[styles.socialBtn, styles.appleBtn]} onPress={handleAppleSignIn} disabled={isAppleLoading} activeOpacity={0.9}>
             {isAppleLoading ? <ActivityIndicator color="#fff" /> : <><Text style={styles.appleIcon}></Text><Text style={[styles.socialText, { color: '#fff' }]}>Continue with Apple</Text></>}
-          </TouchableOpacity>
+          </HapticPressable>
         )}
 
         <Text style={styles.legal}>

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Alert, ActivityIndicator, Linking } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TextInput, Alert, ActivityIndicator, Linking } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ShieldAlert, Share2, BadgeCheck, MapPin, PhoneCall, Plus } from 'lucide-react-native';
@@ -59,9 +59,9 @@ export default function SafetyCenter() {
   return (
     <View style={[styles.screen, { paddingTop: insets.top + space.sm }]}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => (router.canGoBack() ? router.back() : router.replace('/(tabs)'))}>
+        <HapticPressable onPress={() => (router.canGoBack() ? router.back() : router.replace('/(tabs)'))}>
           <Text style={styles.back}>← Back</Text>
-        </TouchableOpacity>
+        </HapticPressable>
         <Text style={styles.title}>Safety Centre</Text>
         <View style={{ width: 50 }} />
       </View>

@@ -23,13 +23,19 @@ export async function apiFetch(
   init: RequestInit = {},
   options: { timeoutMs?: number; retries?: number } = {}
 ): Promise<Response> {
-  const { timeoutMs = 10000, retries = 2 } = options;
+  const { timeoutMs = 15000, retries = 2 } = options;
   const headers = new Headers(init.headers || {});
 
   const user = auth().currentUser;
   if (user) {
-    const token = await user.getIdToken();
-    headers.set('Authorization', `Bearer ${token}`);
+    try {
+      // Force refresh token if needed so fresh logins don't fail with stale token
+      const token = await user.getIdToken(true);
+      headers.set('Authorization', `Bearer ${token}`);
+    } catch {
+      const token = await user.getIdToken();
+      headers.set('Authorization', `Bearer ${token}`);
+    }
   }
   if (init.body && !headers.has('Content-Type')) {
     headers.set('Content-Type', 'application/json');

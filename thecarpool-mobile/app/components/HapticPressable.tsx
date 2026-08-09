@@ -10,14 +10,14 @@ interface HapticPressableProps extends TouchableOpacityProps {
 }
 
 /**
- * Drop-in TouchableOpacity that fires haptic feedback on press.
- * Usage: `<HapticPressable haptic="press" onPress={...}>` — same props as
- * TouchableOpacity, so existing styles/activeOpacity carry over unchanged.
+ * Drop-in TouchableOpacity replacement that fires haptic feedback on press.
+ * Usage: `<HapticPressable haptic="press" onPress={...}>`
  */
-export default function HapticPressable({ haptic = 'tap', onPress, ...rest }: HapticPressableProps) {
+export default function HapticPressable({ haptic = 'tap', onPress, activeOpacity = 0.85, ...rest }: HapticPressableProps) {
   const handlePress = (e: GestureResponderEvent) => {
     haptics[haptic]();
     onPress?.(e);
   };
-  return <TouchableOpacity {...rest} onPress={handlePress} />;
+  return <TouchableOpacity activeOpacity={activeOpacity} {...rest} onPress={handlePress} />;
 }
+

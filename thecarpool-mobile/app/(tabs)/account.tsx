@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { StyleSheet, View, Text, TouchableOpacity, ScrollView, Switch, Alert, Linking, ActivityIndicator, Image } from 'react-native';
+import { StyleSheet, View, Text, ScrollView, Switch, Alert, Linking, ActivityIndicator, Image } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
@@ -11,6 +11,7 @@ import { useAuthStore } from '../store/authStore';
 import { chooseAndUploadAvatar } from '../services/avatar';
 import { useI18n } from '../services/i18n';
 import { c, font, radius, space, shadowSm } from '../../theme/tokens';
+import HapticPressable from '../components/HapticPressable';
 
 const SUPPORT_EMAIL = 'support@thecarpool.in';
 const SUPPORT_PHONE = '+919999002281';
@@ -114,7 +115,7 @@ export default function AccountInterface() {
     return (
       <View style={[styles.screen, { paddingTop: insets.top + space.sm }]}>
         <View style={styles.subHeader}>
-          <TouchableOpacity onPress={() => setView('menu')}><Text style={styles.back}>← Back</Text></TouchableOpacity>
+          <HapticPressable onPress={() => setView('menu')}><Text style={styles.back}>← Back</Text></HapticPressable>
           <Text style={styles.subTitle}>{view === 'help' ? 'Help & Support' : view === 'history' ? 'Booking history' : 'Settings'}</Text>
           <View style={{ width: 50 }} />
         </View>
@@ -135,7 +136,7 @@ export default function AccountInterface() {
                 </View>
                 <View style={{ flexDirection: 'row', gap: 6 }}>
                   {(['FEMALE', 'MALE', 'OTHER'] as const).map((g) => (
-                    <TouchableOpacity
+                    <HapticPressable
                       key={g}
                       style={[styles.langChip, gender === g && styles.langChipOn]}
                       onPress={() => updateGender(g)}
@@ -144,7 +145,7 @@ export default function AccountInterface() {
                       <Text style={[styles.langChipText, gender === g && { color: '#fff' }]}>
                         {g === 'FEMALE' ? '♀' : g === 'MALE' ? '♂' : '⚧'}
                       </Text>
-                    </TouchableOpacity>
+                    </HapticPressable>
                   ))}
                 </View>
               </View>
@@ -155,7 +156,7 @@ export default function AccountInterface() {
                 </View>
                 <View style={{ flexDirection: 'row', gap: 8 }}>
                   {(['en', 'hi'] as const).map((l) => (
-                    <TouchableOpacity
+                    <HapticPressable
                       key={l}
                       style={[styles.langChip, lang === l && styles.langChipOn]}
                       onPress={() => setLang(l)}
@@ -164,20 +165,20 @@ export default function AccountInterface() {
                       <Text style={[styles.langChipText, lang === l && { color: '#fff' }]}>
                         {l === 'en' ? 'EN' : 'हिं'}
                       </Text>
-                    </TouchableOpacity>
+                    </HapticPressable>
                   ))}
                 </View>
               </View>
-              <TouchableOpacity style={styles.row} onPress={() => Linking.openURL(PRIVACY_URL)}>
+              <HapticPressable style={styles.row} onPress={() => Linking.openURL(PRIVACY_URL)}>
                 <View style={{ flex: 1 }}><Text style={styles.rowTitle}>Privacy policy</Text><Text style={styles.rowSub}>How we handle your data</Text></View>
                 <ChevronRight color={c.textDisabled} size={18} />
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.row} onPress={() => Linking.openURL(`mailto:${SUPPORT_EMAIL}`)}>
+              </HapticPressable>
+              <HapticPressable style={styles.row} onPress={() => Linking.openURL(`mailto:${SUPPORT_EMAIL}`)}>
                 <View style={{ flex: 1 }}><Text style={styles.rowTitle}>Contact support</Text><Text style={styles.rowSub}>{SUPPORT_EMAIL}</Text></View>
                 <ChevronRight color={c.textDisabled} size={18} />
-              </TouchableOpacity>
+              </HapticPressable>
               <View style={styles.row}><View style={{ flex: 1 }}><Text style={styles.rowTitle}>App version</Text><Text style={styles.rowSub}>TheCarPool v1.2.6</Text></View></View>
-              <TouchableOpacity style={styles.dangerRow} onPress={deleteAccount}><Text style={styles.dangerText}>Delete my account</Text></TouchableOpacity>
+              <HapticPressable style={styles.dangerRow} onPress={deleteAccount}><Text style={styles.dangerText}>Delete my account</Text></HapticPressable>
             </>
           )}
           {view === 'history' && (
@@ -199,17 +200,17 @@ export default function AccountInterface() {
           {view === 'help' && (
             <>
               <View style={{ flexDirection: 'row', gap: space.sm, marginBottom: space.lg }}>
-                <TouchableOpacity style={styles.helpBtn} onPress={() => Linking.openURL(`mailto:${SUPPORT_EMAIL}`)}><Text style={styles.helpBtnText}>✉  Email us</Text></TouchableOpacity>
-                <TouchableOpacity style={styles.helpBtn} onPress={() => Linking.openURL(`tel:${SUPPORT_PHONE}`)}><Text style={styles.helpBtnText}>☎  Call support</Text></TouchableOpacity>
+                <HapticPressable style={styles.helpBtn} onPress={() => Linking.openURL(`mailto:${SUPPORT_EMAIL}`)}><Text style={styles.helpBtnText}>✉  Email us</Text></HapticPressable>
+                <HapticPressable style={styles.helpBtn} onPress={() => Linking.openURL(`tel:${SUPPORT_PHONE}`)}><Text style={styles.helpBtnText}>☎  Call support</Text></HapticPressable>
               </View>
               {FAQS.map((f, i) => (
-                <TouchableOpacity key={i} style={styles.faq} onPress={() => setOpenFaq(openFaq === i ? null : i)}>
+                <HapticPressable key={i} style={styles.faq} onPress={() => setOpenFaq(openFaq === i ? null : i)}>
                   <View style={styles.faqQRow}>
                     <Text style={styles.faqQ}>{f.q}</Text>
                     <Text style={styles.faqChev}>{openFaq === i ? '−' : '+'}</Text>
                   </View>
                   {openFaq === i && <Text style={styles.faqA}>{f.a}</Text>}
-                </TouchableOpacity>
+                </HapticPressable>
               ))}
             </>
           )}
@@ -224,7 +225,7 @@ export default function AccountInterface() {
       <Text style={styles.h1}>You</Text>
 
       <View style={styles.profile}>
-        <TouchableOpacity
+        <HapticPressable
           style={styles.avatar}
           activeOpacity={0.85}
           onPress={() => chooseAndUploadAvatar((url) => setUserProfile({ photoUrl: url }))}
@@ -233,7 +234,7 @@ export default function AccountInterface() {
             ? <Image source={{ uri: userProfile.photoUrl }} style={styles.avatarImg} />
             : <Text style={styles.avatarText}>{initials(name)}</Text>}
           <View style={styles.cameraBadge}><Camera color="#fff" size={11} strokeWidth={2.4} /></View>
-        </TouchableOpacity>
+        </HapticPressable>
         <View style={{ flex: 1 }}>
           <Text style={styles.name}>{name}</Text>
           {!!contact && <Text style={styles.contact}>{contact}</Text>}
@@ -245,10 +246,10 @@ export default function AccountInterface() {
       </View>
 
       {kycStatus !== 'verified' && (
-        <TouchableOpacity style={styles.verifyCta} onPress={() => router.push('/onboarding')} activeOpacity={0.9}>
+        <HapticPressable style={styles.verifyCta} onPress={() => router.push('/onboarding')} activeOpacity={0.9}>
           <Text style={styles.verifyCtaText}>Complete verification</Text>
           <ChevronRight color={c.actionPrimaryText} size={18} />
-        </TouchableOpacity>
+        </HapticPressable>
       )}
 
       {/* Streaks */}
@@ -287,24 +288,24 @@ export default function AccountInterface() {
         <MenuRow icon={<HelpCircle color={c.textSecondary} size={20} />} title="Help & support" sub="FAQs, contact us" onPress={() => setView('help')} last />
       </View>
 
-      <TouchableOpacity style={styles.logout} onPress={logout}>
+      <HapticPressable style={styles.logout} onPress={logout}>
         <LogOut color={c.danger} size={18} />
         <Text style={styles.logoutText}>Log out</Text>
-      </TouchableOpacity>
+      </HapticPressable>
     </ScrollView>
   );
 }
 
 function MenuRow({ icon, title, sub, onPress, last }: any) {
   return (
-    <TouchableOpacity style={[styles.menuRow, !last && styles.menuRowBorder]} onPress={onPress}>
+    <HapticPressable style={[styles.menuRow, !last && styles.menuRowBorder]} onPress={onPress}>
       <View style={styles.iconBox}>{icon}</View>
       <View style={{ flex: 1 }}>
         <Text style={styles.menuTitle}>{title}</Text>
         <Text style={styles.menuSub}>{sub}</Text>
       </View>
       <ChevronRight color={c.textDisabled} size={18} />
-    </TouchableOpacity>
+    </HapticPressable>
   );
 }
 

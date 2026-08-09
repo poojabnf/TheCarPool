@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
-import { StyleSheet, View, Text, TouchableOpacity, ScrollView, TextInput, Alert, Modal } from 'react-native';
+import { StyleSheet, View, Text, ScrollView, TextInput, Alert, Modal } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Plus, MessageSquare, Tag, X } from 'lucide-react-native';
 import { c, font, radius, space, shadowSm } from '../../theme/tokens';
+import HapticPressable from '../components/HapticPressable';
 
 interface Ad {
   id: number; title: string; description: string;
@@ -45,18 +46,18 @@ export default function ClassifiedsScreen() {
           <Text style={styles.h1}>Classifieds</Text>
           <Text style={styles.headerSub}>Your workplace & society community board</Text>
         </View>
-        <TouchableOpacity style={styles.addBtn} onPress={() => setShowPost(true)} activeOpacity={0.9}>
+        <HapticPressable style={styles.addBtn} onPress={() => setShowPost(true)} activeOpacity={0.9}>
           <Plus color="#fff" size={20} strokeWidth={2.6} />
-        </TouchableOpacity>
+        </HapticPressable>
       </View>
 
       <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.tabs} contentContainerStyle={{ paddingHorizontal: space.xl, gap: 8 }}>
         {(['ALL', 'FLATMATE', 'BUY_SELL', 'ITEM_SHARE'] as const).map((cat) => {
           const on = activeCategory === cat;
           return (
-            <TouchableOpacity key={cat} style={[styles.tab, on && styles.tabOn]} onPress={() => setActiveCategory(cat)}>
+            <HapticPressable key={cat} style={[styles.tab, on && styles.tabOn]} onPress={() => setActiveCategory(cat)}>
               <Text style={[styles.tabText, on && styles.tabTextOn]}>{cat === 'ALL' ? 'All' : cat.replace('_', ' ')}</Text>
-            </TouchableOpacity>
+            </HapticPressable>
           );
         })}
       </ScrollView>
@@ -78,9 +79,9 @@ export default function ClassifiedsScreen() {
                 <Text style={styles.posterMeta}>{ad.poster_company} · {ad.poster_society}{ad.mutual_count > 0 ? ` · ${ad.mutual_count} mutual` : ''}</Text>
               </View>
             </View>
-            <TouchableOpacity style={styles.msgBtn} onPress={() => Alert.alert('Message', `Opening chat with ${ad.poster_name}…`)} activeOpacity={0.9}>
+            <HapticPressable style={styles.msgBtn} onPress={() => Alert.alert('Message', `Opening chat with ${ad.poster_name}…`)} activeOpacity={0.9}>
               <MessageSquare size={15} color="#fff" strokeWidth={2.2} /><Text style={styles.msgText}>Message</Text>
-            </TouchableOpacity>
+            </HapticPressable>
           </View>
         ))}
         {filtered.length === 0 && <Text style={styles.empty}>No listings in this category yet.</Text>}
@@ -91,7 +92,7 @@ export default function ClassifiedsScreen() {
           <View style={[styles.sheet, { paddingBottom: insets.bottom + space.lg }]}>
             <View style={styles.sheetHeader}>
               <Text style={styles.sheetTitle}>Post a listing</Text>
-              <TouchableOpacity onPress={() => setShowPost(false)}><X color={c.textTertiary} size={22} /></TouchableOpacity>
+              <HapticPressable onPress={() => setShowPost(false)}><X color={c.textTertiary} size={22} /></HapticPressable>
             </View>
             <ScrollView showsVerticalScrollIndicator={false}>
               <Text style={styles.label}>Category</Text>
@@ -99,9 +100,9 @@ export default function ClassifiedsScreen() {
                 {(['FLATMATE', 'BUY_SELL', 'ITEM_SHARE'] as const).map((cat) => {
                   const on = category === cat;
                   return (
-                    <TouchableOpacity key={cat} style={[styles.catChip, on && styles.catChipOn]} onPress={() => setCategory(cat)}>
+                    <HapticPressable key={cat} style={[styles.catChip, on && styles.catChipOn]} onPress={() => setCategory(cat)}>
                       <Text style={[styles.catChipText, on && { color: '#fff' }]}>{cat.replace('_', ' ')}</Text>
-                    </TouchableOpacity>
+                    </HapticPressable>
                   );
                 })}
               </View>
@@ -111,7 +112,7 @@ export default function ClassifiedsScreen() {
               <TextInput style={[styles.input, { height: 90, paddingTop: 12 }]} multiline placeholder="Details about the room, item, or share…" placeholderTextColor={c.textDisabled} value={description} onChangeText={setDescription} />
               <Text style={styles.label}>Price (optional)</Text>
               <TextInput style={styles.input} placeholder="e.g. 15,000/month" placeholderTextColor={c.textDisabled} value={price} onChangeText={setPrice} />
-              <TouchableOpacity style={styles.publish} onPress={post} activeOpacity={0.9}><Text style={styles.publishText}>Publish listing</Text></TouchableOpacity>
+              <HapticPressable style={styles.publish} onPress={post} activeOpacity={0.9}><Text style={styles.publishText}>Publish listing</Text></HapticPressable>
             </ScrollView>
           </View>
         </View>

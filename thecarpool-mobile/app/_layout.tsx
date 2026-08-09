@@ -27,7 +27,10 @@ const InputDefaults = RNTextInput as unknown as { defaultProps?: { maxFontSizeMu
 InputDefaults.defaultProps = { ...(InputDefaults.defaultProps || {}), maxFontSizeMultiplier: 1.3 };
 
 function AuthGuard({ children }: { children: React.ReactNode }) {
-  const { isLoggedIn, isAuthLoading, setFirebaseUser, setKycStatus, setUserProfile } = useAuthStore();
+  const {
+    isLoggedIn, isAuthLoading, isProfileHydrated, userProfile, profileSetupSkipped,
+    setFirebaseUser, setKycStatus, setUserProfile, setProfileHydrated,
+  } = useAuthStore();
   const segments = useSegments();
   const router = useRouter();
 
@@ -35,6 +38,9 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const unsubscribe = auth().onAuthStateChanged(async (user) => {
       setFirebaseUser(user);
+      if (!user) {
+        setProfileHydrated(true); // nothing to hydrate — routing may proceed
+      }
       if (user) {
         // Register this device for push notifications once signed in.
         registerForPushNotifications().catch(() => { /* non-fatal */ });
@@ -66,6 +72,9 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
           }
         } catch {
           /* non-fatal — user proceeds with local state */
+        } finally {
+          // Settled either way — the router can now trust userProfile.
+          setProfileHydrated(true);
         }
       }
     });
@@ -75,18 +84,27 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
   // Handle routing based on auth state
   useEffect(() => {
     if (isAuthLoading) return; // Wait for Firebase to resolve
+    // Wait for the backend profile too, otherwise an already-onboarded user is
+    // momentarily seen as profile-less and redirected to profile-setup.
+    if (isLoggedIn && !isProfileHydrated) return;
 
-    const inAuthGroup = segments[0] === '(auth)';
+    const inAuthGroup = (segments as string[])[0] === '(auth)';
+    const onProfileSetup = (segments as string[])[1] === 'profile-setup';
+    const profileName = userProfile?.name;
 
     if (!isLoggedIn && !inAuthGroup) {
-      // Require sign-in, but nothing more — browsing is open after login.
+      // Require sign-in
       router.replace('/(auth)/login');
-    } else if (isLoggedIn && inAuthGroup) {
-      // Signed in: drop into the app. Verification is no longer a gate here;
-      // it's enforced only at booking time (see the rider screen's handleBook).
-      router.replace('/(tabs)');
+    } else if (isLoggedIn) {
+      if (!profileName && !onProfileSetup && !profileSetupSkipped) {
+        // Logged in via OTP but profile name missing → navigate to Profile Setup
+        router.replace('/(auth)/profile-setup');
+      } else if (profileName && inAuthGroup) {
+        // Profile complete → land on main tabs
+        router.replace('/(tabs)');
+      }
     }
-  }, [isLoggedIn, isAuthLoading, segments]);
+  }, [isLoggedIn, isAuthLoading, isProfileHydrated, userProfile?.name, profileSetupSkipped, segments]);
 
   // Show splash/loading while Firebase checks persisted auth
   if (isAuthLoading) {
