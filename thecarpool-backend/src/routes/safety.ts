@@ -1,4 +1,5 @@
 import { FastifyInstance } from 'fastify';
+import * as admin from 'firebase-admin';
 import { z } from 'zod';
 import { db, storage, redisClient } from '../server';
 import { notificationsQueue } from '../queue/processor';
@@ -399,55 +400,121 @@ export async function safetyRoutes(fastify: FastifyInstance) {
   });
 
   // 9. Delete Profile / Account (GDPR & Privacy Compliance)
+  // ── Account deletion ─────────────────────────────────────────────────────
+  // Required by both app stores for any app with sign-up, and a data-protection
+  // obligation besides.
+  //
+  // Two rules shape this:
+  //   1. Never delete while money is in play. A stranded wallet balance or an
+  //      escrow still HELD has no owner left to refund once the account is gone.
+  //   2. Never hard-delete rides and bookings. They are shared financial records
+  //      — the other party's trip history and our own tax/dispute trail live in
+  //      them. They are ANONYMISED instead, so the counterparty keeps their
+  //      history while the departing user's identity is severed from it.
   fastify.delete('/account', { preHandler: [requireAuth] }, async (request, reply) => {
-    const { user_id } = request.body as { user_id: string };
-
-    if (!user_id) {
-      return reply.code(400).send({ error: 'user_id is required.' });
-    }
-
-    // A user may only delete their own account.
-    if (String(request.user!.id) !== String(user_id)) {
+    const uid = String(request.user!.id);
+    const body = (request.body as any) || {};
+    // user_id in the body is optional and only ever a cross-check; the token is
+    // the authority on who is being deleted.
+    if (body.user_id && String(body.user_id) !== uid) {
       return reply.code(403).send({ error: 'Forbidden: you can only delete your own account.' });
     }
 
     try {
-      // 1. Delete all user data from Firestore subcollections and the main user doc
-      const userDocRef = db.collection('users').doc(String(user_id));
+      // ── Blockers: anything that would strand money or strand a passenger ──
+      const blockers: string[] = [];
 
-      // Delete user's rides as a driver
-      const driverRides = await db.collection('rides').where('driver_id', '==', String(user_id)).get();
-      const driverRideDeletes = driverRides.docs.map((doc: any) => doc.ref.delete());
-
-      // Delete user's bookings
-      const bookings = await db.collection('bookings').where('rider_id', '==', String(user_id)).get();
-      const bookingDeletes = bookings.docs.map((doc: any) => doc.ref.delete());
-
-      // Delete user's classifieds
-      const classifieds = await db.collection('classifieds').where('author_id', '==', String(user_id)).get();
-      const classifiedDeletes = classifieds.docs.map((doc: any) => doc.ref.delete());
-
-      // Execute all Firestore deletes in parallel
-      const walletRef = db.collection('wallets').doc(String(user_id));
-      await Promise.all([
-        userDocRef.delete(),
-        walletRef.delete(),
-        ...driverRideDeletes,
-        ...bookingDeletes,
-        ...classifiedDeletes,
-      ]);
-
-      // 2. Delete the Firebase Auth account (Admin SDK)
-      const admin = require('firebase-admin');
-      try {
-        await admin.auth().deleteUser(String(user_id));
-      } catch (authErr: any) {
-        // Log but don't fail — Firestore data is already removed
-        fastify.log.warn(authErr, `Firebase Auth user ${user_id} not found or already deleted.`);
+      const walletSnap = await db.collection('wallets').doc(uid).get();
+      const balance = Number(walletSnap.data()?.available_wallet_balance || 0);
+      if (balance > 0) {
+        blockers.push(`You have ₹${balance.toFixed(2)} in your wallet. Withdraw it before deleting your account.`);
       }
 
-      fastify.log.info(`Account deletion complete for user: ${user_id}`);
-      return reply.send({ status: 'ACCOUNT_DELETED', user_id });
+      const heldBookings = await db.collection('bookings')
+        .where('rider_id', '==', uid)
+        .where('escrow_status', '==', 'HELD')
+        .get();
+      if (!heldBookings.empty) {
+        blockers.push(`You have ${heldBookings.size} active booking(s). Cancel or complete them first.`);
+      }
+
+      const activeRides = await db.collection('rides')
+        .where('driver_uid', '==', uid)
+        .where('status', 'in', ['SCHEDULED', 'STARTED'])
+        .get();
+      const ridesWithPassengers = activeRides.docs.filter(
+        (d) => Number(d.data().seats_total || 0) > Number(d.data().seats_available || 0)
+      );
+      if (ridesWithPassengers.length > 0) {
+        blockers.push(`You have ${ridesWithPassengers.length} upcoming ride(s) with passengers booked. Cancel them first.`);
+      }
+
+      if (blockers.length > 0) {
+        return reply.code(409).send({
+          error: 'DELETION_BLOCKED',
+          message: 'Your account cannot be deleted yet.',
+          blockers,
+        });
+      }
+
+      const now = new Date().toISOString();
+
+      // ── Anonymise shared records rather than destroying them ─────────────
+      const batch = db.batch();
+
+      // Empty upcoming rides can simply be cancelled — nobody is relying on them.
+      for (const doc of activeRides.docs) {
+        batch.update(doc.ref, { status: 'CANCELLED', cancelled_at: now, cancelled_reason: 'DRIVER_ACCOUNT_DELETED' });
+      }
+      // Past rides keep their financial shape, lose the identity.
+      const pastRides = await db.collection('rides').where('driver_uid', '==', uid).get();
+      for (const doc of pastRides.docs) {
+        batch.update(doc.ref, { driver_name: 'Deleted user', driver_uid_deleted: true, anonymised_at: now });
+      }
+      const pastBookings = await db.collection('bookings').where('rider_id', '==', uid).get();
+      for (const doc of pastBookings.docs) {
+        batch.update(doc.ref, { rider_name: 'Deleted user', rider_deleted: true, anonymised_at: now });
+      }
+      await batch.commit();
+
+      // ── Delete what is genuinely the user's own ──────────────────────────
+      // Classifieds are the user's own content, so they go entirely.
+      const classifieds = await db.collection('classifieds').where('author_id', '==', uid).get();
+      await Promise.all(classifieds.docs.map((d) => d.ref.delete().catch(() => {})));
+
+      await Promise.all([
+        db.collection('users').doc(uid).delete().catch(() => {}),
+        db.collection('wallets').doc(uid).delete().catch(() => {}),
+        db.collection('device_coordinates').doc(uid).delete().catch(() => {}),
+      ]);
+
+      // Stored files: avatar, classified photos, and ID documents. The KYC
+      // lifecycle rule would eventually clear the last of these anyway, but a
+      // deletion request should not wait up to 6 months to take effect.
+      await Promise.all([
+        storage.bucket().deleteFiles({ prefix: `users/${uid}/` }).catch(() => {}),
+        storage.bucket().deleteFiles({ prefix: `${KYC_PREFIX}${uid}/` }).catch(() => {}),
+      ]);
+
+      const kycDocs = await db.collection('kyc_documents').where('user_id', '==', uid).get();
+      await Promise.all(kycDocs.docs.map((d) => d.ref.delete().catch(() => {})));
+
+      // ── Finally the auth identity ────────────────────────────────────────
+      // Last, deliberately: while it exists the user can still authenticate and
+      // retry if any step above failed. Removing it first would lock them out
+      // of an account that still held their data.
+      try {
+        await admin.auth().deleteUser(uid);
+      } catch (authErr: any) {
+        fastify.log.warn(authErr, `Firebase Auth user ${uid} not found or already deleted.`);
+      }
+
+      fastify.log.info({ uid, rides: pastRides.size, bookings: pastBookings.size }, 'Account deleted');
+      return reply.send({
+        status: 'ACCOUNT_DELETED',
+        anonymised_rides: pastRides.size,
+        anonymised_bookings: pastBookings.size,
+      });
     } catch (err: any) {
       fastify.log.error(err, 'Account deletion failed');
       return reply.code(500).send({ error: 'Failed to delete account. Please try again.' });

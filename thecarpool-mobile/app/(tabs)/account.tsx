@@ -11,6 +11,7 @@ import { useAuthStore } from '../store/authStore';
 import { chooseAndUploadAvatar } from '../services/avatar';
 import { useI18n } from '../services/i18n';
 import { c, font, radius, space, shadowSm } from '../../theme/tokens';
+import * as haptics from '../services/haptics';
 import HapticPressable from '../components/HapticPressable';
 
 const SUPPORT_EMAIL = 'support@thecarpool.in';
@@ -92,18 +93,67 @@ export default function AccountInterface() {
     { text: 'Log out', style: 'destructive', onPress: () => auth().signOut().catch(() => Alert.alert('Error', 'Could not log out.')) },
   ]);
 
-  const deleteAccount = () => Alert.alert(
-    'Delete account', 'This permanently erases your profile, rides, and bookings. This cannot be undone.',
-    [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Delete', style: 'destructive', onPress: async () => {
-        try {
-          await apiFetch('/api/safety/account', { method: 'DELETE', body: JSON.stringify({ user_id: user?.uid }) });
-          await auth().signOut();
-        } catch { Alert.alert('Error', 'Could not delete account.'); }
-      } },
-    ]
-  );
+  const [deleting, setDeleting] = useState(false);
+
+  // Two-step by design: this is irreversible, and the first screen tells the
+  // user exactly what goes and what is kept before they can reach the button
+  // that does it.
+  const performDelete = async () => {
+    setDeleting(true);
+    try {
+      const res = await apiFetch('/api/safety/account', { method: 'DELETE' });
+      const data = await res.json().catch(() => ({} as any));
+
+      if (res.status === 409 && Array.isArray(data.blockers)) {
+        // Money or passengers still depend on this account.
+        haptics.warning();
+        Alert.alert(
+          'Sort these out first',
+          `${data.blockers.join('\n\n')}\n\nYour account has not been deleted.`
+        );
+        return;
+      }
+      if (!res.ok) {
+        haptics.error();
+        Alert.alert('Could not delete account', data.message || data.error || 'Please try again.');
+        return;
+      }
+
+      haptics.success();
+      Alert.alert('Account deleted', 'Your profile and documents have been removed. Thank you for riding with us.');
+      await auth().signOut();
+    } catch {
+      haptics.error();
+      Alert.alert('Could not delete account', 'Network error. Please try again.');
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  const deleteAccount = () => {
+    haptics.warning();
+    Alert.alert(
+      'Delete your account?',
+      'This removes your profile, photo, ID documents and saved places, and cannot be undone.\n\n'
+      + 'Completed trips are kept for tax and dispute records, but your name is removed from them.\n\n'
+      + 'Withdraw any wallet balance first — it cannot be recovered afterwards.',
+      [
+        { text: 'Keep my account', style: 'cancel' },
+        {
+          text: 'Continue',
+          style: 'destructive',
+          onPress: () => Alert.alert(
+            'Last chance',
+            'This is permanent. Delete your account?',
+            [
+              { text: 'Cancel', style: 'cancel' },
+              { text: 'Delete permanently', style: 'destructive', onPress: performDelete },
+            ]
+          ),
+        },
+      ]
+    );
+  };
 
   const toggleNotifications = async (v: boolean) => {
     setNotifications(v);
@@ -178,7 +228,16 @@ export default function AccountInterface() {
                 <ChevronRight color={c.textDisabled} size={18} />
               </HapticPressable>
               <View style={styles.row}><View style={{ flex: 1 }}><Text style={styles.rowTitle}>App version</Text><Text style={styles.rowSub}>TheCarPool v1.2.6</Text></View></View>
-              <HapticPressable style={styles.dangerRow} onPress={deleteAccount}><Text style={styles.dangerText}>Delete my account</Text></HapticPressable>
+              <HapticPressable
+                haptic="warning"
+                style={[styles.dangerRow, deleting && { opacity: 0.6 }]}
+                onPress={deleteAccount}
+                disabled={deleting}
+              >
+                {deleting
+                  ? <ActivityIndicator color={c.danger} />
+                  : <Text style={styles.dangerText}>Delete my account</Text>}
+              </HapticPressable>
             </>
           )}
           {view === 'history' && (
