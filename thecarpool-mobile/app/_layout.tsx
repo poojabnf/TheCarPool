@@ -29,7 +29,7 @@ InputDefaults.defaultProps = { ...(InputDefaults.defaultProps || {}), maxFontSiz
 function AuthGuard({ children }: { children: React.ReactNode }) {
   const {
     isLoggedIn, isAuthLoading, isProfileHydrated, userProfile, profileSetupSkipped,
-    setFirebaseUser, setKycStatus, setUserProfile, setProfileHydrated,
+    setFirebaseUser, setKycStatus, setUserProfile, setProfileHydrated, setVerification,
   } = useAuthStore();
   const segments = useSegments();
   const router = useRouter();
@@ -56,15 +56,16 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
             } else if (data.kyc_status === 'PENDING') {
               setKycStatus('pending');
             }
+            // What the server says this user can do. Rendered as-is.
+            if (data.verification) setVerification(data.verification);
             // Rehydrate profile fields if present
-            if (data.name || data.company || data.photo_url) {
+            if (data.name || data.address || data.company || data.photo_url) {
               setUserProfile({
                 name: data.name,
                 phone: user.phoneNumber || '',
                 email: data.email,
+                address: data.address,
                 company: data.company,
-                employeeId: data.employeeId,
-                workLocation: data.workLocation,
                 role: data.role,
                 photoUrl: data.photo_url,
               });

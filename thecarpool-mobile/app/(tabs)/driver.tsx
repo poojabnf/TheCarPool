@@ -53,7 +53,12 @@ export default function DriverInterface() {
   const router = useRouter();
   const userId = auth().currentUser?.uid ?? null;
   const kycStatus = useAuthStore((s) => s.kycStatus);
-  const kycLevel2Complete = kycStatus === 'verified';
+  // Tiered: a government ID lets you BOOK; a driving licence lets you OFFER.
+  // A rider who never drives is never asked for a licence.
+  const verification = useAuthStore((s) => s.verification);
+  const idVerified = verification?.id_verified ?? (kycStatus === 'verified');
+  const canOfferRides = verification?.can_offer_rides ?? false;
+  const needsLicenceOnly = idVerified && !canOfferRides;
   const [isOnline, setIsOnline] = useState(false);
   const [isPosting, setIsPosting] = useState(false);
   const [activeTab, setActiveTab] = useState<'overview' | 'requests' | 'drive'>('overview');
@@ -450,29 +455,47 @@ export default function DriverInterface() {
     }
   };
 
-  // Locked State for Passengers trying to access Driver features
-  if (!kycLevel2Complete) {
+  // Locked state — but say WHICH step is missing, not just "upgrade".
+  if (!canOfferRides) {
     return (
       <View style={styles.lockedContainer}>
         <View style={styles.lockedIconBox}>
           <Lock color={colors.primary} size={48} />
         </View>
-        <Text style={styles.lockedTitle}>Upgrade Required</Text>
-        <Text style={styles.lockedSub}>You must complete Level 2 KYC to unlock driver features and start earning.</Text>
-        
+        <Text style={styles.lockedTitle}>
+          {needsLicenceOnly ? 'One more step' : 'Verify to offer rides'}
+        </Text>
+        <Text style={styles.lockedSub}>
+          {needsLicenceOnly
+            ? 'Your ID is verified. Add your driving licence and you can start offering rides.'
+            : 'Verify a government ID to book rides, and add a driving licence to offer them.'}
+        </Text>
+
         <View style={styles.requirementList}>
           <View style={styles.reqItem}>
             <CheckCircle color={colors.success} size={20} />
-            <Text style={styles.reqText}>Level 1: Phone & Selfie (Completed)</Text>
+            <Text style={styles.reqText}>Phone verified</Text>
+          </View>
+          <View style={styles.reqItem}>
+            {idVerified
+              ? <CheckCircle color={colors.success} size={20} />
+              : <FileText color={colors.textMuted} size={20} />}
+            <Text style={[styles.reqText, !idVerified && { color: colors.textMuted }]}>
+              Government ID {idVerified ? '(done)' : '(needed to book)'}
+            </Text>
           </View>
           <View style={styles.reqItem}>
             <FileText color={colors.textMuted} size={20} />
-            <Text style={[styles.reqText, { color: colors.textMuted }]}>Level 2: Govt ID & License (Pending)</Text>
+            <Text style={[styles.reqText, { color: colors.textMuted }]}>
+              Driving licence (needed to offer rides)
+            </Text>
           </View>
         </View>
 
-        <HapticPressable style={styles.upgradeBtn} onPress={() => router.push('/onboarding')}>
-          <Text style={styles.upgradeBtnText}>Complete Verification Now</Text>
+        <HapticPressable haptic="press" style={styles.upgradeBtn} onPress={() => router.push('/onboarding')}>
+          <Text style={styles.upgradeBtnText}>
+            {needsLicenceOnly ? 'Add my driving licence' : 'Verify my ID'}
+          </Text>
         </HapticPressable>
       </View>
     );

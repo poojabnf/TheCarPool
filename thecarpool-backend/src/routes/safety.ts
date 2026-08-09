@@ -13,6 +13,7 @@ import {
 } from '../lib/idDocuments';
 import { crossCheckDocument, extractText } from '../lib/idImageCheck';
 import { hasPayoutMethod, maskPayoutMethod } from '../lib/payouts';
+import { verificationSummary } from '../lib/verification';
 
 /**
  * ID document retention.
@@ -691,6 +692,15 @@ export async function safetyRoutes(fastify: FastifyInstance) {
     const idNumber = String(body.id_number || '');
     const expiry = body.expiry ?? null;
     const imageBase64 = String(body.image_base64 || '');
+    // IDENTITY promotes to Level 2 (lets them book). DRIVING_LICENCE is the
+    // extra document a rider supplies when they want to offer rides.
+    const purpose = String(body.purpose || 'IDENTITY').toUpperCase();
+    if (purpose !== 'IDENTITY' && purpose !== 'DRIVING_LICENCE') {
+      return reply.code(400).send({ error: "purpose must be IDENTITY or DRIVING_LICENCE." });
+    }
+    if (purpose === 'DRIVING_LICENCE' && type !== 'DL') {
+      return reply.code(400).send({ error: 'A driving licence must be submitted as document_type DL.' });
+    }
 
     if (!DOCUMENT_TYPES.includes(type)) {
       return reply.code(400).send({ error: 'Choose a valid document type.', accepted: DOCUMENT_TYPES });
@@ -741,22 +751,28 @@ export async function safetyRoutes(fastify: FastifyInstance) {
     }
 
     // 4. Passed. Store ONLY the masked number — never the raw value.
-    await db.collection('users').doc(uid).set({
-      id_document: {
-        type,
-        masked_number: maskIdNumber(type, idCheck.normalised),
-        expiry: documentHasExpiry(type) ? expiry : null,
-        verified_at: new Date().toISOString(),
-        match_score: cross.score,
-      },
-      id_document_verified: true,
-    }, { merge: true });
+    const record = {
+      type,
+      masked_number: maskIdNumber(type, idCheck.normalised),
+      expiry: documentHasExpiry(type) ? expiry : null,
+      verified_at: new Date().toISOString(),
+      match_score: cross.score,
+    };
+    await db.collection('users').doc(uid).set(
+      purpose === 'DRIVING_LICENCE'
+        ? { driving_licence: record, driver_licence_verified: true }
+        : { id_document: record, id_document_verified: true },
+      { merge: true }
+    );
 
+    const fresh = await db.collection('users').doc(uid).get();
     return reply.send({
       status: 'DOCUMENT_VERIFIED',
+      purpose,
       document_type: type,
-      masked_number: maskIdNumber(type, idCheck.normalised),
+      masked_number: record.masked_number,
       score: cross.score,
+      verification: verificationSummary(fresh.data()),
     });
   });
 

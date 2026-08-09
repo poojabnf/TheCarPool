@@ -3,8 +3,22 @@ import type { FirebaseAuthTypes } from '@react-native-firebase/auth';
 
 export type KycStatus = 'none' | 'pending' | 'verified';
 
+/**
+ * What this user is allowed to do, as decided by the server. Mirrors
+ * lib/verification on the backend — the app renders it, it never re-derives
+ * the rules, so the two can't drift apart.
+ */
+export interface Verification {
+  level: 1 | 2;
+  id_verified: boolean;
+  licence_verified: boolean;
+  can_book: boolean;
+  can_offer_rides: boolean;
+}
+
 export interface UserProfile {
   name: string;
+  address?: string;
   phone: string;
   email?: string;
   employeeId?: string;
@@ -36,6 +50,7 @@ interface AuthState {
 
   // App-level profile (populated during onboarding)
   userProfile: UserProfile | null;
+  verification: Verification | null;
 
   // Actions
   setFirebaseUser: (user: FirebaseAuthTypes.User | null) => void;
@@ -44,6 +59,7 @@ interface AuthState {
   skipProfileSetup: () => void;
   setUserProfile: (updates: Partial<UserProfile>) => void;
   setKycStatus: (status: KycStatus) => void;
+  setVerification: (v: Verification | null) => void;
   setOnboardingStep: (step: number) => void;
   completeOnboarding: () => void;
   reset: () => void;
@@ -56,6 +72,7 @@ const initialState = {
   isProfileHydrated: false,
   profileSetupSkipped: false,
   kycStatus: 'none' as KycStatus,
+  verification: null as Verification | null,
   onboardingStep: 0,
   userProfile: null,
 };
@@ -84,6 +101,8 @@ export const useAuthStore = create<AuthState>((set) => ({
     })),
 
   setKycStatus: (status) => set({ kycStatus: status }),
+
+  setVerification: (v) => set({ verification: v }),
 
   setOnboardingStep: (step) => set({ onboardingStep: step }),
 

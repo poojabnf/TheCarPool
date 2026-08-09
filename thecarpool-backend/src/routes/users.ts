@@ -1,6 +1,7 @@
 import { FastifyInstance } from 'fastify';
 import { db, storage } from '../server';
 import { requireAuth, requireAdmin } from '../middleware/auth';
+import { verificationSummary } from '../lib/verification';
 
 const AVATAR_URL_TTL_MS = 7 * 24 * 60 * 60 * 1000; // signed read URLs last 7 days; refreshed on /me + upload
 
@@ -32,7 +33,7 @@ export async function userRoutes(fastify: FastifyInstance) {
     try {
       const doc = await db.collection('users').doc(uid).get();
       if (!doc.exists) {
-        return reply.send({ id: uid, onboarded: false, profile: null });
+        return reply.send({ id: uid, onboarded: false, profile: null, verification: verificationSummary(null) });
       }
       const data = doc.data()!;
       // Refresh the avatar's signed read URL so it never goes stale.
@@ -45,7 +46,15 @@ export async function userRoutes(fastify: FastifyInstance) {
           photo_url = url;
         } catch { /* fall back to the stored URL */ }
       }
-      return reply.send({ id: uid, onboarded: data.onboarded === true, ...data, photo_url });
+      return reply.send({
+        id: uid,
+        onboarded: data.onboarded === true,
+        ...data,
+        photo_url,
+        // Single source of truth for what this user may do, so the app never
+        // has to re-derive the rules and get them subtly different.
+        verification: verificationSummary(data),
+      });
     } catch (err: any) {
       fastify.log.error(err, 'Failed to load user profile');
       return reply.code(500).send({ error: 'Failed to load profile.' });

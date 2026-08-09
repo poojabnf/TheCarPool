@@ -5,6 +5,7 @@ import { requireAuth } from '../middleware/auth';
 import { canTransition, isSettableStatus, SETTABLE_STATUSES } from '../lib/rideLifecycle';
 import { noShowOutcome } from '../lib/fees';
 import { planPayout, maskPayoutMethod } from '../lib/payouts';
+import { canOfferRide } from '../lib/verification';
 
 /** Rounds to paise — wallet balances are rupees held as JS numbers. */
 function round2(n: number): number {
@@ -221,16 +222,14 @@ export async function rideRoutes(fastify: FastifyInstance) {
     try {
       const userDoc = await db.collection('users').doc(uid).get();
       const userData = userDoc.data();
-      if (userData?.kyc_status !== 'VERIFIED') {
+      // Offering a ride is the moment we ask for a licence — a rider becoming a
+      // partner is prompted here rather than during signup.
+      const offerGate = canOfferRide(userData);
+      if (!offerGate.allowed) {
         return reply.code(403).send({
-          error: 'VERIFICATION_REQUIRED',
-          message: 'Complete identity verification to offer a ride.',
-        });
-      }
-      if (userData?.kyc_simulated === true) {
-        return reply.code(403).send({
-          error: 'REAL_VERIFICATION_REQUIRED',
-          message: 'A simulated KYC check is insufficient for driver privileges.',
+          error: offerGate.code,
+          message: offerGate.message,
+          required: offerGate.required,
         });
       }
 

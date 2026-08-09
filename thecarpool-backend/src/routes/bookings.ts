@@ -6,6 +6,7 @@ import { requireAuth } from '../middleware/auth';
 import { parseOrReply } from '../lib/validate';
 import { sendPushToUser } from '../lib/fcm';
 import { claimPaymentInTransaction } from '../lib/wallet';
+import { canBookRide } from '../lib/verification';
 import { getRazorpay, isRazorpayConfigured, refundPaymentToSource } from '../lib/razorpay';
 import {
   CONVENIENCE_FEE,
@@ -126,10 +127,13 @@ export async function bookingRoutes(fastify: FastifyInstance) {
     // Verification gate: browsing is open, but booking requires a KYC-verified
     // account. Enforced here so the client-side gate can't be bypassed.
     const riderDoc = await db.collection('users').doc(String(request.user!.id)).get();
-    if (riderDoc.data()?.kyc_status !== 'VERIFIED') {
+    // A rider needs a government ID and nothing else — no driving licence.
+    const bookGate = canBookRide(riderDoc.data());
+    if (!bookGate.allowed) {
       return reply.code(403).send({
-        error: 'VERIFICATION_REQUIRED',
-        message: 'Complete identity verification to book a ride.',
+        error: bookGate.code,
+        message: bookGate.message,
+        required: bookGate.required,
       });
     }
 
