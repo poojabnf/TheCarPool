@@ -20,13 +20,16 @@ import { CameraView, useCameraPermissions } from 'expo-camera';
 import HapticPressable from '../components/HapticPressable';
 
 const { width } = Dimensions.get('window');
+// Full step count for the driver/partner path. Riders take a 2-step
+// shortcut (Role, Profile) — Aadhaar/PAN/selfie are driver identity
+// checks a rider never needs, so OnboardingScreen finishes early for them.
 const TOTAL_STEPS = 5;
 
 // ─── Step indicators ──────────────────────────────────────────────
-function ProgressBar({ currentStep }: { currentStep: number }) {
+function ProgressBar({ currentStep, totalSteps }: { currentStep: number; totalSteps: number }) {
   return (
     <View style={styles.progressContainer}>
-      {Array(TOTAL_STEPS)
+      {Array(totalSteps)
         .fill(0)
         .map((_, i) => {
           const isComplete = i < currentStep;
@@ -48,7 +51,7 @@ function ProgressBar({ currentStep }: { currentStep: number }) {
                   </Text>
                 )}
               </View>
-              {i < TOTAL_STEPS - 1 && (
+              {i < totalSteps - 1 && (
                 <View
                   style={[styles.progressLine, isComplete && styles.progressLineComplete]}
                 />
@@ -117,7 +120,7 @@ function StepRole({ onNext }: { onNext: (data: any) => void }) {
 }
 
 // ─── Step 1: Basic Profile ────────────────────────────────────────
-function StepProfile({ onNext }: { onNext: (data: any) => void }) {
+function StepProfile({ onNext, isLastStep }: { onNext: (data: any) => void; isLastStep: boolean }) {
   const [name, setName] = useState('');
   // Company / employee ID / work location were dropped: the app is open to
   // anyone commuting, not just corporate employees, and asking for an employer
@@ -152,7 +155,7 @@ function StepProfile({ onNext }: { onNext: (data: any) => void }) {
         onPress={() => isValid && onNext({ name, address })}
         activeOpacity={0.8}
       >
-        <Text style={styles.nextBtnText}>Continue →</Text>
+        <Text style={styles.nextBtnText}>{isLastStep ? "You're all set →" : 'Continue →'}</Text>
       </HapticPressable>
     </ScrollView>
   );
@@ -510,8 +513,12 @@ export default function OnboardingScreen() {
   const router = useRouter();
   const { setUserProfile, setOnboardingStep, completeOnboarding, userProfile } = useAuthStore();
   const [currentStep, setCurrentStep] = useState(0);
+  const [role, setRole] = useState<'rider' | 'partner' | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const slideAnim = useRef(new Animated.Value(0)).current;
+
+  // Riders stop after Profile — Aadhaar/PAN/selfie are driver identity checks.
+  const totalSteps = role === 'rider' ? 2 : TOTAL_STEPS;
 
   const goToStep = (next: number) => {
     Animated.timing(slideAnim, { toValue: -width, duration: 250, useNativeDriver: true }).start(
@@ -525,8 +532,10 @@ export default function OnboardingScreen() {
 
   const handleNext = async (data?: any) => {
     if (data) setUserProfile(data);
+    if (data?.role && data.role !== role) setRole(data.role);
+    const effectiveTotalSteps = (data?.role ?? role) === 'rider' ? 2 : TOTAL_STEPS;
     setOnboardingStep(currentStep + 1);
-    if (currentStep < TOTAL_STEPS - 1) {
+    if (currentStep < effectiveTotalSteps - 1) {
       goToStep(currentStep + 1);
     } else {
       // All steps complete — persist to backend then navigate.
@@ -567,7 +576,7 @@ export default function OnboardingScreen() {
 
   const steps = [
     <StepRole key="role" onNext={(d) => handleNext(d)} />,
-    <StepProfile key="profile" onNext={(d) => handleNext(d)} />,
+    <StepProfile key="profile" onNext={(d) => handleNext(d)} isLastStep={role === 'rider'} />,
     <StepAadhaar key="aadhaar" onNext={(d) => handleNext(d)} />,
     <StepPan key="pan" onNext={(d) => handleNext(d)} />,
     <StepSelfie key="selfie" onNext={() => handleNext()} />,
@@ -581,8 +590,10 @@ export default function OnboardingScreen() {
       <View style={styles.header}>
         <HapticPressable onPress={() => {
           Alert.alert(
-            'Skip KYC Setup?',
-            'You can browse rides but will need to complete identity verification before booking your first ride.',
+            role === 'rider' ? 'Skip Setup?' : 'Skip KYC Setup?',
+            role === 'rider'
+              ? 'You can browse rides but will need to finish your profile before booking your first ride.'
+              : 'You can browse rides but will need to complete identity verification before booking your first ride.',
             [
               { text: 'Continue Setup', style: 'cancel' },
               { text: 'Skip for Now', style: 'destructive', onPress: () => router.replace('/(tabs)') },
@@ -592,11 +603,11 @@ export default function OnboardingScreen() {
           <Text style={styles.skipText}>Skip for now</Text>
         </HapticPressable>
         <Text style={styles.headerTitle}>Account Setup</Text>
-        <Text style={styles.stepCounter}>{currentStep + 1}/{TOTAL_STEPS}</Text>
+        <Text style={styles.stepCounter}>{currentStep + 1}/{totalSteps}</Text>
       </View>
 
       {/* Progress bar */}
-      <ProgressBar currentStep={currentStep} />
+      <ProgressBar currentStep={currentStep} totalSteps={totalSteps} />
 
       {/* Step label */}
       <View style={styles.stepLabelRow}>
