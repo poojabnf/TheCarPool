@@ -27,7 +27,9 @@ validateEnv();
 // Initialise error monitoring before anything else (no-op without SENTRY_DSN).
 initSentry();
 
-const fastify = Fastify({ logger: true });
+// Default is 1 MiB, which a base64-encoded camera photo (KYC document
+// uploads, selfies) blows past routinely — raised to fit those.
+const fastify = Fastify({ logger: true, bodyLimit: 15 * 1024 * 1024 });
 
 // Security headers, CORS allowlist, and a global rate limit. Registered before
 // routes so they apply to every endpoint. The CORS/Socket.IO origin allowlist
