@@ -14,6 +14,13 @@ import {
 import { crossCheckDocument, extractText } from '../lib/idImageCheck';
 import { hasPayoutMethod, maskPayoutMethod } from '../lib/payouts';
 import { verificationSummary } from '../lib/verification';
+import {
+  createDigilockerRequest, getDigilockerStatus, fetchDigilockerAadhaar,
+  revokeDigilockerRequest, isDigilockerConfigured,
+} from '../lib/digilocker';
+
+/** Custom URL scheme (app.json `scheme`) DigiLocker consent redirects back to. */
+const DIGILOCKER_REDIRECT_URL = 'thecarpool://digilocker-callback';
 
 /**
  * ID document retention.
@@ -774,6 +781,98 @@ export async function safetyRoutes(fastify: FastifyInstance) {
       score: cross.score,
       verification: verificationSummary(fresh.data()),
     });
+  });
+
+  // ── DigiLocker Aadhaar verification ──────────────────────────────────────
+  // Replaces the type-a-number-and-photograph-the-card flow for Aadhaar: the
+  // user consents on DigiLocker's own login page and UIDAI-signed data comes
+  // back directly. We never receive or store a document image or the full
+  // Aadhaar number — only what DigiLocker itself already masks.
+  fastify.post('/kyc/digilocker/init', { preHandler: [requireAuth] }, async (request, reply) => {
+    if (!isDigilockerConfigured()) {
+      return reply.code(503).send({
+        error: 'DIGILOCKER_UNAVAILABLE',
+        message: 'DigiLocker verification is not available right now. Please try again shortly.',
+      });
+    }
+    const uid = String(request.user!.id);
+    try {
+      const created = await createDigilockerRequest(DIGILOCKER_REDIRECT_URL);
+      await db.collection('digilocker_requests').doc(created.id).set({
+        uid,
+        status: 'pending',
+        created_at: new Date().toISOString(),
+      });
+      return reply.send({ requestId: created.id, url: created.url, validUpto: created.validUpto });
+    } catch (err: any) {
+      fastify.log.error(err, 'DigiLocker request creation failed');
+      return reply.code(503).send({
+        error: 'DIGILOCKER_UNAVAILABLE',
+        message: 'Could not start DigiLocker verification. Please try again shortly.',
+      });
+    }
+  });
+
+  fastify.post('/kyc/digilocker/:id/complete', { preHandler: [requireAuth] }, async (request, reply) => {
+    if (!isDigilockerConfigured()) {
+      return reply.code(503).send({ error: 'DIGILOCKER_UNAVAILABLE', message: 'DigiLocker verification is not available right now.' });
+    }
+    const uid = String(request.user!.id);
+    const { id } = request.params as { id: string };
+
+    const reqDoc = await db.collection('digilocker_requests').doc(id).get();
+    if (!reqDoc.exists || reqDoc.data()?.uid !== uid) {
+      return reply.code(404).send({ error: 'REQUEST_NOT_FOUND', message: 'That DigiLocker request was not found.' });
+    }
+
+    try {
+      const status = await getDigilockerStatus(id);
+      if (status.status !== 'authenticated') {
+        return reply.code(400).send({
+          error: 'NOT_AUTHENTICATED',
+          message: 'DigiLocker consent was not completed. Please try again.',
+          status: status.status,
+        });
+      }
+
+      const aadhaar = await fetchDigilockerAadhaar(id);
+      if (!aadhaar.maskedNumber) {
+        return reply.code(502).send({ error: 'DIGILOCKER_NO_DATA', message: 'DigiLocker did not return Aadhaar data. Please try again.' });
+      }
+
+      // Store only what DigiLocker already masks — never a raw number or image.
+      const record = {
+        type: 'AADHAAR' as const,
+        masked_number: aadhaar.maskedNumber,
+        name: aadhaar.name,
+        date_of_birth: aadhaar.dateOfBirth,
+        gender: aadhaar.gender,
+        signature_verified: aadhaar.verified.signature,
+        source: 'DIGILOCKER',
+        verified_at: new Date().toISOString(),
+      };
+      await db.collection('users').doc(uid).set(
+        { id_document: record, id_document_verified: true },
+        { merge: true }
+      );
+      await reqDoc.ref.set({ status: 'completed' }, { merge: true });
+      revokeDigilockerRequest(id).catch(() => {});
+
+      const fresh = await db.collection('users').doc(uid).get();
+      return reply.send({
+        status: 'DOCUMENT_VERIFIED',
+        purpose: 'IDENTITY',
+        document_type: 'AADHAAR',
+        masked_number: record.masked_number,
+        verification: verificationSummary(fresh.data()),
+      });
+    } catch (err: any) {
+      fastify.log.error(err, 'DigiLocker completion failed');
+      return reply.code(503).send({
+        error: 'DIGILOCKER_UNAVAILABLE',
+        message: 'Could not complete DigiLocker verification. Please try again shortly.',
+      });
+    }
   });
 
   // ── Self-service KYC completion ──────────────────────────────────────────

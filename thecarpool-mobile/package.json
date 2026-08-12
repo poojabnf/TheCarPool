@@ -34,6 +34,7 @@
     "expo-status-bar": "~56.0.4",
     "expo-system-ui": "~56.0.5",
     "expo-updates": "~56.0.19",
+    "expo-web-browser": "~56.0.6",
     "lucide-react-native": "^1.16.0",
     "react": "19.2.3",
     "react-dom": "19.2.3",

@@ -14,7 +14,7 @@ import {
 } from 'react-native';
 import { apiFetch } from '../services/api';
 import { useRouter } from 'expo-router';
-import * as ImagePicker from 'expo-image-picker';
+import * as WebBrowser from 'expo-web-browser';
 import { useAuthStore } from '../store/authStore';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import HapticPressable from '../components/HapticPressable';
@@ -161,59 +161,49 @@ function StepProfile({ onNext, isLastStep }: { onNext: (data: any) => void; isLa
   );
 }
 
-// ─── Step 2: Aadhaar ──────────────────────────────────────────────
+// ─── Step 2: Aadhaar (via DigiLocker) ──────────────────────────────
+// No number entry, no photo, nothing kept locally: the user consents on
+// DigiLocker's own login page and UIDAI-signed data (name, DOB, gender, a
+// masked number) comes back directly from the backend. We never see a
+// document image or the full Aadhaar number, let alone store one.
 function StepAadhaar({ onNext }: { onNext: (data: any) => void }) {
-  const [aadhaar, setAadhaar] = useState('');
-  // No OTP stage: we don't talk to UIDAI, so there is no OTP to send. The
-  // number is validated locally (12 digits + Verhoeff checksum, server-side)
-  // and then matched against the copy the user uploads.
-  const [stage, setStage] = useState<'input' | 'done'>('input');
-  const [loading, setLoading] = useState(false);
+  const [stage, setStage] = useState<'idle' | 'consenting' | 'verifying' | 'done'>('idle');
+  const [maskedNumber, setMaskedNumber] = useState('');
 
-  const formatted = aadhaar.replace(/(\d{4})(?=\d)/g, '$1 ').trim();
-
-  // Capture the document itself. The server OCRs it and refuses if the image
-  // is blank, is a different document type, or carries a different number than
-  // the one typed — that cross-check is what stands in for a government API.
-  const captureDocument = async (source: 'camera' | 'library') => {
+  const startVerification = async () => {
+    setStage('consenting');
     try {
-      const perm = source === 'camera'
-        ? await ImagePicker.requestCameraPermissionsAsync()
-        : await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (!perm.granted) {
-        Alert.alert('Permission needed', 'Enable access in Settings to add your document.');
+      const initRes = await apiFetch('/api/safety/kyc/digilocker/init', { method: 'POST' });
+      const initData = await initRes.json().catch(() => ({} as any));
+      if (!initRes.ok || !initData.url || !initData.requestId) {
+        Alert.alert('Could not start verification', initData.message || 'Please try again.');
+        setStage('idle');
         return;
       }
-      const opts: ImagePicker.ImagePickerOptions = {
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        quality: 0.7,
-        base64: true,
-      };
-      const result = source === 'camera'
-        ? await ImagePicker.launchCameraAsync(opts)
-        : await ImagePicker.launchImageLibraryAsync(opts);
-      if (result.canceled || !result.assets?.[0]?.base64) return;
 
-      setLoading(true);
-      const res = await apiFetch('/api/safety/kyc/document', {
-        method: 'POST',
-        body: JSON.stringify({
-          document_type: 'AADHAAR',
-          id_number: aadhaar.replace(/\s/g, ''),
-          image_base64: result.assets[0].base64,
-        }),
-      }, { timeoutMs: 45000 });
-
-      const data = await res.json().catch(() => ({} as any));
-      if (!res.ok) {
-        Alert.alert('Could not verify', data.message || data.error || 'Please try again with a clearer photo.');
+      const result = await WebBrowser.openAuthSessionAsync(initData.url, 'thecarpool://digilocker-callback');
+      if (result.type !== 'success') {
+        setStage('idle');
         return;
       }
+
+      setStage('verifying');
+      const completeRes = await apiFetch(
+        `/api/safety/kyc/digilocker/${encodeURIComponent(initData.requestId)}/complete`,
+        { method: 'POST' },
+        { timeoutMs: 30000 }
+      );
+      const completeData = await completeRes.json().catch(() => ({} as any));
+      if (!completeRes.ok) {
+        Alert.alert('Could not verify', completeData.message || 'DigiLocker verification did not complete. Please try again.');
+        setStage('idle');
+        return;
+      }
+      setMaskedNumber(completeData.masked_number || '');
       setStage('done');
     } catch {
-      Alert.alert('Error', 'Could not check your document. Please try again.');
-    } finally {
-      setLoading(false);
+      Alert.alert('Error', 'Could not reach DigiLocker. Please try again.');
+      setStage('idle');
     }
   };
 
@@ -221,14 +211,13 @@ function StepAadhaar({ onNext }: { onNext: (data: any) => void }) {
     return (
       <View style={styles.verifiedContainer}>
         <Text style={styles.verifiedEmoji}>✅</Text>
-        <Text style={styles.verifiedTitle}>Aadhaar checked</Text>
+        <Text style={styles.verifiedTitle}>Aadhaar verified</Text>
         <Text style={styles.verifiedSub}>
-          The number and your uploaded copy match.{'\n'}Last 4 digits: ••••{' '}
-          {aadhaar.slice(-4)}
+          Verified directly with DigiLocker.{maskedNumber ? `\n${maskedNumber}` : ''}
         </Text>
         <HapticPressable haptic="press"
           style={styles.nextBtn}
-          onPress={() => onNext({ aadhaarLast4: aadhaar.slice(-4) })}
+          onPress={() => onNext({})}
           activeOpacity={0.8}
         >
           <Text style={styles.nextBtnText}>Continue to PAN →</Text>
@@ -241,35 +230,25 @@ function StepAadhaar({ onNext }: { onNext: (data: any) => void }) {
     <ScrollView showsVerticalScrollIndicator={false}>
       <Text style={styles.stepTitle}>Aadhaar Verification</Text>
       <Text style={styles.stepSubtitle}>
-        Enter your number, then upload a photo of the same card so we can check they match.
+        Verify with DigiLocker — no number to type, no photo to upload.
       </Text>
 
       <InfoCard
         icon="🔒"
-        text="We check the number's format and match it against the copy you upload. Only the last 4 digits are kept — the image is deleted after 15 days."
-      />
-      <Field
-        label="Aadhaar Number *"
-        placeholder="XXXX XXXX XXXX"
-        value={formatted}
-        onChangeText={(t: string) => setAadhaar(t.replace(/\D/g, '').slice(0, 12))}
-        keyboardType="number-pad"
-        maxLength={14}
+        text="You'll sign in on DigiLocker's own page. We only receive your name, DOB and a masked Aadhaar number — never a document image or the full number."
       />
 
       <HapticPressable haptic="press"
-        style={[styles.nextBtn, (aadhaar.length < 12 || loading) && styles.nextBtnDisabled]}
-        onPress={() => Alert.alert('Upload your Aadhaar', 'Add a clear photo of the card', [
-          { text: 'Take photo', onPress: () => captureDocument('camera') },
-          { text: 'Choose from gallery', onPress: () => captureDocument('library') },
-          { text: 'Cancel', style: 'cancel' },
-        ])}
-        disabled={loading || aadhaar.length < 12}
+        style={[styles.nextBtn, stage !== 'idle' && styles.nextBtnDisabled]}
+        onPress={startVerification}
+        disabled={stage !== 'idle'}
         activeOpacity={0.8}
       >
-        {loading
-          ? <ActivityIndicator color="#fff" />
-          : <Text style={styles.nextBtnText}>Upload Aadhaar copy →</Text>}
+        {stage === 'idle' ? (
+          <Text style={styles.nextBtnText}>Verify with DigiLocker →</Text>
+        ) : (
+          <ActivityIndicator color="#fff" />
+        )}
       </HapticPressable>
     </ScrollView>
   );
