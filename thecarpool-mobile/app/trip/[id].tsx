@@ -1,11 +1,11 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, Alert, Platform, Share } from 'react-native';
+import { View, Text, StyleSheet, Alert, Platform, Share, Linking } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import io from 'socket.io-client';
 import * as Location from 'expo-location';
 import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
-import { ShieldAlert, Share2, MapPin, MessageCircle } from 'lucide-react-native';
+import { ShieldAlert, Share2, MapPin, MessageCircle, Phone, Mail } from 'lucide-react-native';
 
 const MAP_PROVIDER = Platform.OS === 'android' ? PROVIDER_GOOGLE : undefined;
 import { auth } from '../services/firebase';
@@ -250,6 +250,48 @@ export default function TripScreen() {
           </View>
         </View>
 
+        {/* Driver Contact & Profile Card */}
+        {ride && (
+          <View style={styles.driverContactCard}>
+            <View style={styles.driverInfoRow}>
+              <View style={styles.driverAvatar}>
+                <Text style={styles.driverAvatarText}>
+                  {(ride.driver_name || 'Driver').charAt(0).toUpperCase()}
+                </Text>
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.driverName}>{ride.driver_name || 'Driver'}</Text>
+                <Text style={styles.driverRole}>Your Driver</Text>
+              </View>
+              <View style={styles.driverActionsRow}>
+                {ride.driver_phone && (
+                  <HapticPressable
+                    haptic="tap"
+                    style={styles.contactBtn}
+                    onPress={() => Linking.openURL(`tel:${ride.driver_phone}`)}
+                    accessibilityLabel="Call driver"
+                  >
+                    <Phone color={c.go} size={18} />
+                  </HapticPressable>
+                )}
+                {ride.driver_email && (
+                  <HapticPressable
+                    haptic="tap"
+                    style={styles.contactBtn}
+                    onPress={() => Linking.openURL(`mailto:${ride.driver_email}`)}
+                    accessibilityLabel="Email driver"
+                  >
+                    <Mail color={c.textAccent} size={18} />
+                  </HapticPressable>
+                )}
+              </View>
+            </View>
+            {ride.driver_phone && (
+              <Text style={styles.phoneSubText}>📞 {ride.driver_phone}</Text>
+            )}
+          </View>
+        )}
+
         {!showRating ? (
           <>
             <View style={styles.actions}>
@@ -341,6 +383,16 @@ const styles = StyleSheet.create({
   tripIcon: { width: 40, height: 40, borderRadius: radius.sm, backgroundColor: c.bgBase, alignItems: 'center', justifyContent: 'center' },
   tripId: { fontFamily: font.monoBold, fontSize: 14, color: c.textPrimary },
   tripVehicle: { fontFamily: font.sans, fontSize: 12.5, color: c.textTertiary, marginTop: 1 },
+
+  driverContactCard: { backgroundColor: c.surfaceSunken, borderRadius: radius.md, padding: space.md, marginBottom: space.md, borderWidth: 1, borderColor: c.borderSubtle },
+  driverInfoRow: { flexDirection: 'row', alignItems: 'center', gap: space.md },
+  driverAvatar: { width: 42, height: 42, borderRadius: 21, backgroundColor: c.goSoft, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: c.go },
+  driverAvatarText: { fontFamily: font.sansBold, fontSize: 18, color: c.goStrong },
+  driverName: { fontFamily: font.sansBold, fontSize: 15, color: c.textPrimary },
+  driverRole: { fontFamily: font.sans, fontSize: 12, color: c.textSecondary, marginTop: 1 },
+  driverActionsRow: { flexDirection: 'row', gap: space.sm },
+  contactBtn: { width: 38, height: 38, borderRadius: 19, backgroundColor: c.surfaceCard, borderWidth: 1, borderColor: c.borderStrong, alignItems: 'center', justifyContent: 'center' },
+  phoneSubText: { fontFamily: font.mono, fontSize: 12.5, color: c.textSecondary, marginTop: 8, marginLeft: 2 },
 
   actions: { flexDirection: 'row', gap: space.sm },
   sos: { flexDirection: 'row', gap: 8, alignItems: 'center', justifyContent: 'center', backgroundColor: c.danger, height: 52, paddingHorizontal: space.xl, borderRadius: radius.md },

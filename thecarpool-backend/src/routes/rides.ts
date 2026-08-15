@@ -677,14 +677,27 @@ export async function rideRoutes(fastify: FastifyInstance) {
         return reply.code(404).send({ error: 'Ride not found.' });
       }
       const ride: any = { id: rideDoc.id, ...rideDoc.data() };
-      // Enrich with the driver's display info when available.
-      if (ride.driver_id) {
-        const driverDoc = await db.collection('drivers').doc(String(ride.driver_id)).get();
-        if (driverDoc.exists) {
-          const d = driverDoc.data()!;
-          ride.driver_name = ride.driver_name || d.name;
-          ride.vehicle = ride.vehicle || d.vehicle_model || d.vehicle_type;
-          ride.vehicle_plate = ride.vehicle_plate || d.vehicle_plate;
+      // Enrich with the driver's display & contact info
+      if (ride.driver_uid || ride.driver_id) {
+        const driverUid = ride.driver_uid || (ride.driver_id.startsWith('driver_') ? ride.driver_id.replace('driver_', '') : ride.driver_id);
+        const userDoc = await db.collection('users').doc(String(driverUid)).get();
+        if (userDoc.exists) {
+          const u = userDoc.data()!;
+          ride.driver_name = ride.driver_name || u.name || u.displayName || u.full_name;
+          ride.driver_phone = u.phone_number || u.phone || null;
+          ride.driver_email = u.email || u.corporate_email || null;
+          ride.driver_photo = u.photo_url || u.photoURL || u.avatar_path || null;
+        }
+
+        if (ride.driver_id) {
+          const driverDoc = await db.collection('drivers').doc(String(ride.driver_id)).get();
+          if (driverDoc.exists) {
+            const d = driverDoc.data()!;
+            ride.driver_name = ride.driver_name || d.name;
+            ride.driver_phone = ride.driver_phone || d.phone || null;
+            ride.vehicle = ride.vehicle || d.vehicle_model || d.vehicle_type;
+            ride.vehicle_plate = ride.vehicle_plate || d.vehicle_plate;
+          }
         }
       }
       return reply.send(ride);

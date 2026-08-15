@@ -736,6 +736,9 @@ export async function bookingRoutes(fastify: FastifyInstance) {
           // Ride snapshot fields
           departure_time: ride?.departure_time ?? null,
           driver_name: ride?.driver_name ?? null,
+          driver_phone: ride?.driver_phone ?? null,
+          driver_email: ride?.driver_email ?? null,
+          driver_photo: ride?.driver_photo ?? null,
           vehicle: ride?.vehicle ?? null,
           vehicle_plate: ride?.vehicle_plate ?? null,
           ride_status: ride?.status ?? null,
@@ -775,17 +778,27 @@ export async function bookingRoutes(fastify: FastifyInstance) {
             const b = d.data();
             let riderName = 'Rider';
             let riderRating: number | null = null;
+            let riderPhone: string | null = null;
+            let riderEmail: string | null = null;
+            let riderPhoto: string | null = null;
             try {
               const u = await db.collection('users').doc(String(b.rider_id)).get();
               if (u.exists) {
-                riderName = u.data()!.full_name || u.data()!.name || 'Rider';
-                riderRating = u.data()!.rating_avg ? parseFloat(u.data()!.rating_avg.toFixed(1)) : null;
+                const uData = u.data()!;
+                riderName = uData.full_name || uData.name || uData.displayName || 'Rider';
+                riderRating = uData.rating_avg ? parseFloat(uData.rating_avg.toFixed(1)) : null;
+                riderPhone = uData.phone_number || uData.phone || null;
+                riderEmail = uData.email || uData.corporate_email || null;
+                riderPhoto = uData.photo_url || uData.photoURL || uData.avatar_path || null;
               }
             } catch { /* name enrichment is best-effort */ }
             return {
               booking_id: d.id,
               rider_id: String(b.rider_id),
               rider_name: riderName,
+              rider_phone: riderPhone,
+              rider_email: riderEmail,
+              rider_photo: riderPhoto,
               rider_rating: riderRating,
               seats_booked: b.seats_booked,
               pickup_point: b.pickup_point ?? null,

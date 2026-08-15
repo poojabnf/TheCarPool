@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { StyleSheet, View, Text, ScrollView, Dimensions, TextInput, Switch, Alert, ActivityIndicator, Modal } from 'react-native';
+import { StyleSheet, View, Text, ScrollView, Dimensions, TextInput, Switch, Alert, ActivityIndicator, Modal, Linking } from 'react-native';
 import { useRouter } from 'expo-router';
-import { PlusCircle, Activity, Navigation, MapPin, Calendar, Users, X, Check, Car, Bike, Shield } from 'lucide-react-native';
+import { PlusCircle, Activity, Navigation, MapPin, Calendar, Users, X, Check, Car, Bike, Shield, Phone, Mail } from 'lucide-react-native';
 import { colors } from '../../theme/colors';
 import { apiFetch } from '../services/api';
 import * as haptics from '../services/haptics';
@@ -640,14 +640,43 @@ export default function DriverInterface() {
                     <Text style={styles.routeDest}>Ride #{String(r.id).replace('ride_', '').slice(0, 8)} · ₹{Number(r.price_split).toFixed(0)}/seat</Text>
                   </View>
 
-                  {/* Passenger manifest */}
+                  {/* Passenger manifest with contact options */}
                   <View style={styles.passengerBox}>
                     <View style={{ flex: 1 }}>
                       {m && m.passengers.length > 0 ? (
                         m.passengers.map((p: any) => (
-                          <Text key={p.booking_id} style={styles.manifestRow}>
-                            {p.rider_name}{p.rider_rating ? ` ★${p.rider_rating}` : ''} · {p.seats_booked} seat{p.seats_booked > 1 ? 's' : ''}
-                          </Text>
+                          <View key={p.booking_id} style={styles.passengerRow}>
+                            <View style={{ flex: 1 }}>
+                              <Text style={styles.manifestRow}>
+                                {p.rider_name}{p.rider_rating ? ` ★${p.rider_rating}` : ''} · {p.seats_booked} seat{p.seats_booked > 1 ? 's' : ''}
+                              </Text>
+                              {p.rider_phone && (
+                                <Text style={styles.passengerPhoneText}>📞 {p.rider_phone}</Text>
+                              )}
+                            </View>
+                            <View style={styles.passengerContactIcons}>
+                              {p.rider_phone && (
+                                <HapticPressable
+                                  haptic="tap"
+                                  style={styles.passengerContactBtn}
+                                  onPress={() => Linking.openURL(`tel:${p.rider_phone}`)}
+                                  accessibilityLabel={`Call ${p.rider_name}`}
+                                >
+                                  <Phone color={colors.success} size={15} />
+                                </HapticPressable>
+                              )}
+                              {p.rider_email && (
+                                <HapticPressable
+                                  haptic="tap"
+                                  style={styles.passengerContactBtn}
+                                  onPress={() => Linking.openURL(`mailto:${p.rider_email}`)}
+                                  accessibilityLabel={`Email ${p.rider_name}`}
+                                >
+                                  <Mail color={colors.primary} size={15} />
+                                </HapticPressable>
+                              )}
+                            </View>
+                          </View>
                         ))
                       ) : (
                         <Text style={styles.manifestRow}>No bookings yet</Text>
@@ -1351,6 +1380,10 @@ const styles = StyleSheet.create({
   routeDest: { fontSize: 18, fontWeight: 'bold', color: colors.text },
   noRidesText: { color: colors.textMuted, fontSize: 13, marginTop: 8 },
   manifestRow: { color: colors.textMuted, fontSize: 12, marginBottom: 2 },
+  passengerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 4, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.04)' },
+  passengerPhoneText: { color: colors.success, fontSize: 11, fontWeight: '600', marginTop: 1 },
+  passengerContactIcons: { flexDirection: 'row', gap: 6, marginLeft: 8 },
+  passengerContactBtn: { width: 32, height: 32, borderRadius: 16, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.cardBorder, alignItems: 'center', justifyContent: 'center' },
 
   // Boarding verification modal
   otpBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'center', paddingHorizontal: 20 },
