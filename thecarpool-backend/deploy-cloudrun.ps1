@@ -22,6 +22,14 @@ gcloud iam service-accounts add-iam-policy-binding $RUNTIME_SA --member="service
 
 # 2) Deploy from source (builds the Dockerfile via Cloud Build).
 #    --session-affinity keeps Socket.IO connections sticky.
+#
+#    --update-env-vars, NOT --set-env-vars: `--set-env-vars` REPLACES the
+#    service's entire plain env-var list, so every variable not repeated on
+#    this line is silently dropped by the deploy. That is exactly how
+#    RAZORPAY_KEY_ID and CORS_ALLOWED_ORIGINS were lost (revision 33 → 34),
+#    taking payments and web CORS down until they were restored by hand.
+#    Secret Manager-backed vars are unaffected either way — only plain ones
+#    are at risk, which is what made the breakage easy to miss.
 gcloud run deploy $SERVICE `
   --source . `
   --region $REGION `
@@ -31,7 +39,7 @@ gcloud run deploy $SERVICE `
   --timeout 3600 `
   --cpu 1 --memory 512Mi `
   --min-instances 1 --max-instances 5 `
-  --set-env-vars "NODE_ENV=production,GOOGLE_MAPS_API_KEY=AIzaSyBTkNesFuUVR-8u9FNOh4RmsuZn28DT5cM"
+  --update-env-vars "NODE_ENV=production,GOOGLE_MAPS_API_KEY=AIzaSyBTkNesFuUVR-8u9FNOh4RmsuZn28DT5cM"
 
 # 3) After it prints the Service URL (https://thecarpool-backend-xxxx.a.run.app):
 #    - Set NEXT_PUBLIC_API_URL to that URL in Vercel (Project → Settings → Env Vars), redeploy web.
@@ -39,4 +47,13 @@ gcloud run deploy $SERVICE `
 #
 #    Razorpay / Sentry secrets are best added via Secret Manager, e.g.:
 #    gcloud run services update $SERVICE --region $REGION `
-#      --set-env-vars "RAZORPAY_KEY_ID=...,RAZORPAY_KEY_SECRET=...,RAZORPAY_WEBHOOK_SECRET=...,SENTRY_DSN=..."
+#      --update-env-vars "RAZORPAY_KEY_ID=...,SENTRY_DSN=..."
+#
+#    Again --update-env-vars, never --set-env-vars: the latter would drop
+#    every variable not named on that one line.
+#
+#    For a value containing commas (e.g. CORS_ALLOWED_ORIGINS), choose a
+#    different delimiter with a ^delim^ prefix so the commas are not read
+#    as separators:
+#    gcloud run services update $SERVICE --region $REGION `
+#      --update-env-vars "^@^CORS_ALLOWED_ORIGINS=https://a.example,https://b.example"
