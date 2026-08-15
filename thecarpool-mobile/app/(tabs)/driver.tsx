@@ -266,8 +266,8 @@ export default function DriverInterface() {
     }
   };
 
-  // Driver moves the ride through its lifecycle; COMPLETED settles escrow.
-  const updateRideStatus = (rideId: string, status: 'STARTED' | 'COMPLETED') => {
+  // Driver moves the ride through its lifecycle; COMPLETED settles escrow, CANCELLED cancels it.
+  const updateRideStatus = (rideId: string, status: 'STARTED' | 'COMPLETED' | 'CANCELLED') => {
     if (status === 'STARTED') {
       const passengers: any[] = manifests[rideId]?.passengers || [];
       if (passengers.length === 0) {
@@ -282,6 +282,46 @@ export default function DriverInterface() {
       setOtpInput('');
       setOtpTarget(null);
       setBoardingRideId(rideId);
+      return;
+    }
+
+    if (status === 'CANCELLED') {
+      const passengers: any[] = manifests[rideId]?.passengers || [];
+      const hasPassengers = passengers.length > 0;
+      Alert.alert(
+        'Cancel this ride?',
+        hasPassengers
+          ? 'Passengers who booked will receive full refunds for their seats.'
+          : 'Are you sure you want to cancel this offered ride?',
+        [
+          { text: 'Keep Ride', style: 'cancel' },
+          {
+            text: 'Yes, Cancel',
+            style: 'destructive',
+            onPress: async () => {
+              try {
+                const res = await apiFetch(`/api/rides/${rideId}/status`, {
+                  method: 'PATCH',
+                  body: JSON.stringify({ status: 'CANCELLED' }),
+                });
+                if (res.ok) {
+                  haptics.warning();
+                  setActiveRideId(null);
+                  loadMyRides();
+                  Alert.alert('Ride Cancelled', 'Your offered ride has been cancelled.');
+                } else {
+                  haptics.error();
+                  const e = await res.json().catch(() => ({}));
+                  Alert.alert('Could not cancel', e.message || e.error || `Server error (${res.status}).`);
+                }
+              } catch {
+                haptics.error();
+                Alert.alert('Could not cancel', 'Network error. Please try again.');
+              }
+            },
+          },
+        ]
+      );
       return;
     }
 
@@ -619,9 +659,14 @@ export default function DriverInterface() {
                   {/* Lifecycle controls */}
                   <View style={{ flexDirection: 'row', gap: 8, marginTop: 12 }}>
                     {r.status === 'SCHEDULED' && (
-                      <HapticPressable haptic="press" style={styles.startBtn} onPress={() => updateRideStatus(r.id, 'STARTED')} activeOpacity={0.9}>
-                        <Text style={styles.startBtnText}>▶ Start trip</Text>
-                      </HapticPressable>
+                      <>
+                        <HapticPressable haptic="press" style={styles.startBtn} onPress={() => updateRideStatus(r.id, 'STARTED')} activeOpacity={0.9}>
+                          <Text style={styles.startBtnText}>▶ Start trip</Text>
+                        </HapticPressable>
+                        <HapticPressable haptic="warning" style={styles.cancelRideBtn} onPress={() => updateRideStatus(r.id, 'CANCELLED')} activeOpacity={0.9}>
+                          <Text style={styles.cancelRideBtnText}>✕ Cancel</Text>
+                        </HapticPressable>
+                      </>
                     )}
                     {r.status === 'STARTED' && (
                       <HapticPressable haptic="press" style={styles.completeBtn} onPress={() => updateRideStatus(r.id, 'COMPLETED')} activeOpacity={0.9}>
@@ -1325,6 +1370,8 @@ const styles = StyleSheet.create({
   otpGhostBtn: { backgroundColor: colors.background, borderWidth: 1, borderColor: colors.cardBorder, borderRadius: 10, paddingVertical: 14, alignItems: 'center' },
   otpGhostText: { color: colors.textMuted, fontSize: 15, fontWeight: '600' },
   startBtn: { flex: 1, backgroundColor: colors.success, borderRadius: 8, height: 42, alignItems: 'center', justifyContent: 'center' },
+  cancelRideBtn: { paddingHorizontal: 14, backgroundColor: 'rgba(239,68,68,0.12)', borderWidth: 1, borderColor: '#ef4444', borderRadius: 8, height: 42, alignItems: 'center', justifyContent: 'center' },
+  cancelRideBtnText: { color: '#ef4444', fontSize: 13, fontWeight: '700' },
   completeBtn: { flex: 1, backgroundColor: '#1E4E8C', borderRadius: 8, height: 42, alignItems: 'center', justifyContent: 'center' },
   startBtnText: { color: '#fff', fontSize: 13, fontWeight: '700' },
   chatMiniBtn: { width: 42, height: 42, borderRadius: 8, borderWidth: 1, borderColor: colors.cardBorder, alignItems: 'center', justifyContent: 'center' },
