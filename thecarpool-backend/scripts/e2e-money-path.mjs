@@ -132,7 +132,7 @@ async function seedUsers(balance) {
   for (const [uid, role] of [[RIDER, 'rider'], [DRIVER, 'partner']]) {
     await admin.auth().createUser({ uid, displayName: uid }).catch(() => {});
     await db.collection('users').doc(uid).set({
-      name: uid, role, kyc_status: 'VERIFIED', gender: 'MALE',
+      name: uid, role, gender: 'MALE',
     }, { merge: true });
     created.users.push(uid);
   }

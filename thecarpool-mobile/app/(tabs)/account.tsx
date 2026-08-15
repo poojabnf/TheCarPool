@@ -21,7 +21,6 @@ const PRIVACY_URL = 'https://thecarpool.in/privacy';
 
 const FAQS = [
   { q: 'How is the fare split calculated?', a: 'The trip cost is shared equally among co-passengers, with group discounts applied automatically for multiple seats.' },
-  { q: 'Why do I need to verify (KYC)?', a: 'Verification keeps the community safe — every driver and rider confirms identity before booking a ride.' },
   { q: 'How does the SOS button work?', a: 'One tap alerts your emergency contacts with your live location during an active trip.' },
   { q: 'How do payouts reach drivers?', a: 'Fares are held in escrow and released to the driver’s UPI once the ride completes.' },
 ];
@@ -39,7 +38,7 @@ function initials(name?: string | null) {
 export default function AccountInterface() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { kycStatus, userProfile, setUserProfile } = useAuthStore();
+  const { userProfile, setUserProfile } = useAuthStore();
   const [view, setView] = useState<'menu' | 'settings' | 'help' | 'history'>('menu');
   const [notifications, setNotifications] = useState(true);
   const [openFaq, setOpenFaq] = useState<number | null>(null);
@@ -88,11 +87,6 @@ export default function AccountInterface() {
   const user = auth().currentUser;
   const name = userProfile?.name || user?.displayName || 'TheCarPool User';
   const contact = user?.phoneNumber || user?.email || userProfile?.email || '';
-
-  const kycChip =
-    kycStatus === 'verified' ? { label: 'Verified', bg: c.goSoft, fg: c.goStrong }
-    : kycStatus === 'pending' ? { label: 'Verification pending', bg: c.warnSoft, fg: c.warn }
-    : { label: 'Not verified', bg: c.surfaceInset, fg: c.textTertiary };
 
   const logout = () => Alert.alert('Log out', 'Are you sure you want to log out?', [
     { text: 'Cancel', style: 'cancel' },
@@ -318,19 +312,8 @@ export default function AccountInterface() {
         <View style={{ flex: 1 }}>
           <Text style={styles.name}>{name}</Text>
           {!!contact && <Text style={styles.contact}>{contact}</Text>}
-          <View style={[styles.kycChip, { backgroundColor: kycChip.bg }]}>
-            <ShieldCheck color={kycChip.fg} size={12} strokeWidth={2.4} />
-            <Text style={[styles.kycChipText, { color: kycChip.fg }]}>{kycChip.label}</Text>
-          </View>
         </View>
       </View>
-
-      {kycStatus !== 'verified' && (
-        <HapticPressable style={styles.verifyCta} onPress={() => router.push('/onboarding')} activeOpacity={0.9}>
-          <Text style={styles.verifyCtaText}>Complete verification</Text>
-          <ChevronRight color={c.actionPrimaryText} size={18} />
-        </HapticPressable>
-      )}
 
       {/* Streaks */}
       {streaks && streaks.total_completed_rides > 0 && (
@@ -400,11 +383,7 @@ const styles = StyleSheet.create({
   cameraBadge: { position: 'absolute', bottom: -2, right: -2, width: 22, height: 22, borderRadius: 11, backgroundColor: c.go, alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: c.bgApp },
   name: { fontFamily: font.sansBold, fontSize: 19, color: c.textPrimary },
   contact: { fontFamily: font.sans, fontSize: 13, color: c.textTertiary, marginTop: 1 },
-  kycChip: { flexDirection: 'row', alignItems: 'center', gap: 4, alignSelf: 'flex-start', borderRadius: radius.pill, paddingHorizontal: 9, paddingVertical: 4, marginTop: 8 },
-  kycChipText: { fontFamily: font.sansSemibold, fontSize: 11.5 },
 
-  verifyCta: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: c.actionPrimary, borderRadius: radius.md, paddingHorizontal: space.lg, height: 50, marginBottom: space.lg },
-  verifyCtaText: { fontFamily: font.sansBold, fontSize: 15, color: c.actionPrimaryText },
 
   impact: { flexDirection: 'row', alignItems: 'center', gap: space.md, backgroundColor: c.goSoft, borderRadius: radius.lg, padding: space.lg, marginBottom: space.lg },
   impactIcon: { width: 40, height: 40, borderRadius: radius.md, backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center' },

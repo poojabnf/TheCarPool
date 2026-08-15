@@ -53,18 +53,14 @@ describe('portableProfile', () => {
     name: 'Asha',
     address: '12 MG Road',
     onboarded: true,
-    id_document_verified: true,
-    id_document_last4: '4321',
-    driver_licence_verified: true,
     payout_method: { type: 'VPA', vpa: 'asha@okaxis' },
   };
 
-  it('carries the profile and the verification state', () => {
+  it('carries the profile across', () => {
     const out = portableProfile(source);
     expect(out.name).toBe('Asha');
+    expect(out.address).toBe('12 MG Road');
     expect(out.onboarded).toBe(true);
-    expect(out.id_document_verified).toBe(true);
-    expect(out.driver_licence_verified).toBe(true);
     expect(out.payout_method).toEqual({ type: 'VPA', vpa: 'asha@okaxis' });
   });
 

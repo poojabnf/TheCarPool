@@ -1,7 +1,6 @@
 import { FastifyInstance } from 'fastify';
 import { db, storage } from '../server';
 import { requireAuth, requireAdmin } from '../middleware/auth';
-import { verificationSummary, verificationEnforced } from '../lib/verification';
 import { normalisePhone, phoneKey, phoneOf, portableProfile, decideLink } from '../lib/identity';
 
 /**
@@ -83,13 +82,13 @@ export async function userRoutes(fastify: FastifyInstance) {
       const doc = await db.collection('users').doc(uid).get();
       const stored = doc.exists ? doc.data()! : null;
 
-      // Same person, new sign-in provider: carry their profile and verification
-      // across rather than making them do it all again.
+      // Same person, new sign-in provider: carry their profile across rather
+      // than making them do it all again.
       const adopted = await linkByPhone(uid, request.user!.phone, stored, fastify.log);
       const data = { ...(stored ?? {}), ...adopted };
 
       if (!doc.exists && Object.keys(adopted).length === 0) {
-        return reply.send({ id: uid, onboarded: false, profile: null, verification: verificationSummary(null) });
+        return reply.send({ id: uid, onboarded: false, profile: null });
       }
       // Refresh the avatar's signed read URL so it never goes stale.
       let photo_url = data.photo_url;
@@ -106,9 +105,6 @@ export async function userRoutes(fastify: FastifyInstance) {
         onboarded: data.onboarded === true,
         ...data,
         photo_url,
-        // Single source of truth for what this user may do, so the app never
-        // has to re-derive the rules and get them subtly different.
-        verification: verificationSummary(data, { enforced: verificationEnforced() }),
       });
     } catch (err: any) {
       fastify.log.error(err, 'Failed to load user profile');
@@ -202,7 +198,6 @@ export async function userRoutes(fastify: FastifyInstance) {
           name: u.name || null,
           email: u.email || null,
           company_domain: u.company_domain || null,
-          kyc_status: u.kyc_status || 'NONE',
           onboarded: u.onboarded === true,
           created_at: u.created_at || null,
         };
@@ -214,34 +209,4 @@ export async function userRoutes(fastify: FastifyInstance) {
     }
   });
 
-  // List users awaiting KYC approval (admin only).
-  fastify.get('/admin/kyc-pending', { preHandler: [requireAdmin] }, async (request, reply) => {
-    try {
-      const snap = await db.collection('users').limit(500).get();
-      const pending = snap.docs
-        .map((d) => ({ id: d.id, ...(d.data() as any) }))
-        .filter((u) => (u.kyc_status || 'NONE') !== 'VERIFIED')
-        .map((u) => ({ id: u.id, name: u.name || null, email: u.email || null, kyc_status: u.kyc_status || 'NONE' }));
-      return reply.send(pending);
-    } catch (err: any) {
-      fastify.log.error(err, 'Admin KYC pending list failed');
-      return reply.code(500).send({ error: 'Failed to list pending KYC.' });
-    }
-  });
-
-  // Approve or reject a user's KYC (admin only).
-  fastify.post('/admin/:id/kyc', { preHandler: [requireAdmin] }, async (request, reply) => {
-    const { id } = request.params as { id: string };
-    const { decision } = request.body as { decision?: 'VERIFIED' | 'REJECTED' };
-    if (decision !== 'VERIFIED' && decision !== 'REJECTED') {
-      return reply.code(400).send({ error: "decision must be 'VERIFIED' or 'REJECTED'." });
-    }
-    try {
-      await db.collection('users').doc(id).set({ kyc_status: decision, kyc_reviewed_at: new Date().toISOString() }, { merge: true });
-      return reply.send({ status: 'KYC_UPDATED', user_id: id, kyc_status: decision });
-    } catch (err: any) {
-      fastify.log.error(err, 'Admin KYC decision failed');
-      return reply.code(500).send({ error: 'Failed to update KYC status.' });
-    }
-  });
 }

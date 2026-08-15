@@ -59,11 +59,6 @@ export function phoneOf(source: Record<string, any> | null | undefined): string 
 export const PORTABLE_FIELDS = [
   'name', 'displayName', 'address', 'gender', 'role', 'vehicle_type',
   'corporate_email', 'photo_url', 'avatar_path', 'onboarded',
-  // Verification state — the whole point of the exercise is not re-doing this.
-  'kyc_status', 'kyc_simulated', 'id_document_verified', 'id_document_type',
-  'id_document_last4', 'id_document_expiry', 'id_document_verified_at',
-  'driver_licence_verified', 'driver_licence_last4', 'driver_licence_expiry',
-  'driver_licence_verified_at',
   // Where earnings go. Not money itself — an instruction, and the same one.
   'payout_method',
 ] as const;

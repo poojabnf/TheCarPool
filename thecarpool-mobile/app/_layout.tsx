@@ -29,7 +29,7 @@ InputDefaults.defaultProps = { ...(InputDefaults.defaultProps || {}), maxFontSiz
 function AuthGuard({ children }: { children: React.ReactNode }) {
   const {
     isLoggedIn, isAuthLoading, isProfileHydrated, userProfile, profileSetupSkipped,
-    setFirebaseUser, setKycStatus, setUserProfile, setProfileHydrated, setVerification,
+    setFirebaseUser, setUserProfile, setProfileHydrated,
   } = useAuthStore();
   const segments = useSegments();
   const router = useRouter();
@@ -45,19 +45,11 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
         // Register this device for push notifications once signed in.
         registerForPushNotifications().catch(() => { /* non-fatal */ });
 
-        // Rehydrate KYC + profile from backend — fixes cold-start reset bug.
+        // Rehydrate the profile from backend — fixes cold-start reset bug.
         try {
           const res = await apiFetch('/api/users/me');
           if (res.ok) {
             const data = await res.json();
-            // Map backend kyc_status (VERIFIED/NONE/PENDING) to store KycStatus type
-            if (data.kyc_status === 'VERIFIED' || data.onboarded === true) {
-              setKycStatus('verified');
-            } else if (data.kyc_status === 'PENDING') {
-              setKycStatus('pending');
-            }
-            // What the server says this user can do. Rendered as-is.
-            if (data.verification) setVerification(data.verification);
             // Rehydrate profile fields if present
             if (data.name || data.address || data.company || data.photo_url) {
               setUserProfile({
@@ -152,10 +144,8 @@ export default function RootLayout() {
           <Stack.Screen name="onboarding" options={{ headerShown: false }} />
           <Stack.Screen name="trip/[id]" options={{ headerShown: false }} />
           <Stack.Screen name="confirm" options={{ headerShown: false }} />
-          <Stack.Screen name="licence" options={{ headerShown: false }} />
           <Stack.Screen name="payout-method" options={{ headerShown: false }} />
           <Stack.Screen name="components/AiVoiceModal" options={{ presentation: 'modal' }} />
-          <Stack.Screen name="components/KycUploadModal" options={{ presentation: 'modal' }} />
         </Stack>
       </AuthGuard>
     </SafeAreaProvider>

@@ -5,7 +5,7 @@ import {
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import auth from '@react-native-firebase/auth';
-import { MapPin, Circle, Search, BadgeCheck, Wind, Venus, Users, Leaf } from 'lucide-react-native';
+import { MapPin, Circle, Search, Wind, Venus, Users, Leaf } from 'lucide-react-native';
 import { apiFetch } from '../services/api';
 import { useAuthStore } from '../store/authStore';
 import { useI18n } from '../services/i18n';
@@ -85,8 +85,7 @@ export default function HomeScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const userId = auth().currentUser?.uid ?? null;
-  const { kycStatus, userProfile } = useAuthStore();
-  const kycVerified = kycStatus === 'verified';
+  const { userProfile } = useAuthStore();
   const name = userProfile?.name || 'there';
 
   const [origin, setOrigin] = useState('');
@@ -169,7 +168,7 @@ export default function HomeScreen() {
     } finally { setSearching(false); }
   };
 
-  // Open Confirm & pay (fare shown before the KYC gate; confirm screen books).
+  // Open Confirm & pay (confirm screen books).
   const bookRide = (ride: Ride) => {
     haptics.press();
     if (!originCoords || !destCoords) {
@@ -295,7 +294,6 @@ export default function HomeScreen() {
                 </View>
               </View>
               <View style={styles.badgeRow}>
-                {(ride as any).driver_kyc_verified && <View style={styles.badge}><BadgeCheck color={c.goStrong} size={12} strokeWidth={2.4} /><Text style={styles.badgeText}>Verified</Text></View>}
                 {['GOLD', 'SILVER', 'BRONZE'].includes((ride as any).driver_trust_level) && (
                   <View style={styles.badge}>
                     <Text style={styles.badgeText}>

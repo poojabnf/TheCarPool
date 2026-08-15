@@ -9,21 +9,15 @@ import {
   Animated,
   Alert,
   Dimensions,
-  ActivityIndicator,
   Platform,
 } from 'react-native';
 import { apiFetch } from '../services/api';
 import { useRouter } from 'expo-router';
-import * as WebBrowser from 'expo-web-browser';
 import { useAuthStore } from '../store/authStore';
-import { CameraView, useCameraPermissions } from 'expo-camera';
 import HapticPressable from '../components/HapticPressable';
 
 const { width } = Dimensions.get('window');
-// Full step count for the driver/partner path. Riders take a 2-step
-// shortcut (Role, Profile) — Aadhaar/PAN/selfie are driver identity
-// checks a rider never needs, so OnboardingScreen finishes early for them.
-const TOTAL_STEPS = 5;
+const TOTAL_STEPS = 2;
 
 // ─── Step indicators ──────────────────────────────────────────────
 function ProgressBar({ currentStep, totalSteps }: { currentStep: number; totalSteps: number }) {
@@ -63,14 +57,11 @@ function ProgressBar({ currentStep, totalSteps }: { currentStep: number; totalSt
   );
 }
 
-const STEP_LABELS = ['Role', 'Profile', 'Aadhaar', 'PAN', 'Selfie'];
-const STEP_ICONS = ['🚗', '👤', '🪪', '💳', '🤳'];
+const STEP_LABELS = ['Role', 'Profile'];
+const STEP_ICONS = ['🚗', '👤'];
 const STEP_DESCRIPTIONS = [
   'Choose how you want to use the app',
   'Tell us about yourself',
-  'Link your Aadhaar for identity',
-  'Verify PAN for tax compliance',
-  'Face liveness check for security',
 ];
 
 // ─── Step 0: Role ─────────────────────────────────────────────────
@@ -161,295 +152,6 @@ function StepProfile({ onNext, isLastStep }: { onNext: (data: any) => void; isLa
   );
 }
 
-// ─── Step 2: Aadhaar (via DigiLocker) ──────────────────────────────
-// No number entry, no photo, nothing kept locally: the user consents on
-// DigiLocker's own login page and UIDAI-signed data (name, DOB, gender, a
-// masked number) comes back directly from the backend. We never see a
-// document image or the full Aadhaar number, let alone store one.
-function StepAadhaar({ onNext }: { onNext: (data: any) => void }) {
-  const [stage, setStage] = useState<'idle' | 'consenting' | 'verifying' | 'done'>('idle');
-  const [maskedNumber, setMaskedNumber] = useState('');
-
-  const startVerification = async () => {
-    setStage('consenting');
-    try {
-      const initRes = await apiFetch('/api/safety/kyc/digilocker/init', { method: 'POST' });
-      const initData = await initRes.json().catch(() => ({} as any));
-      if (!initRes.ok || !initData.url || !initData.requestId) {
-        Alert.alert('Could not start verification', initData.message || 'Please try again.');
-        setStage('idle');
-        return;
-      }
-
-      const result = await WebBrowser.openAuthSessionAsync(initData.url, 'thecarpool://digilocker-callback');
-      if (result.type !== 'success') {
-        setStage('idle');
-        return;
-      }
-
-      setStage('verifying');
-      const completeRes = await apiFetch(
-        `/api/safety/kyc/digilocker/${encodeURIComponent(initData.requestId)}/complete`,
-        { method: 'POST' },
-        { timeoutMs: 30000 }
-      );
-      const completeData = await completeRes.json().catch(() => ({} as any));
-      if (!completeRes.ok) {
-        Alert.alert('Could not verify', completeData.message || 'DigiLocker verification did not complete. Please try again.');
-        setStage('idle');
-        return;
-      }
-      setMaskedNumber(completeData.masked_number || '');
-      setStage('done');
-    } catch {
-      Alert.alert('Error', 'Could not reach DigiLocker. Please try again.');
-      setStage('idle');
-    }
-  };
-
-  if (stage === 'done') {
-    return (
-      <View style={styles.verifiedContainer}>
-        <Text style={styles.verifiedEmoji}>✅</Text>
-        <Text style={styles.verifiedTitle}>Aadhaar verified</Text>
-        <Text style={styles.verifiedSub}>
-          Verified directly with DigiLocker.{maskedNumber ? `\n${maskedNumber}` : ''}
-        </Text>
-        <HapticPressable haptic="press"
-          style={styles.nextBtn}
-          onPress={() => onNext({})}
-          activeOpacity={0.8}
-        >
-          <Text style={styles.nextBtnText}>Continue to PAN →</Text>
-        </HapticPressable>
-      </View>
-    );
-  }
-
-  return (
-    <ScrollView showsVerticalScrollIndicator={false}>
-      <Text style={styles.stepTitle}>Aadhaar Verification</Text>
-      <Text style={styles.stepSubtitle}>
-        Verify with DigiLocker — no number to type, no photo to upload.
-      </Text>
-
-      <InfoCard
-        icon="🔒"
-        text="You'll sign in on DigiLocker's own page. We only receive your name, DOB and a masked Aadhaar number — never a document image or the full number."
-      />
-
-      <HapticPressable haptic="press"
-        style={[styles.nextBtn, stage !== 'idle' && styles.nextBtnDisabled]}
-        onPress={startVerification}
-        disabled={stage !== 'idle'}
-        activeOpacity={0.8}
-      >
-        {stage === 'idle' ? (
-          <Text style={styles.nextBtnText}>Verify with DigiLocker →</Text>
-        ) : (
-          <ActivityIndicator color="#fff" />
-        )}
-      </HapticPressable>
-    </ScrollView>
-  );
-}
-
-// ─── Step 3: PAN ──────────────────────────────────────────────────
-function StepPan({ onNext }: { onNext: (data: any) => void }) {
-  const { userProfile } = useAuthStore();
-  const [pan, setPan] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [verified, setVerified] = useState(false);
-  const [fetchedName, setFetchedName] = useState('');
-
-  const panFormatted = pan.toUpperCase();
-  const isValidPan = /^[A-Z]{5}[0-9]{4}[A-Z]{1}$/.test(panFormatted);
-
-  const handleVerify = () => {
-    if (!isValidPan) return;
-    setLoading(true);
-    setFetchedName(userProfile?.name?.toUpperCase() || 'USER');
-    setVerified(true);
-    setLoading(false);
-  };
-
-  if (verified) {
-    return (
-      <View style={styles.verifiedContainer}>
-        <Text style={styles.verifiedEmoji}>✅</Text>
-        <Text style={styles.verifiedTitle}>PAN Verified!</Text>
-        <Text style={styles.verifiedSub}>
-          Name on PAN: <Text style={{ color: '#0E8A5F', fontWeight: '700' }}>{fetchedName}</Text>
-          {'\n'}PAN: {panFormatted}
-        </Text>
-        <HapticPressable haptic="press"
-          style={styles.nextBtn}
-          onPress={() => onNext({ panNumber: panFormatted })}
-          activeOpacity={0.8}
-        >
-          <Text style={styles.nextBtnText}>Continue to Selfie →</Text>
-        </HapticPressable>
-      </View>
-    );
-  }
-
-  return (
-    <ScrollView showsVerticalScrollIndicator={false}>
-      <Text style={styles.stepTitle}>PAN Verification</Text>
-      <Text style={styles.stepSubtitle}>
-        Required for payment compliance under Indian tax regulations.
-      </Text>
-
-      <InfoCard
-        icon="💡"
-        text="Your PAN is verified via NSDL/CDSL API. Format: ABCDE1234F"
-      />
-
-      <Field
-        label="PAN Card Number *"
-        placeholder="ABCDE1234F"
-        value={panFormatted}
-        onChangeText={(t: string) => setPan(t.toUpperCase().slice(0, 10))}
-        autoCapitalize="characters"
-        maxLength={10}
-      />
-
-      {pan.length === 10 && !isValidPan && (
-        <Text style={styles.fieldError}>
-          ⚠️ Invalid PAN format. Should be like: ABCDE1234F
-        </Text>
-      )}
-
-      <HapticPressable haptic="press"
-        style={[styles.nextBtn, !isValidPan && styles.nextBtnDisabled]}
-        onPress={handleVerify}
-        disabled={loading || !isValidPan}
-        activeOpacity={0.8}
-      >
-        {loading ? (
-          <ActivityIndicator color="#fff" />
-        ) : (
-          <Text style={styles.nextBtnText}>Verify PAN →</Text>
-        )}
-      </HapticPressable>
-    </ScrollView>
-  );
-}
-
-// ─── Step 4: Selfie / Liveness ────────────────────────────────────
-function StepSelfie({ onNext }: { onNext: () => void }) {
-  const [stage, setStage] = useState<'idle' | 'scanning' | 'done'>('idle');
-  const [permission, requestPermission] = useCameraPermissions();
-  const pulseAnim = useRef(new Animated.Value(1)).current;
-
-  const startPulse = () => {
-    Animated.loop(
-      Animated.sequence([
-        Animated.timing(pulseAnim, { toValue: 1.15, duration: 600, useNativeDriver: true }),
-        Animated.timing(pulseAnim, { toValue: 1, duration: 600, useNativeDriver: true }),
-      ])
-    ).start();
-  };
-
-  const handleTakeSelfie = async () => {
-    if (!permission?.granted) {
-      const p = await requestPermission();
-      if (!p.granted) {
-        Alert.alert('Permission Denied', 'We need camera access to complete liveness verification.');
-        return;
-      }
-    }
-    setStage('scanning');
-    startPulse();
-    setTimeout(() => {
-      pulseAnim.stopAnimation();
-      setStage('done');
-    }, 3000);
-  };
-
-  return (
-    <ScrollView
-      showsVerticalScrollIndicator={false}
-      contentContainerStyle={{ alignItems: 'center' }}
-    >
-      <Text style={styles.stepTitle}>Selfie Verification</Text>
-      <Text style={styles.stepSubtitle}>
-        A quick liveness check to confirm your identity matches Aadhaar.
-      </Text>
-
-      {/* Camera view placeholder */}
-      <Animated.View
-        style={[styles.cameraBox, stage === 'scanning' && { transform: [{ scale: pulseAnim }] }]}
-      >
-        {stage === 'scanning' && permission?.granted && (
-          <CameraView style={StyleSheet.absoluteFill} facing="front" />
-        )}
-        {stage === 'idle' && (
-          <>
-            <Text style={styles.cameraEmoji}>📷</Text>
-            <Text style={styles.cameraHint}>Position your face{'\n'}within the oval</Text>
-          </>
-        )}
-        {stage === 'scanning' && (
-          <>
-            <Text style={{ ...styles.cameraHint, color: '#FFFFFF', position: 'absolute', bottom: 40, backgroundColor: 'rgba(0,0,0,0.5)', padding: 4 }}>
-              Checking liveness…{'\n'}Please blink twice
-            </Text>
-          </>
-        )}
-        {stage === 'done' && (
-          <>
-            <Text style={styles.cameraEmoji}>✅</Text>
-            <Text style={[styles.cameraHint, { color: '#0E8A5F' }]}>
-              98.4% match{'\n'}Liveness confirmed
-            </Text>
-          </>
-        )}
-        {/* Oval face guide */}
-        <View style={styles.faceOval} />
-        {/* Corner guides */}
-        {['TL', 'TR', 'BL', 'BR'].map((c) => (
-          <View
-            key={c}
-            style={[
-              styles.cornerGuide,
-              c.includes('T') ? { top: 20 } : { bottom: 20 },
-              c.includes('L') ? { left: 30 } : { right: 30 },
-              stage === 'done' && { borderColor: '#0E8A5F' },
-            ]}
-          />
-        ))}
-      </Animated.View>
-
-      <InfoCard
-        icon="🔒"
-        text="Your selfie is used to confirm a real person is signing up. We do not match it against any government database."
-      />
-
-      {stage !== 'done' ? (
-        <HapticPressable haptic="press"
-          style={[styles.nextBtn, stage === 'scanning' && styles.nextBtnDisabled, { width: '100%' }]}
-          onPress={handleTakeSelfie}
-          disabled={stage === 'scanning'}
-          activeOpacity={0.8}
-        >
-          <Text style={styles.nextBtnText}>
-            {stage === 'idle' ? '📸 Take Selfie' : '⏳ Scanning…'}
-          </Text>
-        </HapticPressable>
-      ) : (
-        <HapticPressable haptic="press"
-          style={[styles.nextBtn, { width: '100%', backgroundColor: '#0E8A5F' }]}
-          onPress={onNext}
-          activeOpacity={0.8}
-        >
-          <Text style={styles.nextBtnText}>🎉 Activate My Account →</Text>
-        </HapticPressable>
-      )}
-    </ScrollView>
-  );
-}
-
 // ─── Reusable Field ───────────────────────────────────────────────
 function Field({
   label,
@@ -477,27 +179,13 @@ function Field({
   );
 }
 
-// ─── Info card ────────────────────────────────────────────────────
-function InfoCard({ icon, text }: { icon: string; text: string }) {
-  return (
-    <View style={styles.infoCard}>
-      <Text style={styles.infoIcon}>{icon}</Text>
-      <Text style={styles.infoText}>{text}</Text>
-    </View>
-  );
-}
-
 // ─── Main Wizard ──────────────────────────────────────────────────
 export default function OnboardingScreen() {
   const router = useRouter();
   const { setUserProfile, setOnboardingStep, completeOnboarding, userProfile } = useAuthStore();
   const [currentStep, setCurrentStep] = useState(0);
-  const [role, setRole] = useState<'rider' | 'partner' | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const slideAnim = useRef(new Animated.Value(0)).current;
-
-  // Riders stop after Profile — Aadhaar/PAN/selfie are driver identity checks.
-  const totalSteps = role === 'rider' ? 2 : TOTAL_STEPS;
 
   const goToStep = (next: number) => {
     Animated.timing(slideAnim, { toValue: -width, duration: 250, useNativeDriver: true }).start(
@@ -511,10 +199,8 @@ export default function OnboardingScreen() {
 
   const handleNext = async (data?: any) => {
     if (data) setUserProfile(data);
-    if (data?.role && data.role !== role) setRole(data.role);
-    const effectiveTotalSteps = (data?.role ?? role) === 'rider' ? 2 : TOTAL_STEPS;
     setOnboardingStep(currentStep + 1);
-    if (currentStep < effectiveTotalSteps - 1) {
+    if (currentStep < TOTAL_STEPS - 1) {
       goToStep(currentStep + 1);
     } else {
       // All steps complete — persist to backend then navigate.
@@ -523,7 +209,6 @@ export default function OnboardingScreen() {
         // Merge any last-step data with accumulated profile
         const fullProfile = { ...(userProfile || {}), ...(data || {}) };
 
-        // 1. Save user profile to Firestore via backend
         await apiFetch('/api/users/profile', {
           method: 'POST',
           body: JSON.stringify({
@@ -533,12 +218,6 @@ export default function OnboardingScreen() {
           }),
         });
 
-        // 2. Mark KYC as verified
-        await apiFetch('/api/safety/kyc/complete', {
-          method: 'POST',
-        });
-
-        // 3. Update local store
         completeOnboarding();
         router.replace('/(tabs)');
       } catch {
@@ -555,10 +234,7 @@ export default function OnboardingScreen() {
 
   const steps = [
     <StepRole key="role" onNext={(d) => handleNext(d)} />,
-    <StepProfile key="profile" onNext={(d) => handleNext(d)} isLastStep={role === 'rider'} />,
-    <StepAadhaar key="aadhaar" onNext={(d) => handleNext(d)} />,
-    <StepPan key="pan" onNext={(d) => handleNext(d)} />,
-    <StepSelfie key="selfie" onNext={() => handleNext()} />,
+    <StepProfile key="profile" onNext={(d) => handleNext(d)} isLastStep />,
   ];
 
   return (
@@ -569,10 +245,8 @@ export default function OnboardingScreen() {
       <View style={styles.header}>
         <HapticPressable onPress={() => {
           Alert.alert(
-            role === 'rider' ? 'Skip Setup?' : 'Skip KYC Setup?',
-            role === 'rider'
-              ? 'You can browse rides but will need to finish your profile before booking your first ride.'
-              : 'You can browse rides but will need to complete identity verification before booking your first ride.',
+            'Skip Setup?',
+            'You can browse rides, but finishing your profile helps people recognise you.',
             [
               { text: 'Continue Setup', style: 'cancel' },
               { text: 'Skip for Now', style: 'destructive', onPress: () => router.replace('/(tabs)') },
@@ -582,11 +256,11 @@ export default function OnboardingScreen() {
           <Text style={styles.skipText}>Skip for now</Text>
         </HapticPressable>
         <Text style={styles.headerTitle}>Account Setup</Text>
-        <Text style={styles.stepCounter}>{currentStep + 1}/{totalSteps}</Text>
+        <Text style={styles.stepCounter}>{currentStep + 1}/{TOTAL_STEPS}</Text>
       </View>
 
       {/* Progress bar */}
-      <ProgressBar currentStep={currentStep} totalSteps={totalSteps} />
+      <ProgressBar currentStep={currentStep} totalSteps={TOTAL_STEPS} />
 
       {/* Step label */}
       <View style={styles.stepLabelRow}>
@@ -741,33 +415,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#E2E6EA',
   },
-  fieldError: {
-    color: '#C9851A',
-    fontSize: 12,
-    marginTop: -10,
-    marginBottom: 12,
-  },
-  // Info card
-  infoCard: {
-    flexDirection: 'row',
-    backgroundColor: '#FFFFFF',
-    borderRadius: 10,
-    padding: 12,
-    marginBottom: 20,
-    borderWidth: 1,
-    borderColor: '#E2E6EA',
-    gap: 10,
-    alignItems: 'flex-start',
-  },
-  infoIcon: {
-    fontSize: 18,
-  },
-  infoText: {
-    flex: 1,
-    color: '#6B7682',
-    fontSize: 12,
-    lineHeight: 18,
-  },
   // Buttons
   nextBtn: {
     backgroundColor: '#0E8A5F',
@@ -786,69 +433,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '700',
     letterSpacing: 0.3,
-  },
-  // Verified state
-  verifiedContainer: {
-    flex: 1,
-    alignItems: 'center',
-    paddingTop: 40,
-  },
-  verifiedEmoji: {
-    fontSize: 64,
-    marginBottom: 16,
-  },
-  verifiedTitle: {
-    fontSize: 28,
-    fontWeight: '900',
-    color: '#0E8A5F',
-    marginBottom: 12,
-  },
-  verifiedSub: {
-    color: '#6B7682',
-    fontSize: 14,
-    textAlign: 'center',
-    lineHeight: 22,
-    marginBottom: 32,
-  },
-  // Camera box
-  cameraBox: {
-    width: 240,
-    height: 280,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 20,
-    borderWidth: 2,
-    borderColor: '#E2E6EA',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 24,
-    position: 'relative',
-    overflow: 'hidden',
-  },
-  cameraEmoji: {
-    fontSize: 48,
-    marginBottom: 12,
-  },
-  cameraHint: {
-    color: '#6B7682',
-    fontSize: 14,
-    textAlign: 'center',
-    lineHeight: 20,
-  },
-  faceOval: {
-    position: 'absolute',
-    width: 140,
-    height: 180,
-    borderRadius: 70,
-    borderWidth: 2,
-    borderColor: 'rgba(14,138,95,0.3)',
-    borderStyle: 'dashed',
-  },
-  cornerGuide: {
-    position: 'absolute',
-    width: 20,
-    height: 20,
-    borderColor: '#0E8A5F',
-    borderWidth: 2,
   },
   roleCard: {
     flexDirection: 'row',

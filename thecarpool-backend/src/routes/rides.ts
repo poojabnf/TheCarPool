@@ -5,7 +5,6 @@ import { requireAuth, requireAdmin } from '../middleware/auth';
 import { canTransition, isSettableStatus, SETTABLE_STATUSES } from '../lib/rideLifecycle';
 import { noShowOutcome } from '../lib/fees';
 import { planPayout, maskPayoutMethod } from '../lib/payouts';
-import { canOfferRide, verificationEnforced } from '../lib/verification';
 import { classifyVehicle, listMakes, listModels, VEHICLE_CLASSES } from '../lib/vehicles';
 import { needsDepartureReminder, minutesUntil } from '../lib/rideNotifications';
 import { sendPushToUser } from '../lib/fcm';
@@ -299,18 +298,8 @@ export async function rideRoutes(fastify: FastifyInstance) {
     try {
       const userDoc = await db.collection('users').doc(uid).get();
       const userData = userDoc.data();
-      // Offering a ride is the moment we ask for a licence — a rider becoming a
-      // partner is prompted here rather than during signup.
-      const offerGate = canOfferRide(userData, { enforced: verificationEnforced() });
-      if (!offerGate.allowed) {
-        return reply.code(403).send({
-          error: offerGate.code,
-          message: offerGate.message,
-          required: offerGate.required,
-        });
-      }
 
-      // Women-only rides can only be offered by verified female drivers.
+      // Women-only rides can only be offered by female drivers.
       if (women_only && userData?.gender !== 'FEMALE') {
         return reply.code(403).send({
           error: 'WOMEN_ONLY_DRIVER_REQUIRED',
@@ -319,8 +308,7 @@ export async function rideRoutes(fastify: FastifyInstance) {
       }
 
       // Resolve the caller's driver profile, auto-provisioning one on first
-      // offer. Any KYC-verified user may become a driver; we never provision a
-      // profile for a different user's id.
+      // offer. We never provision a profile for a different user's id.
       let driverDoc = await getDriverDoc(requestedDriverId);
       let resolvedDriverId = requestedDriverId;
 
@@ -582,7 +570,6 @@ export async function rideRoutes(fastify: FastifyInstance) {
             driver_rating: user.rating_avg ? parseFloat(user.rating_avg.toFixed(2)) : null,
             driver_rating_count: user.rating_count || 0,
             driver_trust_level: trustLevel(user.rating_count || 0, user.rating_avg || 0),
-            driver_kyc_verified: user.kyc_status === 'VERIFIED' && user.kyc_simulated !== true,
             pickup_deviation: parseFloat(minPickupDist.toFixed(2)),
             drop_deviation: parseFloat(minDropDist.toFixed(2))
           });
@@ -596,8 +583,7 @@ export async function rideRoutes(fastify: FastifyInstance) {
       const TRUST_BONUS_METERS: Record<string, number> = { GOLD: 400, SILVER: 200, BRONZE: 75, NEW: 0 };
       const matchScore = (r: any) =>
         r.pickup_deviation + r.drop_deviation
-        - (TRUST_BONUS_METERS[r.driver_trust_level] || 0)
-        - (r.driver_kyc_verified ? 100 : 0);
+        - (TRUST_BONUS_METERS[r.driver_trust_level] || 0);
       matchedResults.sort((a, b) => matchScore(a) - matchScore(b));
       const resultLimit = Number((body as any).limit) > 0 ? Number((body as any).limit) : DEFAULT_RESULT_LIMIT;
       const limitedResults = matchedResults.slice(0, resultLimit);

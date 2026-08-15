@@ -90,8 +90,7 @@
             "buildToolsVersion": "36.0.0"
           }
         }
-      ],
-      "expo-web-browser"
+      ]
     ],
     "runtimeVersion": {
       "policy": "appVersion"

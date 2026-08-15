@@ -27,9 +27,6 @@ const OPTIONAL = [
   'SENTRY_DSN',
   'GOOGLE_MAPS_API_KEY',
   'REDIS_URL',
-  'SETU_DIGILOCKER_CLIENT_ID',
-  'SETU_DIGILOCKER_CLIENT_SECRET',
-  'SETU_DIGILOCKER_PRODUCT_INSTANCE_ID',
 ] as const;
 
 export function validateEnv(logger?: Logger): void {

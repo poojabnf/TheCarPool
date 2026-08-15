@@ -1,17 +1,10 @@
 import { Tabs } from 'expo-router';
-import { Platform, View, Text, StyleSheet } from 'react-native';
+import { Platform, View, StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Home, Car, Route, Wallet, User } from 'lucide-react-native';
-import { useAuthStore } from '../store/authStore';
 import { c, font } from '../../theme/tokens';
 
-function KycDot() {
-  return <View style={styles.kycDot} />;
-}
-
 export default function TabLayout() {
-  const { kycStatus } = useAuthStore();
-  const kycPending = kycStatus !== 'verified';
   const insets = useSafeAreaInsets();
   const BAR = 58;
 
@@ -52,31 +45,13 @@ export default function TabLayout() {
         name="account"
         options={{
           title: 'You',
-          tabBarIcon: ({ color }) => (
-            <View>
-              <User color={color} size={21} strokeWidth={2.2} />
-              {kycPending && <KycDot />}
-            </View>
-          ),
+          tabBarIcon: ({ color }) => <User color={color} size={21} strokeWidth={2.2} />,
         }}
       />
 
       {/* Routes kept but not shown as tabs (reached from Home/Rides hubs). */}
       <Tabs.Screen name="driver" options={{ href: null }} />
       <Tabs.Screen name="classifieds" options={{ href: null }} />
-      <Tabs.Screen name="kyc" options={{ href: null }} />
     </Tabs>
   );
 }
-
-const styles = StyleSheet.create({
-  kycDot: {
-    position: 'absolute',
-    top: -2,
-    right: -3,
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: c.accent,
-  },
-});

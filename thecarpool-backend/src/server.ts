@@ -27,8 +27,8 @@ validateEnv();
 // Initialise error monitoring before anything else (no-op without SENTRY_DSN).
 initSentry();
 
-// Default is 1 MiB, which a base64-encoded camera photo (KYC document
-// uploads, selfies) blows past routinely — raised to fit those.
+// Default is 1 MiB, which a base64-encoded camera photo (avatars, classified
+// listing photos) blows past routinely — raised to fit those.
 const fastify = Fastify({ logger: true, bodyLimit: 15 * 1024 * 1024 });
 
 // Security headers, CORS allowlist, and a global rate limit. Registered before

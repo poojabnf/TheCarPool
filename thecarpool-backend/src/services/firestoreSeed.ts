@@ -9,7 +9,6 @@ const mockUsers = [
     gender: 'FEMALE',
     company_domain: 'google.com',
     society_name: 'DLF Phase 5',
-    kyc_status: 'VERIFIED',
     linkedin_profile_url: 'https://linkedin.com/in/poojayadav',
     linkedin_connections: 412,
     created_at: new Date().toISOString()
@@ -22,7 +21,6 @@ const mockUsers = [
     gender: 'MALE',
     company_domain: 'tcs.com',
     society_name: 'Sector 45, Gurugram',
-    kyc_status: 'VERIFIED',
     linkedin_profile_url: 'https://linkedin.com/in/amitsharma',
     linkedin_connections: 285,
     created_at: new Date().toISOString()
@@ -35,7 +33,6 @@ const mockUsers = [
     gender: 'MALE',
     company_domain: 'thecarpool.in',
     society_name: 'Noida Sector 62',
-    kyc_status: 'VERIFIED',
     linkedin_profile_url: 'https://linkedin.com/in/sanjaykumar',
     linkedin_connections: 520,
     created_at: new Date().toISOString()

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { StyleSheet, View, Text, ScrollView, Dimensions, TextInput, Switch, Alert, ActivityIndicator, Modal } from 'react-native';
 import { useRouter } from 'expo-router';
-import { Lock, FileText, CheckCircle, PlusCircle, Activity, Navigation, MapPin, Calendar, Users, X, Check, Car, Bike, Shield } from 'lucide-react-native';
+import { PlusCircle, Activity, Navigation, MapPin, Calendar, Users, X, Check, Car, Bike, Shield } from 'lucide-react-native';
 import { colors } from '../../theme/colors';
 import { apiFetch } from '../services/api';
 import * as haptics from '../services/haptics';
@@ -73,17 +73,6 @@ const MAX_PICKUP_POINTS = 10;
 export default function DriverInterface() {
   const router = useRouter();
   const userId = auth().currentUser?.uid ?? null;
-  const kycStatus = useAuthStore((s) => s.kycStatus);
-  // Tiered: a government ID lets you BOOK; a driving licence lets you OFFER.
-  // A rider who never drives is never asked for a licence.
-  const verification = useAuthStore((s) => s.verification);
-  const idVerified = verification?.id_verified ?? (kycStatus === 'verified');
-  // Fall back to the PRE-TIER behaviour when the server doesn't send a
-  // verification summary. Defaulting to false would lock every existing driver
-  // out of offering rides the moment this ships against a backend that hasn't
-  // been deployed yet.
-  const canOfferRides = verification?.can_offer_rides ?? (kycStatus === 'verified');
-  const needsLicenceOnly = idVerified && !canOfferRides;
   const [isOnline, setIsOnline] = useState(false);
   const [isPosting, setIsPosting] = useState(false);
   const [activeTab, setActiveTab] = useState<'overview' | 'requests' | 'drive'>('overview');
@@ -516,17 +505,6 @@ export default function DriverInterface() {
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        if (res.status === 403 && err.error === 'VERIFICATION_REQUIRED') {
-          Alert.alert(
-            'Verification required',
-            'Complete a quick verification to offer a ride.',
-            [
-              { text: 'Not now', style: 'cancel' },
-              { text: 'Verify now', onPress: () => router.push('/onboarding') },
-            ]
-          );
-          return;
-        }
         Alert.alert('Failed to Post Ride', err.message || err.error || `Server error ${res.status}`);
         return;
       }
@@ -545,56 +523,6 @@ export default function DriverInterface() {
       setIsPosting(false);
     }
   };
-
-  // Locked state — but say WHICH step is missing, not just "upgrade".
-  if (!canOfferRides) {
-    return (
-      <View style={styles.lockedContainer}>
-        <View style={styles.lockedIconBox}>
-          <Lock color={colors.primary} size={48} />
-        </View>
-        <Text style={styles.lockedTitle}>
-          {needsLicenceOnly ? 'One more step' : 'Verify to offer rides'}
-        </Text>
-        <Text style={styles.lockedSub}>
-          {needsLicenceOnly
-            ? 'Your ID is verified. Add your driving licence and you can start offering rides.'
-            : 'Verify a government ID to book rides, and add a driving licence to offer them.'}
-        </Text>
-
-        <View style={styles.requirementList}>
-          <View style={styles.reqItem}>
-            <CheckCircle color={colors.success} size={20} />
-            <Text style={styles.reqText}>Phone verified</Text>
-          </View>
-          <View style={styles.reqItem}>
-            {idVerified
-              ? <CheckCircle color={colors.success} size={20} />
-              : <FileText color={colors.textMuted} size={20} />}
-            <Text style={[styles.reqText, !idVerified && { color: colors.textMuted }]}>
-              Government ID {idVerified ? '(done)' : '(needed to book)'}
-            </Text>
-          </View>
-          <View style={styles.reqItem}>
-            <FileText color={colors.textMuted} size={20} />
-            <Text style={[styles.reqText, { color: colors.textMuted }]}>
-              Driving licence (needed to offer rides)
-            </Text>
-          </View>
-        </View>
-
-        <HapticPressable
-          haptic="press"
-          style={styles.upgradeBtn}
-          onPress={() => router.push(needsLicenceOnly ? '/licence' : '/onboarding')}
-        >
-          <Text style={styles.upgradeBtnText}>
-            {needsLicenceOnly ? 'Add my driving licence' : 'Verify my ID'}
-          </Text>
-        </HapticPressable>
-      </View>
-    );
-  }
 
   // Unlocked Driver State
   return (
@@ -1427,15 +1355,6 @@ const styles = StyleSheet.create({
   badgeRow: { flexDirection: 'row', gap: 6 },
   miniBadge: { fontSize: 9, color: colors.primary, backgroundColor: 'rgba(255,107,53,0.15)', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, fontWeight: 'bold' },
 
-  lockedContainer: { flex: 1, backgroundColor: colors.background, alignItems: 'center', justifyContent: 'center', padding: 32 },
-  lockedIconBox: { width: 96, height: 96, backgroundColor: 'rgba(255,107,53,0.15)', borderRadius: 48, alignItems: 'center', justifyContent: 'center', marginBottom: 24, borderWidth: 1, borderColor: 'rgba(255,107,53,0.3)' },
-  lockedTitle: { fontSize: 24, fontWeight: '900', color: colors.text, marginBottom: 8 },
-  lockedSub: { fontSize: 15, color: colors.textMuted, textAlign: 'center', marginBottom: 32, lineHeight: 22 },
-  requirementList: { width: '100%', backgroundColor: colors.inputBackground, borderRadius: 16, padding: 16, gap: 16, marginBottom: 32, borderWidth: 1, borderColor: colors.cardBorder },
-  reqItem: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  reqText: { fontSize: 14, fontWeight: '600', color: colors.text },
-  upgradeBtn: { backgroundColor: colors.primary, width: '100%', padding: 16, borderRadius: 16, alignItems: 'center' },
-  upgradeBtnText: { color: 'white', fontWeight: 'bold', fontSize: 16 },
 
   formContainer: { flex: 1, backgroundColor: colors.card, borderRadius: 20, padding: 16, borderWidth: 1, borderColor: colors.cardBorder },
   formHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },

@@ -24,7 +24,7 @@ export default function ConfirmPay() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const p = useLocalSearchParams<Record<string, string>>();
-  const { kycStatus, userProfile } = useAuthStore();
+  const { userProfile } = useAuthStore();
   const uid = auth().currentUser?.uid ?? null;
   const [paying, setPaying] = useState(false);
 
@@ -112,13 +112,6 @@ export default function ConfirmPay() {
 
   const pay = async () => {
     haptics.press();
-    if (kycStatus !== 'verified') {
-      Alert.alert('Verification required', 'Complete a quick verification (~2 mins) to book.', [
-        { text: 'Not now', style: 'cancel' },
-        { text: 'Verify now', onPress: () => router.replace('/onboarding') },
-      ]);
-      return;
-    }
     setPaying(true);
     try {
       // Step 1: Create a Razorpay order on the backend.
