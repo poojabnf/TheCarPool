@@ -41,8 +41,8 @@ export default function OtpScreen() {
     try {
       await auth().signInWithCredential(auth.PhoneAuthProvider.credential(verificationId, code));
       // _layout AuthGuard redirects on success.
-    } catch {
-      setError('Invalid code. Please try again.');
+    } catch (err: any) {
+      setError(err?.message ?? 'Invalid code. Please try again.');
       setIsVerifying(false);
       setOtp(Array(OTP_LENGTH).fill(''));
       inputs.current[0]?.focus();

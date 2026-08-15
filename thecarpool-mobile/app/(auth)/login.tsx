@@ -55,7 +55,8 @@ export default function LoginScreen() {
       router.push({ pathname: '/(auth)/otp', params: { phone, verificationId: confirmation.verificationId } });
     } catch (error: any) {
       setIsSending(false);
-      Alert.alert('Could not send OTP', error?.message ?? 'Please check your number and try again.');
+      const code = error?.code ? ` [${error.code}]` : '';
+      Alert.alert('Could not send OTP', (error?.message ?? 'Please check your number and try again.') + code);
     }
   };
 
@@ -66,12 +67,19 @@ export default function LoginScreen() {
         await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
       }
       const response = await GoogleSignin.signIn();
+      // Backing out of the account picker resolves as {type:'cancelled'} rather
+      // than throwing SIGN_IN_CANCELLED (that was the pre-v13 API). Treat it as
+      // what it is — the user changed their mind — and say nothing.
+      if (response.type !== 'success') {
+        setIsGoogleLoading(false);
+        return;
+      }
       const idToken = response.data?.idToken;
-      if (!idToken) throw new Error('Google Sign-In was cancelled or returned no token.');
+      if (!idToken) throw new Error('Google signed you in but returned no ID token. Please try again.');
       await auth().signInWithCredential(auth.GoogleAuthProvider.credential(idToken));
     } catch (error: any) {
       setIsGoogleLoading(false);
-      if (error?.code !== 'SIGN_IN_CANCELLED') Alert.alert('Google Sign-In Failed', error?.message ?? 'Please try again.');
+      Alert.alert('Google Sign-In Failed', error?.message ?? 'Please try again.');
     }
   };
 
