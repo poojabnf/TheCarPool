@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { StyleSheet, View, Text, ScrollView, Dimensions, TextInput, Switch, Alert, ActivityIndicator, Modal, Linking } from 'react-native';
+import { StyleSheet, View, Text, ScrollView, Dimensions, TextInput, Switch, Alert, ActivityIndicator, Modal, Linking, FlatList } from 'react-native';
 import { useRouter } from 'expo-router';
-import { PlusCircle, Activity, Navigation, MapPin, Calendar, Users, X, Check, Car, Bike, Shield, Phone, Mail } from 'lucide-react-native';
+import { PlusCircle, Activity, Navigation, MapPin, Calendar, Users, X, Check, Car, Bike, Shield, Phone, Mail, ChevronDown, Search } from 'lucide-react-native';
 import { colors } from '../../theme/colors';
 import { apiFetch } from '../services/api';
 import * as haptics from '../services/haptics';
@@ -127,6 +127,14 @@ export default function DriverInterface() {
   const modelsForMake = catalogue.find((m) => m.label === vehicleMake)?.models ?? [];
   const [vehicleColour, setVehicleColour] = useState('');
   const [vehiclePlate, setVehiclePlate] = useState('');
+
+  // Dropdown modal state for vehicle details
+  const [showMakePicker, setShowMakePicker] = useState(false);
+  const [showModelPicker, setShowModelPicker] = useState(false);
+  const [showColourPicker, setShowColourPicker] = useState(false);
+  const [makeSearch, setMakeSearch] = useState('');
+  const [modelSearch, setModelSearch] = useState('');
+
   const [isRecurring, setIsRecurring] = useState(false);
   const [selectedDays, setSelectedDays] = useState<number[]>([]);
   const [acAvailable, setAcAvailable] = useState(true);
@@ -939,7 +947,7 @@ export default function DriverInterface() {
               </View>
             </View>
 
-            {/* Vehicle details — surfaced to riders on the match card */}
+            {/* Vehicle details — Dropdown menus for Make, Model, and Colour */}
             <View style={styles.formGroup}>
               <Text style={styles.formLabel}>
                 {vehicleType === 'BIKE' ? 'Bike details' : 'Car details'}
@@ -947,80 +955,65 @@ export default function DriverInterface() {
               <Text style={styles.formHint}>
                 Riders see this before booking, so they know which vehicle to look for.
               </Text>
-              <Text style={styles.formSubLabel}>Make</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 10 }}>
-                {catalogue.map((m) => {
-                  const active = vehicleMake === m.label;
-                  return (
-                    <HapticPressable
-                      key={m.key}
-                      style={[styles.depChip, active && styles.depChipActive]}
-                      onPress={() => { setVehicleMake(m.label); setVehicleModel(''); }}
-                    >
-                      <Text style={[styles.depChipText, active && styles.depChipTextActive]}>{m.label}</Text>
-                    </HapticPressable>
-                  );
-                })}
-              </ScrollView>
 
-              {makeIsOther ? (
-                <TextInput
-                  style={styles.formInput}
-                  placeholder={vehicleType === 'BIKE' ? 'Type the make (e.g. Yamaha)' : 'Type the make (e.g. Rivian)'}
-                  placeholderTextColor={colors.inputPlaceholder}
-                  value={vehicleMake === 'Other' ? '' : vehicleMake}
-                  onChangeText={setVehicleMake}
-                  maxLength={40}
-                />
-              ) : null}
+              {/* Make Dropdown */}
+              <Text style={styles.formSubLabel}>Make / Brand</Text>
+              <HapticPressable
+                style={styles.dropdownBtn}
+                onPress={() => { setMakeSearch(''); setShowMakePicker(true); }}
+              >
+                <Text style={vehicleMake ? styles.dropdownValue : styles.dropdownPlaceholder}>
+                  {vehicleMake || (vehicleType === 'BIKE' ? 'Select bike brand (e.g. Hero, Honda)' : 'Select car brand (e.g. Maruti, Hyundai)')}
+                </Text>
+                <ChevronDown size={18} color={colors.textMuted} />
+              </HapticPressable>
 
-              {vehicleMake !== '' && (
-                <>
-                  <Text style={styles.formSubLabel}>Model</Text>
-                  {modelsForMake.length > 0 && (
-                    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 10 }}>
-                      {modelsForMake.map((mm) => {
-                        const active = vehicleModel === mm.model;
-                        return (
-                          <HapticPressable
-                            key={mm.model}
-                            style={[styles.depChip, active && styles.depChipActive]}
-                            onPress={() => setVehicleModel(mm.model)}
-                          >
-                            <Text style={[styles.depChipText, active && styles.depChipTextActive]}>{mm.model}</Text>
-                          </HapticPressable>
-                        );
-                      })}
-                    </ScrollView>
-                  )}
-                  <TextInput
-                    style={styles.formInput}
-                    placeholder={modelsForMake.length ? "Not listed? Type your model" : 'Type your model'}
-                    placeholderTextColor={colors.inputPlaceholder}
-                    value={vehicleModel}
-                    onChangeText={setVehicleModel}
-                    maxLength={40}
-                  />
-                </>
-              )}
+              {/* Model Dropdown */}
+              <Text style={styles.formSubLabel}>Model</Text>
+              <HapticPressable
+                style={[styles.dropdownBtn, !vehicleMake && styles.dropdownDisabled]}
+                onPress={() => {
+                  if (!vehicleMake) {
+                    Alert.alert('Select Make First', 'Please pick a vehicle make before selecting the model.');
+                    return;
+                  }
+                  setModelSearch('');
+                  setShowModelPicker(true);
+                }}
+              >
+                <Text style={vehicleModel ? styles.dropdownValue : styles.dropdownPlaceholder}>
+                  {vehicleModel || (!vehicleMake ? 'Select make first' : 'Select model (e.g. Swift, Creta, City)')}
+                </Text>
+                <ChevronDown size={18} color={colors.textMuted} />
+              </HapticPressable>
+
+              {/* Colour Dropdown & Plate Row */}
               <View style={styles.vehicleDetailRow}>
-                <TextInput
-                  style={[styles.formInput, { flex: 1 }]}
-                  placeholder="Colour (e.g. White)"
-                  placeholderTextColor={colors.inputPlaceholder}
-                  value={vehicleColour}
-                  onChangeText={setVehicleColour}
-                  maxLength={40}
-                />
-                <TextInput
-                  style={[styles.formInput, { flex: 1 }]}
-                  placeholder="Number plate"
-                  placeholderTextColor={colors.inputPlaceholder}
-                  value={vehiclePlate}
-                  onChangeText={(t) => setVehiclePlate(t.toUpperCase())}
-                  autoCapitalize="characters"
-                  maxLength={20}
-                />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.formSubLabel}>Colour</Text>
+                  <HapticPressable
+                    style={styles.dropdownBtn}
+                    onPress={() => setShowColourPicker(true)}
+                  >
+                    <Text style={vehicleColour ? styles.dropdownValue : styles.dropdownPlaceholder} numberOfLines={1}>
+                      {vehicleColour || 'Select colour'}
+                    </Text>
+                    <ChevronDown size={16} color={colors.textMuted} />
+                  </HapticPressable>
+                </View>
+
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.formSubLabel}>Number Plate</Text>
+                  <TextInput
+                    style={[styles.formInput, { height: 44 }]}
+                    placeholder="DL 01 AB 1234"
+                    placeholderTextColor={colors.inputPlaceholder}
+                    value={vehiclePlate}
+                    onChangeText={(t) => setVehiclePlate(t.toUpperCase())}
+                    autoCapitalize="characters"
+                    maxLength={20}
+                  />
+                </View>
               </View>
             </View>
 
@@ -1341,6 +1334,207 @@ export default function DriverInterface() {
           </View>
         </View>
       </Modal>
+
+      {/* ── Vehicle Make Dropdown Picker Modal ── */}
+      <Modal
+        visible={showMakePicker}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowMakePicker(false)}
+      >
+        <View style={styles.pickerModalBackdrop}>
+          <View style={styles.pickerModalSheet}>
+            <View style={styles.pickerModalHeader}>
+              <Text style={styles.pickerModalTitle}>
+                {vehicleType === 'BIKE' ? 'Select Bike Brand' : 'Select Car Brand'}
+              </Text>
+              <HapticPressable onPress={() => setShowMakePicker(false)}>
+                <X color={colors.textMuted} size={22} />
+              </HapticPressable>
+            </View>
+            <View style={styles.pickerSearchRow}>
+              <Search color={colors.textMuted} size={18} />
+              <TextInput
+                style={styles.pickerSearchInput}
+                placeholder="Search brand (e.g. Maruti, Hyundai, Hero)"
+                placeholderTextColor={colors.inputPlaceholder}
+                value={makeSearch}
+                onChangeText={setMakeSearch}
+                autoCorrect={false}
+              />
+            </View>
+            <FlatList
+              data={catalogue.filter((m) =>
+                m.label.toLowerCase().includes(makeSearch.toLowerCase().trim())
+              )}
+              keyExtractor={(item) => item.key}
+              renderItem={({ item }) => {
+                const selected = vehicleMake === item.label;
+                return (
+                  <HapticPressable
+                    style={[styles.pickerItemRow, selected && styles.pickerItemRowSelected]}
+                    onPress={() => {
+                      setVehicleMake(item.label);
+                      setVehicleModel('');
+                      setShowMakePicker(false);
+                    }}
+                  >
+                    <Text style={[styles.pickerItemText, selected && styles.pickerItemTextSelected]}>
+                      {item.label}
+                    </Text>
+                    {selected && <Check color={colors.success} size={18} />}
+                  </HapticPressable>
+                );
+              }}
+              ListEmptyComponent={
+                <View style={styles.pickerEmptyBox}>
+                  <Text style={styles.pickerEmptyText}>No matching brands found.</Text>
+                  {makeSearch.trim().length > 0 && (
+                    <HapticPressable
+                      style={styles.customAddBtn}
+                      onPress={() => {
+                        setVehicleMake(makeSearch.trim());
+                        setVehicleModel('');
+                        setShowMakePicker(false);
+                      }}
+                    >
+                      <Text style={styles.customAddText}>Use "{makeSearch.trim()}"</Text>
+                    </HapticPressable>
+                  )}
+                </View>
+              }
+            />
+          </View>
+        </View>
+      </Modal>
+
+      {/* ── Vehicle Model Dropdown Picker Modal ── */}
+      <Modal
+        visible={showModelPicker}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowModelPicker(false)}
+      >
+        <View style={styles.pickerModalBackdrop}>
+          <View style={styles.pickerModalSheet}>
+            <View style={styles.pickerModalHeader}>
+              <Text style={styles.pickerModalTitle}>Select {vehicleMake} Model</Text>
+              <HapticPressable onPress={() => setShowModelPicker(false)}>
+                <X color={colors.textMuted} size={22} />
+              </HapticPressable>
+            </View>
+            <View style={styles.pickerSearchRow}>
+              <Search color={colors.textMuted} size={18} />
+              <TextInput
+                style={styles.pickerSearchInput}
+                placeholder={`Search model (e.g. ${modelsForMake[0]?.model || 'Swift'})`}
+                placeholderTextColor={colors.inputPlaceholder}
+                value={modelSearch}
+                onChangeText={setModelSearch}
+                autoCorrect={false}
+              />
+            </View>
+            <FlatList
+              data={modelsForMake.filter((m) =>
+                m.model.toLowerCase().includes(modelSearch.toLowerCase().trim())
+              )}
+              keyExtractor={(item) => item.model}
+              renderItem={({ item }) => {
+                const selected = vehicleModel === item.model;
+                return (
+                  <HapticPressable
+                    style={[styles.pickerItemRow, selected && styles.pickerItemRowSelected]}
+                    onPress={() => {
+                      setVehicleModel(item.model);
+                      setShowModelPicker(false);
+                    }}
+                  >
+                    <View>
+                      <Text style={[styles.pickerItemText, selected && styles.pickerItemTextSelected]}>
+                        {item.model}
+                      </Text>
+                      <Text style={styles.pickerItemSub}>{item.class}</Text>
+                    </View>
+                    {selected && <Check color={colors.success} size={18} />}
+                  </HapticPressable>
+                );
+              }}
+              ListEmptyComponent={
+                <View style={styles.pickerEmptyBox}>
+                  <Text style={styles.pickerEmptyText}>Model not in list?</Text>
+                  {modelSearch.trim().length > 0 && (
+                    <HapticPressable
+                      style={styles.customAddBtn}
+                      onPress={() => {
+                        setVehicleModel(modelSearch.trim());
+                        setShowModelPicker(false);
+                      }}
+                    >
+                      <Text style={styles.customAddText}>Use "{modelSearch.trim()}"</Text>
+                    </HapticPressable>
+                  )}
+                </View>
+              }
+            />
+          </View>
+        </View>
+      </Modal>
+
+      {/* ── Vehicle Colour Dropdown Picker Modal ── */}
+      <Modal
+        visible={showColourPicker}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowColourPicker(false)}
+      >
+        <View style={styles.pickerModalBackdrop}>
+          <View style={styles.pickerModalSheet}>
+            <View style={styles.pickerModalHeader}>
+              <Text style={styles.pickerModalTitle}>Select Vehicle Colour</Text>
+              <HapticPressable onPress={() => setShowColourPicker(false)}>
+                <X color={colors.textMuted} size={22} />
+              </HapticPressable>
+            </View>
+            <FlatList
+              data={[
+                { label: 'White', colorHex: '#FFFFFF' },
+                { label: 'Silver', colorHex: '#C0C0C0' },
+                { label: 'Grey', colorHex: '#808080' },
+                { label: 'Black', colorHex: '#1C1C1E' },
+                { label: 'Red', colorHex: '#E53E3E' },
+                { label: 'Blue', colorHex: '#3182CE' },
+                { label: 'Brown', colorHex: '#8D6E63' },
+                { label: 'Beige', colorHex: '#D7CCC8' },
+                { label: 'Green', colorHex: '#38A169' },
+                { label: 'Orange', colorHex: '#ED8936' },
+                { label: 'Yellow', colorHex: '#ECC94B' },
+                { label: 'Other', colorHex: '#718096' },
+              ]}
+              keyExtractor={(item) => item.label}
+              renderItem={({ item }) => {
+                const selected = vehicleColour === item.label;
+                return (
+                  <HapticPressable
+                    style={[styles.pickerItemRow, selected && styles.pickerItemRowSelected]}
+                    onPress={() => {
+                      setVehicleColour(item.label);
+                      setShowColourPicker(false);
+                    }}
+                  >
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                      <View style={[styles.colourSwatch, { backgroundColor: item.colorHex }]} />
+                      <Text style={[styles.pickerItemText, selected && styles.pickerItemTextSelected]}>
+                        {item.label}
+                      </Text>
+                    </View>
+                    {selected && <Check color={colors.success} size={18} />}
+                  </HapticPressable>
+                );
+              }}
+            />
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -1450,6 +1644,28 @@ const styles = StyleSheet.create({
   vehicleSelectBtnActive: { backgroundColor: colors.primary, borderColor: colors.primary },
   vehicleSelectBtnText: { color: colors.textMuted, fontWeight: 'bold', fontSize: 14 },
   vehicleSelectBtnTextActive: { color: '#fff' },
+
+  dropdownBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: colors.inputBackground, borderRadius: 8, height: 44, paddingHorizontal: 12, borderWidth: 1, borderColor: colors.cardBorder, marginBottom: 8, marginTop: 4 },
+  dropdownDisabled: { opacity: 0.5 },
+  dropdownValue: { color: colors.text, fontSize: 14, fontWeight: '600', flex: 1 },
+  dropdownPlaceholder: { color: colors.inputPlaceholder, fontSize: 13, flex: 1 },
+
+  pickerModalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.65)', justifyContent: 'flex-end' },
+  pickerModalSheet: { backgroundColor: colors.card, borderTopLeftRadius: 20, borderTopRightRadius: 20, maxHeight: '80%', padding: 20, borderWidth: 1, borderColor: colors.cardBorder },
+  pickerModalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
+  pickerModalTitle: { fontSize: 18, fontWeight: 'bold', color: colors.text },
+  pickerSearchRow: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: colors.inputBackground, borderRadius: 10, paddingHorizontal: 12, height: 44, marginBottom: 14, borderWidth: 1, borderColor: colors.cardBorder },
+  pickerSearchInput: { flex: 1, color: colors.text, fontSize: 14 },
+  pickerItemRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 14, paddingHorizontal: 8, borderBottomWidth: 1, borderBottomColor: colors.cardBorder },
+  pickerItemRowSelected: { backgroundColor: 'rgba(16,185,129,0.1)', borderRadius: 8 },
+  pickerItemText: { fontSize: 15, color: colors.text, fontWeight: '600' },
+  pickerItemTextSelected: { color: colors.success, fontWeight: 'bold' },
+  pickerItemSub: { fontSize: 11, color: colors.textMuted, marginTop: 2 },
+  colourSwatch: { width: 22, height: 22, borderRadius: 11, borderWidth: 1, borderColor: colors.cardBorder },
+  pickerEmptyBox: { paddingVertical: 24, alignItems: 'center' },
+  pickerEmptyText: { color: colors.textMuted, fontSize: 14, marginBottom: 12 },
+  customAddBtn: { backgroundColor: colors.primary, paddingHorizontal: 16, paddingVertical: 10, borderRadius: 8 },
+  customAddText: { color: '#fff', fontSize: 13, fontWeight: 'bold' },
 
   pricingCard: { backgroundColor: colors.inputBackground, padding: 16, borderRadius: 12, marginBottom: 16, borderWidth: 1, borderColor: colors.cardBorder },
   pricingTitle: { fontSize: 13, fontWeight: 'bold', color: colors.success, marginBottom: 4 },
