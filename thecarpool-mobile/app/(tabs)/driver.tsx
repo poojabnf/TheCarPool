@@ -344,7 +344,7 @@ export default function DriverInterface() {
     }
   }, [sourceCoords, destCoords]);
 
-  // Calculate suggested pricing on the fly
+  // Calculate suggested pricing on the fly (optional guide only)
   useEffect(() => {
     const dist = parseFloat(distanceKm);
     if (!isNaN(dist) && dist > 0) {
@@ -353,10 +353,8 @@ export default function DriverInterface() {
       const rate = baseRate + acAddon;
       const suggested = Math.round(dist * rate);
       setSuggestedPrice(suggested);
-      setCustomPrice(suggested.toString());
     } else {
       setSuggestedPrice(null);
-      setCustomPrice('');
     }
   }, [distanceKm, vehicleType, acAvailable]);
 
@@ -460,9 +458,9 @@ export default function DriverInterface() {
       Alert.alert('Pick a future time', 'That departure time has already passed.');
       return;
     }
-    const price = parseFloat(customPrice) || suggestedPrice || 0;
-    if (price <= 0) {
-      Alert.alert('Set a Price', 'Enter a price per seat before posting.');
+    const price = parseFloat(customPrice);
+    if (!price || isNaN(price) || price <= 0) {
+      Alert.alert('Set a Price', 'Please enter your requested price per seat before posting.');
       return;
     }
     setIsPosting(true);
@@ -952,43 +950,26 @@ export default function DriverInterface() {
               </View>
             </View>
 
-            {/* Pricing. The suggestion is only ever advice - the driver sets the
-                price. Previously this whole card was hidden until a distance
-                produced a suggestion, which meant no distance = no way to name
-                a price at all. */}
+            {/* Pricing: Driver decides their own price per seat */}
             <View style={styles.pricingCard}>
               <Text style={styles.pricingTitle}>Your price per seat</Text>
-              {suggestedPrice !== null ? (
-                <>
-                  <Text style={styles.pricingSub}>Suggested fuel contribution for this distance and mode:</Text>
-                  <Text style={styles.pricingSuggested}>₹{suggestedPrice.toFixed(0)}</Text>
-                  {customPrice !== '' && Number(customPrice) !== suggestedPrice && (
-                    <Text style={styles.pricingSub}>
-                      {Number(customPrice) > suggestedPrice
-                        ? 'Above the suggestion — riders may take longer to book.'
-                        : 'Below the suggestion — you may not cover your fuel.'}
-                    </Text>
-                  )}
-                </>
-              ) : (
-                <Text style={styles.pricingSub}>
-                  Set a route distance and we'll suggest a fair split. You can price it yourself either way.
-                </Text>
-              )}
+              <Text style={styles.pricingSub}>
+                Enter the amount you would like each passenger to contribute for this ride.
+              </Text>
               <View style={styles.priceInputGroup}>
-                <Text style={styles.priceInputLabel}>Your Split Cost (₹):</Text>
+                <Text style={styles.priceInputLabel}>Price per seat (₹):</Text>
                 <TextInput
                   style={styles.priceInput}
                   keyboardType="numeric"
                   value={customPrice}
                   onChangeText={(t) => setCustomPrice(t.replace(/[^0-9.]/g, ''))}
-                  placeholder={suggestedPrice !== null ? String(Math.round(suggestedPrice)) : '0'}
+                  placeholder="e.g. 150"
                   placeholderTextColor={colors.inputPlaceholder}
                 />
               </View>
               {suggestedPrice !== null && (
                 <HapticPressable onPress={() => setCustomPrice(String(Math.round(suggestedPrice)))}>
-                  <Text style={styles.useSuggested}>Use suggested ₹{suggestedPrice.toFixed(0)}</Text>
+                  <Text style={styles.useSuggested}>💡 Suggestion: ₹{suggestedPrice.toFixed(0)} (tap to use)</Text>
                 </HapticPressable>
               )}
             </View>

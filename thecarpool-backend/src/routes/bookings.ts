@@ -5,6 +5,7 @@ import { db } from '../server';
 import { requireAuth } from '../middleware/auth';
 import { parseOrReply } from '../lib/validate';
 import { sendPushToUser } from '../lib/fcm';
+import { getUserEmail, buildRiderBookingEmail, buildDriverPassengerBookedEmail, sendEmail } from '../lib/email';
 import { claimPaymentInTransaction } from '../lib/wallet';
 import { getRazorpay, isRazorpayConfigured, refundPaymentToSource } from '../lib/razorpay';
 import {
@@ -304,6 +305,64 @@ export async function bookingRoutes(fastify: FastifyInstance) {
           { booking_id: bookingId, type: 'RIDER_JOINED' }
         );
       }
+
+      // Fire-and-forget email notifications to Rider & Driver
+      (async () => {
+        try {
+          const rideData = rideSnap.exists ? rideSnap.data() : null;
+          const riderContact = await getUserEmail(String(rider_id));
+          const driverContact = driverUid ? await getUserEmail(String(driverUid)) : null;
+
+          if (riderContact?.email && rideData) {
+            const riderEmailData = buildRiderBookingEmail({
+              riderName: riderContact.name,
+              bookingId,
+              rideId: String(ride_id),
+              driverName: driverContact?.name || 'Verified Driver',
+              seatsBooked: Number(seats_booked),
+              fareAmount: Number(result.fare_amount || 0),
+              insurancePremium: Number(result.insurance_premium || 0),
+              convenienceFee: Number(result.convenience_fee || 0),
+              totalPaid: Number(result.total_paid || 0),
+              boardingOtp: result.boarding_otp,
+              departureTime: rideData.departure_time || new Date().toISOString(),
+              vehicle: {
+                make: rideData.vehicle_make,
+                model: rideData.vehicle_model,
+                plate: rideData.vehicle_plate,
+                type: rideData.vehicle_type,
+              },
+            });
+
+            await sendEmail({
+              to: riderContact.email,
+              subject: riderEmailData.subject,
+              html: riderEmailData.html,
+              text: riderEmailData.text,
+            });
+          }
+
+          if (driverContact?.email && rideData) {
+            const driverEmailData = buildDriverPassengerBookedEmail({
+              driverName: driverContact.name,
+              riderName: riderContact?.name || 'A Passenger',
+              bookingId,
+              seatsBooked: Number(seats_booked),
+              fareAmount: Number(result.fare_amount || 0),
+              departureTime: rideData.departure_time || new Date().toISOString(),
+            });
+
+            await sendEmail({
+              to: driverContact.email,
+              subject: driverEmailData.subject,
+              html: driverEmailData.html,
+              text: driverEmailData.text,
+            });
+          }
+        } catch (emailErr) {
+          fastify.log.error(emailErr, 'Failed to send booking confirmation emails');
+        }
+      })();
 
       return reply.code(201).send(result);
     } catch (err: any) {

@@ -8,6 +8,7 @@ import { planPayout, maskPayoutMethod } from '../lib/payouts';
 import { classifyVehicle, listMakes, listModels, VEHICLE_CLASSES } from '../lib/vehicles';
 import { needsDepartureReminder, minutesUntil } from '../lib/rideNotifications';
 import { sendPushToUser } from '../lib/fcm';
+import { getUserEmail, buildRideOfferedEmail, sendEmail } from '../lib/email';
 
 /** Uids of riders with a live booking on a ride — who gets told about it. */
 async function activeRiderUids(rideId: string): Promise<string[]> {
@@ -381,6 +382,39 @@ export async function rideRoutes(fastify: FastifyInstance) {
       };
 
       await db.collection('rides').doc(rideId).set(newRide);
+
+      // Async email notification — does not block API response
+      (async () => {
+        try {
+          const userContact = await getUserEmail(uid);
+          if (userContact?.email) {
+            const emailData = buildRideOfferedEmail({
+              driverName: userContact.name,
+              rideId,
+              seatsTotal: Number(seats_total),
+              pricePerSeat: Number(price_split),
+              departureTime: departure_time,
+              vehicle: {
+                make: vehicle_make,
+                model: vehicle_model,
+                plate: vehicle_plate,
+                type: vehicle_type,
+              },
+              pickupPoints: newRide.pickup_points || [],
+              distanceKm: newRide.distance_km,
+            });
+            await sendEmail({
+              to: userContact.email,
+              subject: emailData.subject,
+              html: emailData.html,
+              text: emailData.text,
+            });
+          }
+        } catch (emailErr) {
+          fastify.log.error(emailErr, 'Failed to send ride offer confirmation email');
+        }
+      })();
+
       return reply.code(201).send(newRide);
     } catch (err: any) {
       fastify.log.error('Failed to create ride:', err);

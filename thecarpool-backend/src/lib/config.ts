@@ -27,6 +27,10 @@ const OPTIONAL = [
   'SENTRY_DSN',
   'GOOGLE_MAPS_API_KEY',
   'REDIS_URL',
+  'SMTP_HOST',
+  'SMTP_USER',
+  'SMTP_PASS',
+  'EMAIL_FROM',
 ] as const;
 
 export function validateEnv(logger?: Logger): void {
