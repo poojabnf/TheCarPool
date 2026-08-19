@@ -8,6 +8,7 @@ import RazorpayCheckout from 'react-native-razorpay';
 import { apiFetch } from '../services/api';
 import { c, font, radius, space, shadowSm } from '../../theme/tokens';
 import HapticPressable from '../components/HapticPressable';
+import { formatMoney, currencySymbol, useCurrency } from '../services/currency';
 
 interface Txn { id: string; type: string; label: string; amount: number; status: string; at: string | null; }
 
@@ -31,6 +32,7 @@ export default function WalletScreen() {
   const [method, setMethod] = useState<string>('upi');
   const [paying, setPaying] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const { currency, setCurrency } = useCurrency();
 
   const load = useCallback(async () => {
     if (!uid) { setLoading(false); return; }
@@ -39,7 +41,13 @@ export default function WalletScreen() {
         apiFetch(`/api/payments/wallet/${uid}`),
         apiFetch(`/api/payments/history/${uid}`),
       ]);
-      if (w.ok) setBalance((await w.json()).available_wallet_balance ?? 0);
+      if (w.ok) {
+        const wallet = await w.json();
+        setBalance(wallet.available_wallet_balance ?? 0);
+        // The wallet is the authority on which currency this user holds —
+        // adopt it so every screen formats to match rather than assuming INR.
+        if (wallet.currency) setCurrency(wallet.currency);
+      }
       if (h.ok) setTxns((await h.json()).transactions ?? []);
     } catch { /* keep last state */ }
     finally { setLoading(false); }
@@ -55,7 +63,7 @@ export default function WalletScreen() {
       // Step 1: Create a Razorpay order on the backend
       const res = await apiFetch('/api/payments/order', {
         method: 'POST',
-        body: JSON.stringify({ amount: amt, currency: 'INR' }),
+        body: JSON.stringify({ amount: amt, currency }),
       });
       if (!res.ok) {
         const e = await res.json().catch(() => ({}));
@@ -71,7 +79,7 @@ export default function WalletScreen() {
         amount: order.amount,
         currency: order.currency || 'INR',
         name: 'TheCarPool Wallet',
-        description: `Add ₹${amt} to your CarPool Wallet`,
+        description: `Add ${formatMoney(amt)} to your CarPool Wallet`,
         prefill: {
           contact: auth().currentUser?.phoneNumber || '',
           email: auth().currentUser?.email || '',
@@ -104,7 +112,7 @@ export default function WalletScreen() {
         return;
       }
 
-      Alert.alert('Success!', `₹${amt} credited to your wallet.`);
+      Alert.alert('Success!', `${formatMoney(amt)} credited to your wallet.`);
       setShowAdd(false);
       setAmount('');
       load(); // refresh balance & transactions
@@ -128,7 +136,7 @@ export default function WalletScreen() {
         <Text style={styles.balanceLabel}>TheCarPool balance</Text>
         {loading
           ? <ActivityIndicator color={c.accent} style={{ alignSelf: 'flex-start', marginVertical: 8 }} />
-          : <Text style={styles.balanceValue}>₹{(balance ?? 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</Text>}
+          : <Text style={styles.balanceValue}>{formatMoney(balance ?? 0, { decimals: 2 })}</Text>}
         <View style={styles.actionRow}>
           <HapticPressable style={[styles.actionBtn, styles.actionPrimary]} activeOpacity={0.85} onPress={() => setShowAdd(true)}>
             <ArrowDownLeft color={c.actionPrimaryText} size={16} strokeWidth={2.4} />
@@ -167,7 +175,7 @@ export default function WalletScreen() {
               <Text style={styles.txnMeta}>{t.at ? new Date(t.at).toLocaleDateString() : t.status}</Text>
             </View>
             <Text style={[styles.txnAmount, { color: credit ? c.goStrong : c.dangerStrong }]}>
-              {credit ? '+' : '−'}₹{Math.abs(t.amount).toFixed(2)}
+              {credit ? '+' : '−'}{formatMoney(Math.abs(t.amount), { decimals: 2 })}
             </Text>
           </View>
         );
@@ -183,7 +191,7 @@ export default function WalletScreen() {
 
             <Text style={styles.label}>Amount</Text>
             <View style={styles.amountRow}>
-              <Text style={styles.rupee}>₹</Text>
+              <Text style={styles.rupee}>{currencySymbol(currency)}</Text>
               <TextInput
                 style={styles.amountInput}
                 value={amount}
@@ -196,7 +204,7 @@ export default function WalletScreen() {
             <View style={styles.quickRow}>
               {QUICK_AMOUNTS.map((q) => (
                 <HapticPressable key={q} style={styles.quickChip} onPress={() => setAmount(String(q))}>
-                  <Text style={styles.quickText}>₹{q}</Text>
+                  <Text style={styles.quickText}>{formatMoney(q)}</Text>
                 </HapticPressable>
               ))}
             </View>
@@ -217,7 +225,7 @@ export default function WalletScreen() {
             })}
 
             <HapticPressable style={[styles.proceed, (!amount || paying) && styles.proceedDisabled]} onPress={proceedAdd} disabled={!amount || paying} activeOpacity={0.9}>
-              {paying ? <ActivityIndicator color="#fff" /> : <Text style={styles.proceedText}>Add {amount ? `₹${amount}` : 'money'}</Text>}
+              {paying ? <ActivityIndicator color="#fff" /> : <Text style={styles.proceedText}>Add {amount ? formatMoney(Number(amount)) : 'money'}</Text>}
             </HapticPressable>
           </View>
         </View>

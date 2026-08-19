@@ -5,6 +5,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import auth from '@react-native-firebase/auth';
 import { c, font, radius, space } from '../../theme/tokens';
 import HapticPressable from '../components/HapticPressable';
+import { findCountry, toE164 } from '../services/countries';
 
 const OTP_LENGTH = 6;
 const RESEND_SECONDS = 30;
@@ -12,8 +13,11 @@ const RESEND_SECONDS = 30;
 export default function OtpScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const params = useLocalSearchParams<{ phone: string; verificationId: string }>();
+  const params = useLocalSearchParams<{ phone: string; countryCode: string; verificationId: string }>();
   const phone = params.phone ?? '';
+  // Falls back to India when absent, so a session started on an older build
+  // still resends correctly rather than dropping the dial code entirely.
+  const country = findCountry(params.countryCode ?? '');
   const [verificationId, setVerificationId] = useState(params.verificationId ?? '');
 
   const [otp, setOtp] = useState<string[]>(Array(OTP_LENGTH).fill(''));
@@ -87,7 +91,7 @@ export default function OtpScreen() {
     setError('');
     inputs.current[0]?.focus();
     try {
-      const confirmation = await auth().signInWithPhoneNumber(`+91${phone}`);
+      const confirmation = await auth().signInWithPhoneNumber(toE164(country, phone));
       setVerificationId(confirmation.verificationId ?? '');
       setCountdown(RESEND_SECONDS);
     } catch (err: any) {
@@ -114,7 +118,7 @@ export default function OtpScreen() {
 
         <View style={styles.body}>
         <Text style={styles.h1}>Enter the code</Text>
-        <Text style={styles.sub}>We sent a 6-digit code to{'\n'}<Text style={styles.phone}>+91 {phone}</Text></Text>
+        <Text style={styles.sub}>We sent a 6-digit code to{'\n'}<Text style={styles.phone}>+{country.dial} {phone}</Text></Text>
 
         <Animated.View style={[styles.otpRow, { transform: [{ translateX: shake }] }]}>
           {Array(OTP_LENGTH).fill(0).map((_, i) => (

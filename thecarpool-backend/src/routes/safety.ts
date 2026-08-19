@@ -1,4 +1,5 @@
 import { FastifyInstance } from 'fastify';
+import { defaultCurrency } from '../lib/config';
 import * as admin from 'firebase-admin';
 import { z } from 'zod';
 import { db, storage, redisClient } from '../server';
@@ -427,7 +428,7 @@ export async function safetyRoutes(fastify: FastifyInstance) {
               const cur = await tx.get(ownerRef);
               const bal = Number(cur.data()?.available_wallet_balance || 0);
               tx.set(ownerRef, {
-                ...(cur.exists ? cur.data() : { escrow_locked_balance: 0, currency: 'INR' }),
+                ...(cur.exists ? cur.data() : { escrow_locked_balance: 0, currency: defaultCurrency() }),
                 available_wallet_balance: Math.round((bal + balance) * 100) / 100,
               }, { merge: true });
             }).catch((e) => fastify.log.error(e, 'Failed to sweep balance to platform owner'));

@@ -6,6 +6,7 @@ import { colors } from '../../theme/colors';
 import { apiFetch } from '../services/api';
 import * as haptics from '../services/haptics';
 import HapticPressable from '../components/HapticPressable';
+import { formatMoney } from '../services/currency';
 import auth from '@react-native-firebase/auth';
 import io from 'socket.io-client';
 import { API_URL } from '../services/api';
@@ -606,7 +607,7 @@ export default function DriverInterface() {
                 hardcoded ₹4,320 and "+12% from last week" to every driver. */}
             <View style={styles.earningsCard}>
               <Text style={styles.earningsLabel}>Your earnings</Text>
-              <Text style={styles.earningsAmount}>₹{earnings.toLocaleString('en-IN')}</Text>
+              <Text style={styles.earningsAmount}>{formatMoney(earnings, { decimals: 0 })}</Text>
               <HapticPressable haptic="press" style={styles.sparklineBox} onPress={() => router.push('/payout-method')}>
                 <Activity color={colors.success} size={20} />
                 <Text style={styles.sparklineText}>
@@ -645,7 +646,7 @@ export default function DriverInterface() {
                         {r.women_only && <Text style={styles.miniBadge}>♀ WOMEN</Text>}
                       </View>
                     </View>
-                    <Text style={styles.routeDest}>Ride #{String(r.id).replace('ride_', '').slice(0, 8)} · ₹{Number(r.price_split).toFixed(0)}/seat</Text>
+                    <Text style={styles.routeDest}>Ride #{String(r.id).replace('ride_', '').slice(0, 8)} · {formatMoney(Number(r.price_split), { decimals: 0 })}/seat</Text>
                   </View>
 
                   {/* Passenger manifest with contact options */}
@@ -1024,7 +1025,7 @@ export default function DriverInterface() {
                 Enter the amount you would like each passenger to contribute for this ride.
               </Text>
               <View style={styles.priceInputGroup}>
-                <Text style={styles.priceInputLabel}>Price per seat (₹):</Text>
+                <Text style={styles.priceInputLabel}>Price per seat:</Text>
                 <TextInput
                   style={styles.priceInput}
                   keyboardType="numeric"
@@ -1036,7 +1037,7 @@ export default function DriverInterface() {
               </View>
               {suggestedPrice !== null && (
                 <HapticPressable onPress={() => setCustomPrice(String(Math.round(suggestedPrice)))}>
-                  <Text style={styles.useSuggested}>💡 Suggestion: ₹{suggestedPrice.toFixed(0)} (tap to use)</Text>
+                  <Text style={styles.useSuggested}>💡 Suggestion: {formatMoney(suggestedPrice, { decimals: 0 })} (tap to use)</Text>
                 </HapticPressable>
               )}
             </View>

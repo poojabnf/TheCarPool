@@ -10,6 +10,7 @@ import * as haptics from './services/haptics';
 import { useAuthStore } from './store/authStore';
 import { c, font, radius, space, shadowSm } from '../theme/tokens';
 import HapticPressable from './components/HapticPressable';
+import { formatMoney } from './services/currency';
 
 function initials(name?: string) {
   if (!name) return 'D';
@@ -80,7 +81,7 @@ export default function ConfirmPay() {
   const insuranceCharge = insuranceOpted ? insurancePremium : 0;
   const total = Math.round((seatFare + convenienceFee + insuranceCharge) * 100) / 100;
 
-  const num = (n: number) => `₹${n.toFixed(2)}`;
+  const num = (n: number) => formatMoney(n, { decimals: 2 });
   const upiVpa = (userProfile?.email ? userProfile.email.split('@')[0] : 'you') + '@okhdfcbank';
 
   /** Straight-line metres between two coords — enough for a "x min walk" hint. */

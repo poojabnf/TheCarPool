@@ -9,6 +9,7 @@ import { apiFetch } from './services/api';
 import * as haptics from './services/haptics';
 import { c, font, radius, space } from '../theme/tokens';
 import HapticPressable from './components/HapticPressable';
+import { formatMoney } from './services/currency';
 
 /**
  * Where a driver's earnings are sent.
@@ -52,7 +53,7 @@ export default function PayoutMethodScreen() {
   // for 24 hours after the trip; the server enforces that and says so.
   const withdraw = () => {
     Alert.alert(
-      'Withdraw ₹' + balance.toFixed(2),
+      'Withdraw ' + formatMoney(balance, { decimals: 2 }),
       `This sends your full wallet balance to ${current?.destination}.`,
       [
         { text: 'Not now', style: 'cancel' },
@@ -72,7 +73,7 @@ export default function PayoutMethodScreen() {
                 return;
               }
               haptics.success();
-              Alert.alert('On its way', `₹${balance.toFixed(2)} is being sent to ${data.destination || current?.destination}.`);
+              Alert.alert('On its way', `${formatMoney(balance, { decimals: 2 })} is being sent to ${data.destination || current?.destination}.`);
               refresh();
             } catch {
               haptics.error();
@@ -161,7 +162,7 @@ export default function PayoutMethodScreen() {
               >
                 {withdrawing
                   ? <ActivityIndicator color={c.goStrong} />
-                  : <Text style={styles.withdrawText}>Withdraw ₹{balance.toFixed(2)} now</Text>}
+                  : <Text style={styles.withdrawText}>Withdraw {formatMoney(balance, { decimals: 2 })} now</Text>}
               </HapticPressable>
             )}
           </View>

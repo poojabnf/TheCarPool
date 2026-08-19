@@ -12,6 +12,7 @@ import { useI18n } from '../services/i18n';
 import * as haptics from '../services/haptics';
 import { c, font, radius, space, shadowSm, brass } from '../../theme/tokens';
 import HapticPressable from '../components/HapticPressable';
+import { formatMoney } from '../services/currency';
 import VehicleIcon from '../components/VehicleIcon';
 
 // Offline-cached search (roadmap Phase 1, session-scoped): module-level so it
@@ -289,7 +290,7 @@ export default function HomeScreen() {
                   </View>
                 </View>
                 <View style={{ alignItems: 'flex-end' }}>
-                  <Text style={styles.fare}>₹{Number(ride.price_split).toFixed(0)}</Text>
+                  <Text style={styles.fare}>{formatMoney(Number(ride.price_split), { decimals: 0 })}</Text>
                   <Text style={styles.perSeat}>per seat</Text>
                 </View>
               </View>
@@ -308,7 +309,7 @@ export default function HomeScreen() {
                 {ride.pickup_deviation != null && <Text style={styles.detour}>{Math.round(ride.pickup_deviation)}m detour</Text>}
               </View>
               <HapticPressable haptic="press" style={styles.bookBtn} onPress={() => bookRide(ride)} activeOpacity={0.9}>
-                <Text style={styles.bookBtnText}>{t('book_ride')} · ₹{Number(ride.price_split).toFixed(0)}</Text>
+                <Text style={styles.bookBtnText}>{t('book_ride')} · {formatMoney(Number(ride.price_split), { decimals: 0 })}</Text>
               </HapticPressable>
             </View>
           ))}

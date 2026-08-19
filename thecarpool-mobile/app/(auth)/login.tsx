@@ -1,7 +1,7 @@
 import React, { useState, useRef } from 'react';
 import {
   View, Text, TextInput, ScrollView, StyleSheet, StatusBar,
-  KeyboardAvoidingView, Platform, Animated, Alert, ActivityIndicator, Linking,
+  KeyboardAvoidingView, Platform, Animated, Alert, ActivityIndicator, Linking, Modal,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -11,6 +11,9 @@ import * as AppleAuthentication from 'expo-apple-authentication';
 import { Leaf } from 'lucide-react-native';
 import HapticPressable from '../components/HapticPressable';
 import { c, font, radius, space, shadowSm } from '../../theme/tokens';
+import {
+  COUNTRIES, DEFAULT_COUNTRY, Country, maxDigits, isValidNsn, toE164,
+} from '../services/countries';
 
 const GOOGLE_WEB_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID || '';
 const GOOGLE_IOS_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID || '';
@@ -26,6 +29,8 @@ export default function LoginScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const [phone, setPhone] = useState('');
+  const [country, setCountry] = useState<Country>(DEFAULT_COUNTRY);
+  const [pickerOpen, setPickerOpen] = useState(false);
   const [isSending, setIsSending] = useState(false);
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
   const [isAppleLoading, setIsAppleLoading] = useState(false);
@@ -46,13 +51,18 @@ export default function LoginScreen() {
     }
   }, []);
 
+  const phoneValid = isValidNsn(country, phone);
+
   const handleSendOtp = async () => {
-    if (phone.length < 10) return;
+    if (!phoneValid) return;
     setIsSending(true);
     try {
-      const confirmation = await auth().signInWithPhoneNumber(`+91${phone}`);
+      const confirmation = await auth().signInWithPhoneNumber(toE164(country, phone));
       setIsSending(false);
-      router.push({ pathname: '/(auth)/otp', params: { phone, verificationId: confirmation.verificationId } });
+      router.push({
+        pathname: '/(auth)/otp',
+        params: { phone, countryCode: country.code, verificationId: confirmation.verificationId },
+      });
     } catch (error: any) {
       setIsSending(false);
       const code = error?.code ? ` [${error.code}]` : '';
@@ -121,23 +131,30 @@ export default function LoginScreen() {
         <View style={styles.hero}>
           <Text style={styles.h1}>Share the drive.</Text>
           <Text style={styles.h1accent}>Split the fare.</Text>
-          <Text style={styles.sub}>Verified workplace carpooling for Indian professionals.</Text>
+          <Text style={styles.sub}>Verified workplace carpooling for commuting professionals.</Text>
         </View>
 
         {/* Phone */}
         <View style={styles.phoneRow}>
-          <View style={styles.cc}><Text style={styles.ccText}>🇮🇳 +91</Text></View>
+          <HapticPressable
+            style={styles.cc}
+            onPress={() => setPickerOpen(true)}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.ccText}>{country.flag} +{country.dial} ▾</Text>
+          </HapticPressable>
           <TextInput
             style={styles.phoneInput}
             placeholder="Mobile number" placeholderTextColor={c.textDisabled}
-            keyboardType="phone-pad" maxLength={10} value={phone} onChangeText={setPhone}
+            keyboardType="phone-pad" maxLength={maxDigits(country)} value={phone}
+            onChangeText={(t) => setPhone(t.replace(/\D/g, ''))}
           />
         </View>
 
         <HapticPressable
           haptic="press"
-          style={[styles.primaryBtn, (phone.length < 10 || isSending) && styles.disabled]}
-          onPress={handleSendOtp} disabled={phone.length < 10 || isSending} activeOpacity={0.9}
+          style={[styles.primaryBtn, (!phoneValid || isSending) && styles.disabled]}
+          onPress={handleSendOtp} disabled={!phoneValid || isSending} activeOpacity={0.9}
         >
           {isSending ? <ActivityIndicator color={c.actionPrimaryText} /> : <Text style={styles.primaryBtnText}>Continue with OTP</Text>}
         </HapticPressable>
@@ -164,6 +181,45 @@ export default function LoginScreen() {
         </Text>
         </Animated.View>
       </ScrollView>
+
+      {/* Country picker. Changing country clears the number: an NSN typed for
+          one country is rarely valid in another, and silently keeping it
+          produces a confusing "invalid number" at the OTP step instead. */}
+      <Modal
+        visible={pickerOpen}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setPickerOpen(false)}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalSheet}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Select country</Text>
+              <HapticPressable onPress={() => setPickerOpen(false)} activeOpacity={0.7}>
+                <Text style={styles.modalClose}>Done</Text>
+              </HapticPressable>
+            </View>
+            <ScrollView>
+              {COUNTRIES.map((item) => (
+                <HapticPressable
+                  key={item.code}
+                  style={[styles.countryRow, item.code === country.code && styles.countryRowActive]}
+                  onPress={() => {
+                    if (item.code !== country.code) setPhone('');
+                    setCountry(item);
+                    setPickerOpen(false);
+                  }}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.countryFlag}>{item.flag}</Text>
+                  <Text style={styles.countryName}>{item.name}</Text>
+                  <Text style={styles.countryDial}>+{item.dial}</Text>
+                </HapticPressable>
+              ))}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
     </KeyboardAvoidingView>
   );
 }
@@ -203,4 +259,15 @@ const styles = StyleSheet.create({
 
   legal: { fontFamily: font.sans, textAlign: 'center', color: c.textDisabled, fontSize: 11.5, lineHeight: 16, marginTop: 8 },
   link: { color: c.textAccent, fontFamily: font.sansSemibold },
+  // Country picker
+  modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' },
+  modalSheet: { backgroundColor: c.bgApp, borderTopLeftRadius: radius.lg, borderTopRightRadius: radius.lg, maxHeight: '75%', paddingBottom: 24 },
+  modalHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: space.xl, paddingVertical: 16, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: c.borderSubtle },
+  modalTitle: { fontFamily: font.sansSemibold, fontSize: 16, color: c.textPrimary },
+  modalClose: { fontFamily: font.sansSemibold, fontSize: 15, color: c.textAccent },
+  countryRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: space.xl, paddingVertical: 14 },
+  countryRowActive: { backgroundColor: c.surfaceSunken },
+  countryFlag: { fontSize: 22 },
+  countryName: { flex: 1, fontFamily: font.sans, fontSize: 15, color: c.textPrimary },
+  countryDial: { fontFamily: font.sans, fontSize: 15, color: c.textSecondary },
 });

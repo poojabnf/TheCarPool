@@ -14,6 +14,7 @@ import { c, font, radius, space, shadowSm } from '../../theme/tokens';
 import Constants from 'expo-constants';
 import * as haptics from '../services/haptics';
 import HapticPressable from '../components/HapticPressable';
+import { formatMoney } from '../services/currency';
 
 const SUPPORT_EMAIL = 'support@thecarpool.in';
 const SUPPORT_PHONE = '+919999002281';
@@ -132,7 +133,7 @@ export default function AccountInterface() {
         'Account deleted',
         'Your profile and documents have been removed.'
         + (settled?.outcome === 'REFUND_QUEUED'
-          ? `\n\nYour remaining ₹${Number(settled.amount).toFixed(2)} is on its way to your registered account.`
+          ? `\n\nYour remaining ${formatMoney(Number(settled.amount), { decimals: 2 })} is on its way to your registered account.`
           : '')
         + '\n\nThank you for riding with us.'
       );
@@ -266,7 +267,7 @@ export default function AccountInterface() {
                     <Text style={styles.rowTitle}>{t.label || 'Ride payment'}</Text>
                     <Text style={styles.rowSub}>{t.at ? new Date(t.at).toLocaleString() : (t.status || '')}</Text>
                   </View>
-                  <Text style={styles.histAmount}>₹{Math.abs(t.amount || 0).toFixed(2)}</Text>
+                  <Text style={styles.histAmount}>{formatMoney(Math.abs(t.amount || 0), { decimals: 2 })}</Text>
                 </View>
               ))}
             </>

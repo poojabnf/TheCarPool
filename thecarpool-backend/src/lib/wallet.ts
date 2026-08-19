@@ -1,4 +1,5 @@
 import { db } from '../server';
+import { defaultCurrency } from './config';
 
 /**
  * Credit a user's wallet for a captured Razorpay payment, exactly once.
@@ -84,7 +85,7 @@ export async function creditWalletForPayment(opts: {
 
     const cur = walletDoc.exists
       ? walletDoc.data()!
-      : { available_wallet_balance: 0, escrow_locked_balance: 0, currency: 'INR' };
+      : { available_wallet_balance: 0, escrow_locked_balance: 0, currency: defaultCurrency() };
 
     tx.set(
       walletRef,

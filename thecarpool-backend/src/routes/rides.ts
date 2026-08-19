@@ -1,4 +1,5 @@
 import { FastifyInstance } from 'fastify';
+import { defaultCurrency } from '../lib/config';
 import { randomUUID } from 'crypto';
 import { db, redisClient } from '../server';
 import { requireAuth, requireAdmin } from '../middleware/auth';
@@ -979,7 +980,7 @@ export async function rideRoutes(fastify: FastifyInstance) {
         if (driverTotal > 0) {
           const cur = driverWalletDoc.exists
             ? driverWalletDoc.data()!
-            : { available_wallet_balance: 0, escrow_locked_balance: 0, currency: 'INR' };
+            : { available_wallet_balance: 0, escrow_locked_balance: 0, currency: defaultCurrency() };
 
           // Earnings always land in the wallet first — it is the single source
           // of truth for what the driver is owed. What differs is what happens
@@ -1021,7 +1022,7 @@ export async function rideRoutes(fastify: FastifyInstance) {
           const doc = riderWalletDocs.get(rid)!;
           const cur = doc.exists
             ? doc.data()!
-            : { available_wallet_balance: 0, escrow_locked_balance: 0, currency: 'INR' };
+            : { available_wallet_balance: 0, escrow_locked_balance: 0, currency: defaultCurrency() };
           tx.set(ref, {
             ...cur,
             available_wallet_balance: round2((cur.available_wallet_balance || 0) + amount),

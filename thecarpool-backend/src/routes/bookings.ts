@@ -1,4 +1,5 @@
 import { FastifyInstance } from 'fastify';
+import { defaultCurrency } from '../lib/config';
 import { z } from 'zod';
 import { randomUUID, randomInt, timingSafeEqual } from 'crypto';
 import { db } from '../server';
@@ -227,7 +228,7 @@ export async function bookingRoutes(fastify: FastifyInstance) {
         } else {
           const cur = walletDoc!.exists
             ? walletDoc!.data()!
-            : { available_wallet_balance: 0, escrow_locked_balance: 0, currency: 'INR' };
+            : { available_wallet_balance: 0, escrow_locked_balance: 0, currency: defaultCurrency() };
           const available = Number(cur.available_wallet_balance || 0);
           if (available + 0.01 < totalDue) {
             throw new Error('INSUFFICIENT_WALLET');
@@ -613,7 +614,7 @@ export async function bookingRoutes(fastify: FastifyInstance) {
           settled_amount: fareAmount,
           settled_at: new Date().toISOString(),
         });
-        const cur = walletDoc.exists ? walletDoc.data()! : { available_wallet_balance: 0, escrow_locked_balance: 0, currency: 'INR' };
+        const cur = walletDoc.exists ? walletDoc.data()! : { available_wallet_balance: 0, escrow_locked_balance: 0, currency: defaultCurrency() };
         tx.set(driverWalletRef, { ...cur, available_wallet_balance: (cur.available_wallet_balance || 0) + fareAmount }, { merge: true });
       });
 
@@ -997,7 +998,7 @@ export async function bookingRoutes(fastify: FastifyInstance) {
 
         const walletDoc = await tx.get(walletRef);
         const driverWalletDoc = driverWalletRef ? await tx.get(driverWalletRef) : null;
-        const cur = walletDoc.exists ? walletDoc.data()! : { available_wallet_balance: 0, escrow_locked_balance: 0, currency: 'INR' };
+        const cur = walletDoc.exists ? walletDoc.data()! : { available_wallet_balance: 0, escrow_locked_balance: 0, currency: defaultCurrency() };
 
         // 1. Restore the freed seats on the ride
         tx.update(rideRef, {
@@ -1030,7 +1031,7 @@ export async function bookingRoutes(fastify: FastifyInstance) {
         if (driverWalletRef && driverWalletDoc) {
           const dcur = driverWalletDoc.exists
             ? driverWalletDoc.data()!
-            : { available_wallet_balance: 0, escrow_locked_balance: 0, currency: 'INR' };
+            : { available_wallet_balance: 0, escrow_locked_balance: 0, currency: defaultCurrency() };
           tx.set(driverWalletRef, {
             ...dcur,
             available_wallet_balance: round2((dcur.available_wallet_balance || 0) + outcome.driver_share),

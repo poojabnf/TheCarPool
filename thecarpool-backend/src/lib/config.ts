@@ -27,6 +27,7 @@ const OPTIONAL = [
   'SENTRY_DSN',
   'GOOGLE_MAPS_API_KEY',
   'REDIS_URL',
+  'DEFAULT_CURRENCY',
   'SMTP_HOST',
   'SMTP_USER',
   'SMTP_PASS',
@@ -52,6 +53,24 @@ export function validateEnv(logger?: Logger): void {
       `Optional integrations not configured (features disabled): ${missingOptional.join(', ')}`
     );
   }
+}
+
+/**
+ * Currency new wallets and orders are denominated in.
+ *
+ * Was hardcoded to 'INR' in a dozen places, which quietly made the launch
+ * market a property of the code. Set DEFAULT_CURRENCY to move a deployment
+ * to another market; INR remains the fallback so existing behaviour is
+ * unchanged.
+ *
+ * NOTE: this does NOT make the app multi-currency on its own. Razorpay
+ * settles in INR and RazorpayX payouts ride Indian rails (UPI/IMPS), so a
+ * non-INR value here needs a payment provider that supports it. The
+ * constant exists so the rest of the system stops assuming.
+ */
+export function defaultCurrency(): string {
+  const raw = process.env.DEFAULT_CURRENCY?.trim().toUpperCase();
+  return raw && /^[A-Z]{3}$/.test(raw) ? raw : 'INR';
 }
 
 /** Comma-separated allowlist of web origins permitted for CORS / Socket.IO. */

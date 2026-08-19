@@ -1,4 +1,5 @@
 import { FastifyInstance } from 'fastify';
+import { defaultCurrency } from '../lib/config';
 import { z } from 'zod';
 import { db } from '../server';
 import { requireAuth, requireAdmin } from '../middleware/auth';
@@ -22,7 +23,7 @@ function round2(n: number): number {
 
 const OrderSchema = z.object({
   amount: z.number().positive(),
-  currency: z.string().length(3).optional().default('INR'),
+  currency: z.string().length(3).optional().default(defaultCurrency()),
   booking_id: z.string().optional(),
 });
 
@@ -78,7 +79,7 @@ async function getWallet(uid: string) {
   const ref = db.collection('wallets').doc(uid);
   const doc = await ref.get();
   if (!doc.exists) {
-    const initial = { available_wallet_balance: 0, escrow_locked_balance: 0, currency: 'INR' };
+    const initial = { available_wallet_balance: 0, escrow_locked_balance: 0, currency: defaultCurrency() };
     await ref.set(initial);
     return initial;
   }
@@ -610,7 +611,7 @@ export async function paymentRoutes(fastify: FastifyInstance) {
         });
         // Credit the late fee to the driver's wallet.
         if (walletRef) {
-          const cur = walletDoc?.exists ? walletDoc.data()! : { available_wallet_balance: 0, escrow_locked_balance: 0, currency: 'INR' };
+          const cur = walletDoc?.exists ? walletDoc.data()! : { available_wallet_balance: 0, escrow_locked_balance: 0, currency: defaultCurrency() };
           tx.set(walletRef, { ...cur, available_wallet_balance: (cur.available_wallet_balance || 0) + fee }, { merge: true });
         }
       });
@@ -672,7 +673,7 @@ export async function paymentRoutes(fastify: FastifyInstance) {
           throw new Error('ALREADY_REDEEMED');
         }
         const walletDoc = await tx.get(walletRef);
-        const cur = walletDoc.exists ? walletDoc.data()! : { available_wallet_balance: 0, escrow_locked_balance: 0, currency: 'INR' };
+        const cur = walletDoc.exists ? walletDoc.data()! : { available_wallet_balance: 0, escrow_locked_balance: 0, currency: defaultCurrency() };
         newBalance = (cur.available_wallet_balance || 0) + REFERRAL_BONUS;
         tx.set(walletRef, { ...cur, available_wallet_balance: newBalance }, { merge: true });
         tx.set(redemptionRef, {

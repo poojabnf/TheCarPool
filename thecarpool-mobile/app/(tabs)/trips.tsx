@@ -10,6 +10,7 @@ import { c, font, radius, space, shadowSm } from '../../theme/tokens';
 import { apiFetch } from '../services/api';
 import * as haptics from '../services/haptics';
 import HapticPressable from '../components/HapticPressable';
+import { formatMoney } from '../services/currency';
 
 interface Booking {
   id: string;
@@ -98,7 +99,7 @@ export default function TripsScreen() {
     }
 
     const confirmLabel = q.cancellation_fee > 0
-      ? `Cancel (₹${q.cancellation_fee} charge)`
+      ? `Cancel (${formatMoney(Number(q.cancellation_fee))} charge)`
       : 'Cancel booking';
 
     Alert.alert(
@@ -118,8 +119,8 @@ export default function TripsScreen() {
                 Alert.alert(
                   'Booking cancelled',
                   d.cancellation_fee > 0
-                    ? `A ₹${d.cancellation_fee} cancellation charge (${d.cancellation_fee_pct}%) was applied. ₹${d.refunded_amount} has been refunded to your wallet.`
-                    : `₹${d.refunded_amount} has been refunded to your wallet in full.`
+                    ? `A ${formatMoney(Number(d.cancellation_fee))} cancellation charge (${d.cancellation_fee_pct}%) was applied. ${formatMoney(Number(d.refunded_amount))} has been refunded to your wallet.`
+                    : `${formatMoney(Number(d.refunded_amount))} has been refunded to your wallet in full.`
                 );
                 load(true);
               } else {
@@ -231,7 +232,7 @@ function BookingCard({ b, onPress, onCancel }: { b: Booking; onPress: () => void
         <MapPin color={c.textTertiary} size={13} strokeWidth={2} />
         <Text style={styles.meta}>{b.seats_booked} seat{b.seats_booked > 1 ? 's' : ''} booked</Text>
         {b.price_split != null && (
-          <Text style={styles.price}>₹{(b.price_split * b.seats_booked).toFixed(0)} escrow</Text>
+          <Text style={styles.price}>{formatMoney(b.price_split * b.seats_booked, { decimals: 0 })} escrow</Text>
         )}
       </View>
 

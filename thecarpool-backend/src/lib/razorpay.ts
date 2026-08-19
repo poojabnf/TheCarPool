@@ -87,6 +87,9 @@ export async function createPayout(opts: {
       account_number: process.env.RAZORPAYX_ACCOUNT_NUMBER,
       fund_account_id: fundAccount.id,
       amount: Math.round(opts.amountRupees * 100),
+      // Deliberately NOT defaultCurrency(): RazorpayX payouts settle over
+      // Indian rails (UPI/IMPS) and are INR-only. Serving another market
+      // means a different payout provider, not a different code here.
       currency: 'INR',
       mode: method.type === 'VPA' ? 'UPI' : 'IMPS',
       purpose: 'payout',
