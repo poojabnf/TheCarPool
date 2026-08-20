@@ -27,8 +27,10 @@ const InputDefaults = RNTextInput as unknown as { defaultProps?: { maxFontSizeMu
 InputDefaults.defaultProps = { ...(InputDefaults.defaultProps || {}), maxFontSizeMultiplier: 1.3 };
 
 function AuthGuard({ children }: { children: React.ReactNode }) {
+  // Profile hydration still runs — the tabs read userProfile for display — but
+  // routing no longer waits on it, since nothing gates entry on a name.
   const {
-    isLoggedIn, isAuthLoading, isProfileHydrated, userProfile, profileSetupSkipped,
+    isLoggedIn, isAuthLoading,
     setFirebaseUser, setUserProfile, setProfileHydrated,
   } = useAuthStore();
   const segments = useSegments();
@@ -77,27 +79,19 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
   // Handle routing based on auth state
   useEffect(() => {
     if (isAuthLoading) return; // Wait for Firebase to resolve
-    // Wait for the backend profile too, otherwise an already-onboarded user is
-    // momentarily seen as profile-less and redirected to profile-setup.
-    if (isLoggedIn && !isProfileHydrated) return;
 
     const inAuthGroup = (segments as string[])[0] === '(auth)';
-    const onProfileSetup = (segments as string[])[1] === 'profile-setup';
-    const profileName = userProfile?.name;
 
     if (!isLoggedIn && !inAuthGroup) {
       // Require sign-in
       router.replace('/(auth)/login');
-    } else if (isLoggedIn) {
-      if (!profileName && !onProfileSetup && !profileSetupSkipped) {
-        // Logged in via OTP but profile name missing → navigate to Profile Setup
-        router.replace('/(auth)/profile-setup');
-      } else if (profileName && inAuthGroup) {
-        // Profile complete → land on main tabs
-        router.replace('/(tabs)');
-      }
+    } else if (isLoggedIn && inAuthGroup) {
+      // Signed in → straight to the app. Nothing else is collected up front:
+      // a display name comes from Google/Apple where available, and the
+      // screens that show one fall back rather than requiring it.
+      router.replace('/(tabs)');
     }
-  }, [isLoggedIn, isAuthLoading, isProfileHydrated, userProfile?.name, profileSetupSkipped, segments]);
+  }, [isLoggedIn, isAuthLoading, segments]);
 
   // Show splash/loading while Firebase checks persisted auth
   if (isAuthLoading) {
