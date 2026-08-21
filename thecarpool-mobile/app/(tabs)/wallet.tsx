@@ -152,7 +152,7 @@ export default function WalletScreen() {
             onPress={() => router.push('/payout-method')}
           >
             <ArrowUpRight color={c.textPrimary} size={16} strokeWidth={2.4} />
-            <Text style={styles.actionSecondaryText}>Payout details</Text>
+            <Text style={styles.actionSecondaryText}>Withdraw</Text>
           </HapticPressable>
         </View>
       </View>

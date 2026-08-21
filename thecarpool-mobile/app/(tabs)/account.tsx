@@ -4,6 +4,7 @@ import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   CreditCard, Settings, HelpCircle, ChevronRight, LogOut, Newspaper, ShieldCheck, Leaf, Receipt, Camera,
+  Landmark,
 } from 'lucide-react-native';
 import { auth } from '../services/firebase';
 import { apiFetch } from '../services/api';
@@ -45,6 +46,7 @@ export default function AccountInterface() {
   const [openFaq, setOpenFaq] = useState<number | null>(null);
   const [history, setHistory] = useState<any[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
+  const [payoutDestination, setPayoutDestination] = useState<string | null>(null);
   const { t, lang, setLang } = useI18n();
 
   // Commute streaks (roadmap Phase 2 — community wedge).
@@ -58,6 +60,10 @@ export default function AccountInterface() {
     apiFetch(`/api/sustainability/streaks/${uid}`)
       .then((r) => (r.ok ? r.json() : null))
       .then(setStreaks)
+      .catch(() => {});
+    apiFetch('/api/payments/payout-method')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => setPayoutDestination(d?.configured ? d.destination : null))
       .catch(() => {});
     apiFetch('/api/users/me')
       .then((r) => (r.ok ? r.json() : null))
@@ -342,6 +348,16 @@ export default function AccountInterface() {
 
       <View style={styles.group}>
         <MenuRow icon={<CreditCard color={c.textSecondary} size={20} />} title="Wallet & payments" sub="Balance, UPI, cards" onPress={() => router.push('/(tabs)/wallet')} />
+        {/* Withdrawals were only reachable from inside the Wallet, which made
+            them hard to find for anyone looking under their account. The
+            subtitle doubles as status so it's obvious whether anything is on
+            file without opening the screen. */}
+        <MenuRow
+          icon={<Landmark color={c.textSecondary} size={20} />}
+          title="Payout details"
+          sub={payoutDestination ? `Withdrawals go to ${payoutDestination}` : 'Add a UPI ID or bank account to withdraw'}
+          onPress={() => router.push('/payout-method')}
+        />
         <MenuRow icon={<Receipt color={c.textSecondary} size={20} />} title="Booking history" sub="Your past rides & payments" onPress={() => setView('history')} />
         <MenuRow icon={<Newspaper color={c.textSecondary} size={20} />} title="Classifieds" sub="Community marketplace" onPress={() => router.push('/(tabs)/classifieds')} />
         <MenuRow icon={<Leaf color={c.textSecondary} size={20} />} title="Green leaderboard" sub="Top CO₂ savers in the community" onPress={() => router.push('/leaderboard')} last />
