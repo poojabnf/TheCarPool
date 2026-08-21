@@ -44,7 +44,7 @@
         "backgroundColor": "#ffffff"
       },
       "package": "com.thecarpool.app",
-      "versionCode": 154,
+      "versionCode": 155,
       "googleServicesFile": "./google-services.json",
       "config": {
         "googleMaps": {
@@ -96,7 +96,8 @@
       "policy": "appVersion"
     },
     "updates": {
-      "url": "https://u.expo.dev/e5fe9be8-04c9-4010-9c97-7bc66579b052"
+      "url": "https://u.expo.dev/e5fe9be8-04c9-4010-9c97-7bc66579b052",
+      "fallbackToCacheTimeout": 8000
     }
   }
 }
