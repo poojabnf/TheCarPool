@@ -18,6 +18,29 @@ export const API_URL =
  * backend's requireAuth middleware can authenticate the request,
  * with built-in timeout (default 10s) and retry logic (default 2 retries).
  */
+/**
+ * Resolve the signed-in user once Firebase has restored its persisted session.
+ *
+ * Resolves as soon as onAuthStateChanged fires — with the user, or with null
+ * when nobody is signed in. The timeout is a backstop so a request can never
+ * hang here: falling through unauthenticated is worse than a 401, but hanging
+ * forever is worse still.
+ */
+function waitForAuth(timeoutMs = 3000): Promise<ReturnType<typeof auth>['currentUser']> {
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (u: ReturnType<typeof auth>['currentUser']) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      unsubscribe();
+      resolve(u);
+    };
+    const timer = setTimeout(() => finish(auth().currentUser), timeoutMs);
+    const unsubscribe = auth().onAuthStateChanged((u) => finish(u));
+  });
+}
+
 export async function apiFetch(
   path: string,
   init: RequestInit = {},
@@ -26,7 +49,11 @@ export async function apiFetch(
   const { timeoutMs = 15000, retries = 2 } = options;
   const headers = new Headers(init.headers || {});
 
-  const user = auth().currentUser;
+  // On a cold start `currentUser` is null until Firebase restores the persisted
+  // session. Firing immediately sends no Authorization header at all, and the
+  // backend 401s — which surfaced as silently empty location suggestions rather
+  // than any visible error. Wait briefly for auth to settle first.
+  const user = auth().currentUser ?? (await waitForAuth());
   if (user) {
     try {
       // Force refresh token if needed so fresh logins don't fail with stale token
