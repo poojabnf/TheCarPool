@@ -94,6 +94,11 @@ export default function DriverInterface() {
 
   // Ride posting form states
   const [showPostModal, setShowPostModal] = useState(false);
+  // Offering used to be one screen of 22 fields. Split into Route → Trip &
+  // vehicle → Price & preferences so a driver sees a handful of decisions at
+  // a time, the way every mature carpooling app does it.
+  const [formStep, setFormStep] = useState(0);
+  const FORM_STEPS = ['Route', 'Trip & vehicle', 'Price & preferences'];
   const [source, setSource] = useState('');
   const [destination, setDestination] = useState('');
   const [sourceCoords, setSourceCoords] = useState<{ lat: number; lng: number } | null>(null);
@@ -742,11 +747,21 @@ export default function DriverInterface() {
         {activeTab === 'overview' && showPostModal && (
           <ScrollView showsVerticalScrollIndicator={false} style={styles.formContainer}>
             <View style={styles.formHeader}>
-              <Text style={styles.formTitle}>Offer Commute Details</Text>
-              <HapticPressable onPress={() => setShowPostModal(false)}>
+              <View>
+                <Text style={styles.formTitle}>{FORM_STEPS[formStep]}</Text>
+                <Text style={styles.formStepCount}>Step {formStep + 1} of {FORM_STEPS.length}</Text>
+              </View>
+              <HapticPressable onPress={() => { setShowPostModal(false); setFormStep(0); }}>
                 <X color={colors.textMuted} size={24} />
               </HapticPressable>
             </View>
+            <View style={styles.stepBarRow}>
+              {FORM_STEPS.map((_, i) => (
+                <View key={i} style={[styles.stepBar, i <= formStep && styles.stepBarOn]} />
+              ))}
+            </View>
+            {formStep === 0 && (
+            <>
 
             <View style={styles.formGroup}>
               <Text style={styles.formLabel}>Pickup (source)</Text>
@@ -862,6 +877,11 @@ export default function DriverInterface() {
               </View>
             )}
 
+            </>
+            )}
+
+            {formStep === 1 && (
+            <>
             <View style={styles.formGroup}>
               <Text style={styles.formLabel}>Seats Offered</Text>
               <View style={styles.seatRow}>
@@ -1035,6 +1055,11 @@ export default function DriverInterface() {
               </View>
             </View>
 
+            </>
+            )}
+
+            {formStep === 2 && (
+            <>
             {/* Pricing: Driver decides their own price per seat */}
             <View style={styles.pricingCard}>
               <Text style={styles.pricingTitle}>Your price per seat</Text>
@@ -1179,9 +1204,39 @@ export default function DriverInterface() {
               </View>
             </View>
 
-            <HapticPressable haptic="press" style={styles.submitBtn} onPress={handlePostRide}>
-              <Text style={styles.submitBtnText}>Post Commute Route</Text>
-            </HapticPressable>
+            </>
+            )}
+
+            <View style={styles.stepNav}>
+              {formStep > 0 && (
+                <HapticPressable
+                  style={styles.stepBackBtn}
+                  onPress={() => setFormStep((s) => s - 1)}
+                  activeOpacity={0.85}
+                >
+                  <Text style={styles.stepBackText}>← Back</Text>
+                </HapticPressable>
+              )}
+              {formStep < FORM_STEPS.length - 1 ? (
+                <HapticPressable
+                  haptic="press"
+                  style={[styles.submitBtn, { flex: 1, marginTop: 0 }]}
+                  onPress={() => setFormStep((s) => s + 1)}
+                  activeOpacity={0.9}
+                >
+                  <Text style={styles.submitBtnText}>Continue →</Text>
+                </HapticPressable>
+              ) : (
+                <HapticPressable
+                  haptic="press"
+                  style={[styles.submitBtn, { flex: 1, marginTop: 0 }]}
+                  onPress={handlePostRide}
+                  activeOpacity={0.9}
+                >
+                  <Text style={styles.submitBtnText}>Post Commute Route</Text>
+                </HapticPressable>
+              )}
+            </View>
           </ScrollView>
         )}
 
@@ -1632,6 +1687,13 @@ const styles = StyleSheet.create({
   formContainer: { flex: 1, backgroundColor: colors.card, borderRadius: 20, padding: 16, borderWidth: 1, borderColor: colors.cardBorder },
   formHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
   formTitle: { fontSize: 18, fontWeight: 'bold', color: colors.text },
+  formStepCount: { fontSize: 12, color: colors.textMuted, marginTop: 2 },
+  stepBarRow: { flexDirection: 'row', gap: 6, marginBottom: 20 },
+  stepBar: { flex: 1, height: 3, borderRadius: 2, backgroundColor: colors.cardBorder },
+  stepBarOn: { backgroundColor: colors.primary },
+  stepNav: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 20 },
+  stepBackBtn: { paddingHorizontal: 18, paddingVertical: 14, borderRadius: 12, borderWidth: 1, borderColor: colors.cardBorder },
+  stepBackText: { fontSize: 14, fontWeight: '700', color: colors.text },
   formGroup: { marginBottom: 16 },
   formLabel: { fontSize: 13, color: colors.text, fontWeight: 'bold', marginBottom: 8 },
   formHint: { fontSize: 11.5, color: colors.textMuted, marginTop: -4, marginBottom: 8, lineHeight: 16 },
