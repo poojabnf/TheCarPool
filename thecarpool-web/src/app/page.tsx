@@ -56,13 +56,13 @@ export default function TheCarPoolLanding() {
       <section className="pt-32 pb-20 px-8 max-w-7xl mx-auto flex flex-col lg:flex-row items-center gap-12 mt-10">
         <div className="flex-1 space-y-6 z-10">
           <div className="inline-flex items-center space-x-2 bg-teal-50 dark:bg-teal-900/30 text-teal-700 dark:text-teal-400 font-bold px-4 py-1.5 rounded-full text-sm">
-            <Globe size={16} /> <span>Now active in 20 countries</span>
+            <Globe size={16} /> <span>Built for daily commuters</span>
           </div>
           <h1 className="text-5xl lg:text-7xl font-black leading-tight tracking-tight text-slate-900 dark:text-white">
             Commute <span className="text-transparent bg-clip-text bg-gradient-to-r from-teal-600 to-teal-400">Smarter.</span><br/>Together.
           </h1>
           <p className="text-lg text-slate-500 dark:text-slate-400 max-w-lg leading-relaxed">
-            {"The world's most trusted carpool network. Split costs, reduce your carbon footprint, and travel securely with strict government ID-verified peers."}
+            {"Split costs, cut your carbon footprint, and share the drive with rated commuters on your route."}
           </p>
           <div className="flex flex-col sm:flex-row gap-4 pt-4">
             {loading ? (
@@ -135,14 +135,14 @@ export default function TheCarPoolLanding() {
           <div>
             <h2 className="text-3xl lg:text-5xl font-black mb-6">Your Safety is our <span className="text-teal-400">Core Architecture.</span></h2>
             <p className="text-slate-400 text-lg mb-8 leading-relaxed">
-              We do not compromise on security. From mandatory liveness checks to continuous route-deviation monitoring, TheCarPool is engineered to protect you.
+              From in-ride SOS and number masking to continuous route-deviation monitoring, TheCarPool is engineered to protect you.
             </p>
             <ul className="space-y-6">
               <li className="flex items-start gap-4">
                 <ShieldCheck className="text-teal-400 shrink-0 mt-1" size={24} />
                 <div>
-                  <h4 className="font-bold text-lg">Strict KYC Verification</h4>
-                  <p className="text-sm text-slate-400">Every user must pass Level 1 AI facial recognition. Drivers must upload Govt IDs and Vehicle Registration records.</p>
+                  <h4 className="font-bold text-lg">Ratings-Based Trust</h4>
+                  <p className="text-sm text-slate-400">Every trip is rated by both sides. Trust badges are earned from real completed rides, and higher-rated drivers rank first in your matches.</p>
                 </div>
               </li>
               <li className="flex items-start gap-4">
@@ -162,15 +162,15 @@ export default function TheCarPoolLanding() {
             <div className="space-y-4">
               <div className="flex items-center justify-between p-4 bg-slate-900/50 rounded-xl border border-slate-700">
                 <span className="font-bold flex items-center gap-2">🥉 Bronze</span>
-                <span className="text-xs text-slate-400">Phone & Email Verified</span>
+                <span className="text-xs text-slate-400">1+ rated trip</span>
               </div>
               <div className="flex items-center justify-between p-4 bg-slate-900/50 rounded-xl border border-teal-800 shadow-[0_0_15px_rgba(20,184,166,0.1)]">
                 <span className="font-bold text-teal-400 flex items-center gap-2">🥈 Silver</span>
-                <span className="text-xs text-teal-200/50">Govt ID & Selfie Verified</span>
+                <span className="text-xs text-teal-200/50">10+ trips, 4.0+ rating</span>
               </div>
               <div className="flex items-center justify-between p-4 bg-slate-900/50 rounded-xl border border-slate-700">
                 <span className="font-bold text-yellow-500 flex items-center gap-2">🥇 Gold</span>
-                <span className="text-xs text-slate-400">Background Checked</span>
+                <span className="text-xs text-slate-400">25+ trips, 4.5+ rating</span>
               </div>
             </div>
           </div>
@@ -179,8 +179,8 @@ export default function TheCarPoolLanding() {
 
       {/* Global Coverage Mockup */}
       <section id="coverage" className="py-24 bg-white dark:bg-slate-900 text-center">
-        <h2 className="text-3xl lg:text-4xl font-black mb-4">Borderless Commuting</h2>
-        <p className="text-slate-500 max-w-2xl mx-auto mb-12">Seamless multi-currency support and localized compliance across the Top 20 GDP nations.</p>
+        <h2 className="text-3xl lg:text-4xl font-black mb-4">Built to Travel</h2>
+        <p className="text-slate-500 max-w-2xl mx-auto mb-12">Multi-currency and localized formatting are in place, so new markets can open as we reach them.</p>
         <div className="max-w-5xl mx-auto bg-slate-50 dark:bg-slate-800 rounded-3xl h-96 flex items-center justify-center border border-slate-200 dark:border-slate-700 relative overflow-hidden">
            <Map size={200} className="text-slate-200 dark:text-slate-700 absolute" />
            <div className="z-10 grid grid-cols-2 md:grid-cols-4 gap-4 px-8 w-full">
