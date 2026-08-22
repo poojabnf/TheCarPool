@@ -90,7 +90,6 @@ export default function AdminDashboard() {
 
   // Admin data (live from backend, admin-guarded endpoints).
   const [users, setUsers] = useState<any[] | null>(null);
-  const [kycPending, setKycPending] = useState<any[] | null>(null);
 
   useEffect(() => {
     if (activeTab === 'users' && users === null) {
@@ -99,27 +98,8 @@ export default function AdminDashboard() {
         .then((d) => setUsers(Array.isArray(d) ? d : []))
         .catch(() => setUsers([]));
     }
-    if (activeTab === 'kyc' && kycPending === null) {
-      apiFetch('/api/users/admin/kyc-pending')
-        .then((r) => (r.ok ? r.json() : []))
-        .then((d) => setKycPending(Array.isArray(d) ? d : []))
-        .catch(() => setKycPending([]));
-    }
-  }, [activeTab, users, kycPending]);
+  }, [activeTab, users]);
 
-  const handleKycDecision = async (userId: string, decision: 'VERIFIED' | 'REJECTED') => {
-    try {
-      const res = await apiFetch(`/api/users/admin/${userId}/kyc`, {
-        method: 'POST',
-        body: JSON.stringify({ decision }),
-      });
-      if (res.ok) {
-        setKycPending((prev) => (prev ? prev.filter((u) => u.id !== userId) : prev));
-      }
-    } catch {
-      /* ignore — row stays for retry */
-    }
-  };
 
   const metricConfig = {
     rides:   { label: 'Total Rides',      color: '#14b8a6', format: (v: number) => v.toLocaleString() },
@@ -140,7 +120,6 @@ export default function AdminDashboard() {
         <nav className="space-y-2 flex-1">
           <SidebarItem icon={<BarChart3 />} label="Analytics Dashboard" active={activeTab === 'analytics'} onClick={() => setActiveTab('analytics')} />
           <SidebarItem icon={<Users />} label="User Management" active={activeTab === 'users'} onClick={() => setActiveTab('users')} />
-          <SidebarItem icon={<ShieldCheck />} label="KYC Approvals" active={activeTab === 'kyc'} onClick={() => setActiveTab('kyc')} />
           <SidebarItem icon={<AlertTriangle />} label="Ride Moderation" active={activeTab === 'moderation'} onClick={() => setActiveTab('moderation')} />
           <SidebarItem icon={<TrendingUp />} label="Pricing Engine" active={activeTab === 'pricing'} onClick={() => setActiveTab('pricing')} />
           <SidebarItem icon={<Globe />} label="Global Compliance" active={activeTab === 'compliance'} onClick={() => setActiveTab('compliance')} />
@@ -390,84 +369,6 @@ export default function AdminDashboard() {
         )}
 
         {/* ── KYC APPROVALS TAB ── */}
-        {activeTab === 'kyc' && (
-          <div className="max-w-5xl mx-auto space-y-6">
-            <h1 className="text-3xl font-black text-white mb-2">KYC Approvals</h1>
-            <p className="text-slate-400 mb-6">Review and approve pending identity verifications.</p>
-            <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden">
-              {kycPending === null ? (
-                <p className="p-6 text-slate-500">Loading pending verifications…</p>
-              ) : kycPending.length === 0 ? (
-                <p className="p-6 text-slate-500">No pending KYC submissions. 🎉</p>
-              ) : (
-                <table className="w-full text-sm">
-                  <thead className="bg-slate-800/50 text-slate-400 text-xs uppercase">
-                    <tr>
-                      <th className="text-left p-4">User</th>
-                      <th className="text-left p-4">Email</th>
-                      <th className="text-left p-4">Status</th>
-                      <th className="text-right p-4">Action</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {kycPending.map((u) => (
-                      <tr key={u.id} className="border-t border-slate-800">
-                        <td className="p-4 text-white font-semibold">{u.name || u.id}</td>
-                        <td className="p-4 text-slate-400">{u.email || '—'}</td>
-                        <td className="p-4"><span className="px-2 py-1 rounded bg-amber-500/10 text-amber-400 text-xs font-bold">{u.kyc_status}</span></td>
-                        <td className="p-4 text-right space-x-2">
-                          <button onClick={() => handleKycDecision(u.id, 'VERIFIED')} className="px-3 py-1.5 rounded-lg bg-teal-500/20 text-teal-400 text-xs font-bold hover:bg-teal-500/30">Approve</button>
-                          <button onClick={() => handleKycDecision(u.id, 'REJECTED')} className="px-3 py-1.5 rounded-lg bg-red-500/20 text-red-400 text-xs font-bold hover:bg-red-500/30">Reject</button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* ── USER MANAGEMENT TAB ── */}
-        {activeTab === 'users' && (
-          <div className="max-w-5xl mx-auto space-y-6">
-            <h1 className="text-3xl font-black text-white mb-2">User Management</h1>
-            <p className="text-slate-400 mb-6">All registered users across regions.</p>
-            <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden">
-              {users === null ? (
-                <p className="p-6 text-slate-500">Loading users…</p>
-              ) : users.length === 0 ? (
-                <p className="p-6 text-slate-500">No users found.</p>
-              ) : (
-                <table className="w-full text-sm">
-                  <thead className="bg-slate-800/50 text-slate-400 text-xs uppercase">
-                    <tr>
-                      <th className="text-left p-4">Name</th>
-                      <th className="text-left p-4">Email</th>
-                      <th className="text-left p-4">Company</th>
-                      <th className="text-left p-4">KYC</th>
-                      <th className="text-left p-4">Onboarded</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {users.map((u) => (
-                      <tr key={u.id} className="border-t border-slate-800">
-                        <td className="p-4 text-white font-semibold">{u.name || u.id}</td>
-                        <td className="p-4 text-slate-400">{u.email || '—'}</td>
-                        <td className="p-4 text-slate-400">{u.company_domain || '—'}</td>
-                        <td className="p-4">
-                          <span className={`px-2 py-1 rounded text-xs font-bold ${u.kyc_status === 'VERIFIED' ? 'bg-teal-500/10 text-teal-400' : 'bg-amber-500/10 text-amber-400'}`}>{u.kyc_status}</span>
-                        </td>
-                        <td className="p-4 text-slate-400">{u.onboarded ? '✓' : '—'}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
-            </div>
-          </div>
-        )}
-
         {/* PLACEHOLDER TABS (remaining) */}
         {(activeTab === 'moderation' || activeTab === 'compliance') && (
           <div className="flex flex-col items-center justify-center h-[70vh] border-2 border-dashed border-slate-800 rounded-3xl">

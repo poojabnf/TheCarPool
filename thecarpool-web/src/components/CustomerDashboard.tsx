@@ -34,7 +34,6 @@ export default function CustomerDashboard() {
   const [isFindingRides, setIsFindingRides] = useState(false);
 
   // Verification status — browsing is open; KYC is only required to book.
-  const [isVerified, setIsVerified] = useState(false);
 
   // Real wallet data (F04).
   const [wallet, setWallet] = useState<{ available: number; escrow: number; currency: string } | null>(null);
@@ -206,25 +205,9 @@ export default function CustomerDashboard() {
     // Browsing is open to any signed-in user — no forced onboarding/KYC gate.
     // We only read verification status so booking can require it (consistent
     // with the mobile app: browse freely, verify only to book).
-    (async () => {
-      try {
-        const res = await apiFetch("/api/users/me");
-        if (res.ok) {
-          const data = await res.json();
-          setIsVerified(data.kyc_status === "VERIFIED");
-        }
-      } catch {
-        /* leave unverified; booking will prompt verification */
-      }
-    })();
   }, [user, loading, router]);
 
-  // Booking gate — open to browse, verify to book.
   const handleBookRide = async (ride: any) => {
-    if (!isVerified) {
-      router.push("/onboarding");
-      return;
-    }
     try {
       const res = await apiFetch("/api/bookings", {
         method: "POST",
@@ -480,7 +463,7 @@ export default function CustomerDashboard() {
                               onClick={() => handleBookRide(r)}
                               className="bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-bold px-3 py-2 rounded-lg cursor-pointer"
                             >
-                              {isVerified ? "Book" : "🔒 Verify & Book"}
+                              Book
                             </button>
                           </div>
                         </div>

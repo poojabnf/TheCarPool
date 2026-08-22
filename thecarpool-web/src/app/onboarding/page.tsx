@@ -15,16 +15,15 @@ import {
   AlertCircle, 
   CreditCard
 } from "lucide-react";
-
-const TOTAL_STEPS = 5;
-const STEP_LABELS = ['Role', 'Profile', 'Aadhaar', 'PAN', 'Selfie'];
-const STEP_ICONS = ['🚗', '👤', '🪪', '💳', '🤳'];
+// Identity verification (Aadhaar/PAN/selfie) was removed from the product;
+// the backend endpoints it called no longer exist. Onboarding is now the two
+// steps that actually collect something we use.
+const TOTAL_STEPS = 2;
+const STEP_LABELS = ['Role', 'Profile'];
+const STEP_ICONS = ['🚗', '👤'];
 const STEP_DESCRIPTIONS = [
   'Choose how you want to use the app',
   'Tell us about yourself',
-  'Link your Aadhaar for identity verification',
-  'Verify PAN for payment compliance',
-  'Face liveness check for security',
 ];
 
 export default function OnboardingPage() {
@@ -39,20 +38,6 @@ export default function OnboardingPage() {
   const [employeeId, setEmployeeId] = useState("");
   const [workLocation, setWorkLocation] = useState("");
   
-  // Aadhaar State
-  const [aadhaar, setAadhaar] = useState("");
-  const [aadhaarStage, setAadhaarStage] = useState<'input' | 'otp' | 'done'>('input');
-  const [aadhaarOtp, setAadhaarOtp] = useState("");
-  const [aadhaarLoading, setAadhaarLoading] = useState(false);
-
-  // PAN State
-  const [pan, setPan] = useState("");
-  const [panLoading, setPanLoading] = useState(false);
-  const [panVerified, setPanVerified] = useState(false);
-  const [panFetchedName, setPanFetchedName] = useState("");
-
-  // Selfie State
-  const [selfieStage, setSelfieStage] = useState<'idle' | 'scanning' | 'done'>('idle');
 
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
@@ -103,11 +88,6 @@ export default function OnboardingPage() {
           body: JSON.stringify({ name, company, employeeId, workLocation, role }),
         });
         if (!res.ok) throw new Error(`Save failed (${res.status})`);
-
-        const kycRes = await apiFetch("/api/safety/kyc/complete", {
-          method: "POST"
-        });
-        if (!kycRes.ok) throw new Error(`KYC completion failed (${kycRes.status})`);
       } catch (err: any) {
         // Block navigation on failure — otherwise the `onboarded` flag never
         // gets set and the next visit bounces in an infinite redirect loop.
@@ -120,54 +100,7 @@ export default function OnboardingPage() {
     router.push("/customer");
   };
 
-  // OTP simulation for Aadhaar
-  const handleAadhaarSendOtp = () => {
-    if (aadhaar.replace(/\s/g, '').length !== 12) return;
-    setAadhaarLoading(true);
-    setTimeout(() => {
-      setAadhaarLoading(false);
-      setAadhaarStage('otp');
-    }, 1200);
-  };
 
-  const handleAadhaarVerifyOtp = async () => {
-    if (aadhaarOtp.length !== 6) return;
-    setAadhaarLoading(true);
-    try {
-      const res = await apiFetch("/api/safety/kyc/verify", {
-        method: "POST",
-        body: JSON.stringify({ aadhaar_number: aadhaar.replace(/\s/g, '') })
-      });
-      if (res.ok) {
-        setAadhaarStage('done');
-      } else {
-        alert("Aadhaar verification failed");
-      }
-    } catch (e) {
-      console.error(e);
-      alert("Aadhaar verification failed");
-    } finally {
-      setAadhaarLoading(false);
-    }
-  };
-
-  // PAN verification
-  const handlePanVerify = () => {
-    const formattedPan = pan.toUpperCase();
-    const isValid = /^[A-Z]{5}[0-9]{4}[A-Z]{1}$/.test(formattedPan);
-    if (!isValid) return;
-
-    setPanLoading(true);
-    setPanFetchedName(name.toUpperCase() || "POOJA YADAV");
-    setPanVerified(true);
-    setPanLoading(false);
-  };
-
-  // Selfie Liveness simulation
-  const handleTakeSelfie = () => {
-    setSelfieStage('scanning');
-    setSelfieStage('done');
-  };
 
   if (loading || !user) {
     return (
@@ -179,8 +112,6 @@ export default function OnboardingPage() {
   }
 
   const isProfileValid = name.trim().length > 1 && company.trim().length > 1;
-  const isAadhaarFormatted = aadhaar.replace(/(\d{4})(?=\d)/g, '$1 ').trim();
-  const isPanValidFormat = /^[A-Z]{5}[0-9]{4}[A-Z]{1}$/.test(pan.toUpperCase());
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-slate-200 font-sans py-12 px-4 sm:px-6 lg:px-8 flex flex-col justify-center items-center">
@@ -343,230 +274,21 @@ export default function OnboardingPage() {
               </div>
               
               <button
-                disabled={!isProfileValid}
+                disabled={!isProfileValid || saving}
                 onClick={handleNext}
                 className={`w-full py-4 mt-6 bg-slate-900 dark:bg-white text-white dark:text-slate-900 font-bold rounded-xl flex items-center justify-center gap-2 transition-all cursor-pointer ${
-                  !isProfileValid ? 'opacity-50 cursor-not-allowed' : 'hover:opacity-90'
+                  !isProfileValid || saving ? 'opacity-50 cursor-not-allowed' : 'hover:opacity-90'
                 }`}
               >
-                Continue <ArrowRight size={18} />
+                {saving ? 'Saving…' : <>Finish <ArrowRight size={18} /></>}
               </button>
-            </div>
-          )}
-
-          {/* STEP 3: AADHAAR */}
-          {currentStep === 2 && (
-            <div className="space-y-6 animate-in fade-in duration-200">
-              <div className="bg-blue-50 dark:bg-blue-900/10 p-4 rounded-xl border border-blue-100 dark:border-blue-800/20 flex gap-3">
-                <AlertCircle size={20} className="text-blue-500 shrink-0 mt-0.5" />
-                <p className="text-xs text-blue-700 dark:text-blue-400 leading-relaxed">
-                  We verify your identity directly via DigiLocker and UIDAI database integrations. Your Aadhaar credentials are processed in escrow and never stored on our servers.
-                </p>
-              </div>
-
-              {aadhaarStage === 'input' && (
-                <div className="space-y-4">
-                  <div>
-                    <label className="block text-xs font-bold text-slate-500 uppercase mb-2">12-Digit Aadhaar Number</label>
-                    <input 
-                      type="text" 
-                      placeholder="0000 0000 0000"
-                      value={isAadhaarFormatted}
-                      onChange={(e) => setAadhaar(e.target.value.replace(/\D/g, '').slice(0, 12))}
-                      className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-center outline-none focus:ring-2 focus:ring-emerald-500 font-extrabold text-xl tracking-wider"
-                    />
-                  </div>
-                  <button
-                    disabled={aadhaar.replace(/\s/g, '').length !== 12 || aadhaarLoading}
-                    onClick={handleAadhaarSendOtp}
-                    className="w-full py-4 mt-4 bg-slate-900 dark:bg-white text-white dark:text-slate-900 font-bold rounded-xl flex items-center justify-center gap-2 hover:opacity-90 transition-all disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
-                  >
-                    {aadhaarLoading ? (
-                      <div className="w-5 h-5 border-2 border-white dark:border-slate-900 border-t-transparent rounded-full animate-spin" />
-                    ) : (
-                      "Send OTP to Aadhaar Linked Mobile"
-                    )}
-                  </button>
-                </div>
-              )}
-
-              {aadhaarStage === 'otp' && (
-                <div className="space-y-4">
-                  <div className="text-center text-xs font-bold text-emerald-600 bg-emerald-50 dark:bg-emerald-950/20 py-2 rounded-lg">
-                    OTP sent to Aadhaar-linked phone ending in •••• {aadhaar.slice(-4)}
-                  </div>
-                  <div>
-                    <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Enter 6-Digit OTP</label>
-                    <input 
-                      type="text" 
-                      placeholder="• • • • • •"
-                      maxLength={6}
-                      value={aadhaarOtp}
-                      onChange={(e) => setAadhaarOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                      className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-center outline-none focus:ring-2 focus:ring-emerald-500 font-extrabold text-xl tracking-widest"
-                    />
-                  </div>
-                  <button
-                    disabled={aadhaarOtp.length !== 6 || aadhaarLoading}
-                    onClick={handleAadhaarVerifyOtp}
-                    className="w-full py-4 mt-4 bg-slate-900 dark:bg-white text-white dark:text-slate-900 font-bold rounded-xl flex items-center justify-center gap-2 hover:opacity-90 transition-all disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
-                  >
-                    {aadhaarLoading ? (
-                      <div className="w-5 h-5 border-2 border-white dark:border-slate-900 border-t-transparent rounded-full animate-spin" />
-                    ) : (
-                      "Verify OTP"
-                    )}
-                  </button>
-                </div>
-              )}
-
-              {aadhaarStage === 'done' && (
-                <div className="text-center py-6 space-y-4 animate-in zoom-in-95 duration-200">
-                  <div className="w-16 h-16 bg-emerald-100 dark:bg-emerald-900/40 text-emerald-600 dark:text-emerald-400 rounded-full flex items-center justify-center mx-auto text-3xl font-extrabold">
-                    ✓
-                  </div>
-                  <div>
-                    <h2 className="text-2xl font-black text-emerald-500">Aadhaar Verified!</h2>
-                    <p className="text-slate-500 dark:text-slate-400 text-sm mt-1">Identity matched with UIDAI Registry. Last 4 digits: •••• {aadhaar.slice(-4)}</p>
-                  </div>
-                  <button
-                    onClick={handleNext}
-                    className="w-full py-4 mt-6 bg-slate-900 dark:bg-white text-white dark:text-slate-900 font-bold rounded-xl flex items-center justify-center gap-2 hover:opacity-90 transition-all cursor-pointer"
-                  >
-                    Continue to PAN Verification <ArrowRight size={18} />
-                  </button>
-                </div>
-              )}
-
-            </div>
-          )}
-
-          {/* STEP 4: PAN */}
-          {currentStep === 3 && (
-            <div className="space-y-6 animate-in fade-in duration-200">
-              <div className="bg-blue-50 dark:bg-blue-900/10 p-4 rounded-xl border border-blue-100 dark:border-blue-800/20 flex gap-3">
-                <CreditCard size={20} className="text-blue-500 shrink-0 mt-0.5" />
-                <p className="text-xs text-blue-700 dark:text-blue-400 leading-relaxed">
-                  Indian tax compliance requires validation of your PAN Card. This ensures secure payment processing and compliance for payout disbursements.
-                </p>
-              </div>
-
-              {!panVerified ? (
-                <div className="space-y-4">
-                  <div>
-                    <label className="block text-xs font-bold text-slate-500 uppercase mb-2">PAN Card Number</label>
-                    <input 
-                      type="text" 
-                      placeholder="ABCDE1234F"
-                      maxLength={10}
-                      value={pan.toUpperCase()}
-                      onChange={(e) => setPan(e.target.value.toUpperCase().slice(0, 10))}
-                      className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-center outline-none focus:ring-2 focus:ring-emerald-500 font-extrabold text-xl tracking-wider placeholder-slate-300 dark:placeholder-slate-700"
-                    />
-                  </div>
-
-                  {pan.length === 10 && !isPanValidFormat && (
-                    <div className="text-xs font-bold text-amber-500 flex items-center gap-1">
-                      ⚠️ Invalid PAN format (Expected format: ABCDE1234F)
-                    </div>
-                  )}
-
-                  <button
-                    disabled={!isPanValidFormat || panLoading}
-                    onClick={handlePanVerify}
-                    className="w-full py-4 mt-4 bg-slate-900 dark:bg-white text-white dark:text-slate-900 font-bold rounded-xl flex items-center justify-center gap-2 hover:opacity-90 transition-all disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
-                  >
-                    {panLoading ? (
-                      <div className="w-5 h-5 border-2 border-white dark:border-slate-900 border-t-transparent rounded-full animate-spin" />
-                    ) : (
-                      "Verify PAN with Tax Database"
-                    )}
-                  </button>
-                </div>
-              ) : (
-                <div className="text-center py-6 space-y-4 animate-in zoom-in-95 duration-200">
-                  <div className="w-16 h-16 bg-emerald-100 dark:bg-emerald-900/40 text-emerald-600 dark:text-emerald-400 rounded-full flex items-center justify-center mx-auto text-3xl font-extrabold">
-                    ✓
-                  </div>
-                  <div>
-                    <h2 className="text-2xl font-black text-emerald-500">PAN Verified!</h2>
-                    <p className="text-slate-500 dark:text-slate-400 text-sm mt-1">Verified Name: <span className="font-extrabold text-slate-800 dark:text-white">{panFetchedName}</span></p>
-                    <p className="text-slate-400 text-xs mt-0.5">PAN Card: {pan.toUpperCase()}</p>
-                  </div>
-                  <button
-                    onClick={handleNext}
-                    className="w-full py-4 mt-6 bg-slate-900 dark:bg-white text-white dark:text-slate-900 font-bold rounded-xl flex items-center justify-center gap-2 hover:opacity-90 transition-all cursor-pointer"
-                  >
-                    Continue to Liveness Check <ArrowRight size={18} />
-                  </button>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* STEP 5: SELFIE */}
-          {currentStep === 4 && (
-            <div className="space-y-6 flex flex-col items-center animate-in fade-in duration-200">
-              
-              {/* Simulated Camera Scanner */}
-              <div className="relative w-64 h-64 bg-slate-100 dark:bg-slate-900 border-4 border-slate-200 dark:border-slate-800 rounded-full overflow-hidden flex flex-col justify-center items-center">
-                {selfieStage === 'idle' && (
-                  <div className="text-center p-4">
-                    <Camera size={48} className="text-slate-400 mx-auto animate-pulse" />
-                    <p className="text-xs text-slate-500 mt-2 font-semibold">Position your face inside the circle</p>
-                  </div>
-                )}
-
-                {selfieStage === 'scanning' && (
-                  <div className="w-full h-full flex flex-col justify-center items-center relative bg-slate-900">
-                    {/* Scanning animation bar */}
-                    <div className="absolute top-0 left-0 w-full h-1 bg-emerald-500 shadow-[0_0_8px_#10b981] animate-bounce" style={{ animationDuration: '3s' }} />
-                    <div className="w-40 h-40 border-2 border-dashed border-emerald-500 rounded-full animate-spin" style={{ animationDuration: '10s' }} />
-                    <p className="text-xs text-emerald-500 font-bold absolute mt-12 animate-pulse">Scanning Liveness...</p>
-                  </div>
-                )}
-
-                {selfieStage === 'done' && (
-                  <div className="text-center p-4">
-                    <div className="w-16 h-16 bg-emerald-100 dark:bg-emerald-900/40 text-emerald-600 dark:text-emerald-400 rounded-full flex items-center justify-center mx-auto text-3xl font-extrabold">
-                      ✓
-                    </div>
-                    <p className="text-xs text-emerald-500 font-extrabold mt-4 uppercase tracking-widest">Match Confirmed</p>
-                    <p className="text-[10px] text-slate-400 mt-0.5">Liveness: 98.4% Match</p>
-                  </div>
-                )}
-              </div>
-
-              <div className="bg-emerald-50/20 dark:bg-emerald-950/20 border border-emerald-100 dark:border-emerald-900/30 p-4 rounded-xl text-center w-full">
-                <p className="text-xs text-emerald-600 dark:text-emerald-400 leading-relaxed font-semibold">
-                  🛡️ This face matching test verifies that you match your Aadhaar registry profile. Once approved, your account will be activated instantly.
-                </p>
-              </div>
-
-              {selfieStage !== 'done' ? (
-                <button
-                  disabled={selfieStage === 'scanning'}
-                  onClick={handleTakeSelfie}
-                  className="w-full py-4 mt-4 bg-slate-900 dark:bg-white text-white dark:text-slate-900 font-bold rounded-xl flex items-center justify-center gap-2 hover:opacity-90 transition-all disabled:opacity-70 cursor-pointer"
-                >
-                  {selfieStage === 'scanning' ? "⏳ Scanning Liveness..." : "📸 Take Selfie & Verify"}
-                </button>
-              ) : (
-                <button
-                  onClick={handleNext}
-                  disabled={saving}
-                  className="w-full py-4 mt-4 bg-emerald-500 hover:bg-emerald-600 text-white font-bold rounded-xl flex items-center justify-center gap-2 transition-all shadow-lg shadow-emerald-500/20 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
-                >
-                  {saving ? "Saving…" : "🎉 Activate My Account"}
-                </button>
-              )}
 
               {saveError && (
                 <p className="mt-3 text-sm text-red-500 text-center">{saveError}</p>
               )}
-
             </div>
           )}
+
 
         </div>
 

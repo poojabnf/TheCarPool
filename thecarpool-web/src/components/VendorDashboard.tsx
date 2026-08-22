@@ -59,31 +59,6 @@ export default function VendorDashboard() {
   }
 
   // Real upload: pick a file → get a signed URL from the backend → PUT bytes.
-  const uploadDocument = (documentType: string, setter: React.Dispatch<React.SetStateAction<string>>) => {
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.accept = 'image/*';
-    input.onchange = async () => {
-      const file = input.files?.[0];
-      if (!file) return;
-      setter('UPLOADING');
-      try {
-        const res = await apiFetch('/api/safety/kyc/upload', {
-          method: 'POST',
-          body: JSON.stringify({ filename: file.name, content_type: file.type, document_type: documentType }),
-        });
-        if (!res.ok) throw new Error('signed url');
-        const { upload_url } = await res.json();
-        const put = await fetch(upload_url, { method: 'PUT', headers: { 'Content-Type': file.type }, body: file });
-        if (!put.ok) throw new Error('upload');
-        setter('VERIFIED');
-      } catch {
-        setter('PENDING');
-        alert('Upload failed. Please try again.');
-      }
-    };
-    input.click();
-  };
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-900 flex">
@@ -177,46 +152,6 @@ export default function VendorDashboard() {
                 </div>
               </div>
 
-              {/* Strict Document Uploads */}
-              <div className="glass-panel p-8 rounded-3xl space-y-6 flex flex-col">
-                <div className="flex items-center space-x-3 mb-2">
-                  <ShieldCheck className="text-emerald-500" size={28} />
-                  <h2 className="text-xl font-bold text-slate-800 dark:text-white">Mandatory Compliance</h2>
-                </div>
-                <p className="text-sm text-slate-500 dark:text-slate-400 mb-4">You must upload the following 3 documents before this vehicle can accept rides.</p>
-
-                <div className="space-y-4 flex-1">
-                  <div className="border border-slate-200 dark:border-slate-700 rounded-xl p-4 bg-white/30 dark:bg-slate-800/30 flex justify-between items-center">
-                    <div>
-                      <h3 className="font-bold text-slate-800 dark:text-white text-sm">Vehicle Registration (RC)</h3>
-                      <p className="text-xs text-slate-500">Official Govt. Registration</p>
-                    </div>
-                    {rcStatus === "PENDING" && <button onClick={() => uploadDocument('vehicle_rc', setRcStatus)} className="px-4 py-2 bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 text-xs font-bold rounded-lg hover:bg-emerald-100">Upload</button>}
-                    {rcStatus === "UPLOADING" && <span className="text-xs font-bold text-orange-500 animate-pulse">Uploading...</span>}
-                    {rcStatus === "VERIFIED" && <CheckCircle className="text-emerald-500" size={24} />}
-                  </div>
-
-                  <div className="border border-slate-200 dark:border-slate-700 rounded-xl p-4 bg-white/30 dark:bg-slate-800/30 flex justify-between items-center">
-                    <div>
-                      <h3 className="font-bold text-slate-800 dark:text-white text-sm">Commercial Insurance</h3>
-                      <p className="text-xs text-slate-500">Valid Comprehensive Policy</p>
-                    </div>
-                    {insStatus === "PENDING" && <button onClick={() => uploadDocument('insurance', setInsStatus)} className="px-4 py-2 bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 text-xs font-bold rounded-lg hover:bg-emerald-100">Upload</button>}
-                    {insStatus === "UPLOADING" && <span className="text-xs font-bold text-orange-500 animate-pulse">Uploading...</span>}
-                    {insStatus === "VERIFIED" && <CheckCircle className="text-emerald-500" size={24} />}
-                  </div>
-
-                  <div className="border border-slate-200 dark:border-slate-700 rounded-xl p-4 bg-white/30 dark:bg-slate-800/30 flex justify-between items-center">
-                    <div>
-                      <h3 className="font-bold text-slate-800 dark:text-white text-sm">State/Country Permit</h3>
-                      <p className="text-xs text-slate-500">Authorization to operate</p>
-                    </div>
-                    {permitStatus === "PENDING" && <button onClick={() => uploadDocument('permit', setPermitStatus)} className="px-4 py-2 bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 text-xs font-bold rounded-lg hover:bg-emerald-100">Upload</button>}
-                    {permitStatus === "UPLOADING" && <span className="text-xs font-bold text-orange-500 animate-pulse">Uploading...</span>}
-                    {permitStatus === "VERIFIED" && <CheckCircle className="text-emerald-500" size={24} />}
-                  </div>
-                </div>
-              </div>
             </div>
           </div>
         )}
