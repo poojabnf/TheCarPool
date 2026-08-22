@@ -430,8 +430,12 @@ export async function rideRoutes(fastify: FastifyInstance) {
       pickup_lng, pickup_lat, drop_lng, drop_lat, max_detour_meters = 1500,
       gender_preference, company_domain, society_name, ev_only = false,
       vehicle_type = 'ANY', music_allowed, smoking_allowed, chattiness = 'ANY', ac_available,
-      women_only = false, ride_type = 'ANY', event_tag
-    } = body;
+      women_only = false, ride_type = 'ANY', event_tag,
+      // Departure window. Riders search for a commute at a time — without
+      // this, a ride leaving in 20 minutes and one leaving in three weeks
+      // came back intermixed, ordered only by driver detour.
+      departure_from, departure_to,
+    } = body as SearchRideBody & { departure_from?: string; departure_to?: string };
 
     // Searcher's gender gates women-only rides both ways: the women-safety
     // toggle requires it, and women-only rides are hidden from other users.
@@ -465,9 +469,16 @@ export async function rideRoutes(fastify: FastifyInstance) {
       // Fetch scheduled rides that haven't departed yet, ordered by departure
       // and capped so a huge collection can't be pulled fully into memory.
       const now = new Date().toISOString();
-      const snap = await db.collection('rides')
+      // Never return departed rides: honour departure_from only when it is in
+      // the future, so a stale or hand-crafted value can't surface past rides.
+      const lowerBound = departure_from && departure_from > now ? departure_from : now;
+      let ridesQuery = db.collection('rides')
         .where('status', '==', 'SCHEDULED')
-        .where('departure_time', '>', now)
+        .where('departure_time', '>', lowerBound);
+      if (departure_to) {
+        ridesQuery = ridesQuery.where('departure_time', '<', departure_to);
+      }
+      const snap = await ridesQuery
         .orderBy('departure_time', 'asc')
         .limit(MAX_RIDE_SCAN)
         .get();

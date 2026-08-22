@@ -176,7 +176,24 @@ export default function DriverInterface() {
       const res = await apiFetch('/api/rides/mine');
       if (!res.ok) { setMyRides([]); return; }
       const all = await res.json();
-      const active = (Array.isArray(all) ? all : [])
+      const list = Array.isArray(all) ? all : [];
+
+      // Reuse the vehicle from the driver's most recent ride. People drive the
+      // same car every day, but the form made them retype make, model, colour
+      // and number plate for every single offer. Only fills blanks, so it can
+      // never overwrite something already being typed, and stays editable.
+      const last = list.find((r: any) => r.vehicle_make || r.vehicle_plate);
+      if (last) {
+        setVehicleMake((v) => v || last.vehicle_make || '');
+        setVehicleModel((v) => v || last.vehicle_model || '');
+        setVehicleColour((v) => v || last.vehicle_colour || '');
+        setVehiclePlate((v) => v || last.vehicle_plate || '');
+        if (last.vehicle_type === 'CAR' || last.vehicle_type === 'BIKE') {
+          setVehicleType(last.vehicle_type);
+        }
+      }
+
+      const active = list
         .filter((r: any) => r.status === 'SCHEDULED' || r.status === 'STARTED')
         .slice(0, 5);
       setMyRides(active);

@@ -52,6 +52,44 @@ function vehicleLabel(ride: Ride): string {
 
 type Coords = { lat: number; lng: number };
 
+type WhenKey = 'ANY' | 'NOW' | 'TODAY' | 'TOMORROW';
+
+const WHEN_OPTIONS: { key: WhenKey; label: string }[] = [
+  { key: 'ANY', label: 'Anytime' },
+  { key: 'NOW', label: 'Next 2h' },
+  { key: 'TODAY', label: 'Today' },
+  { key: 'TOMORROW', label: 'Tomorrow' },
+];
+
+/**
+ * Translate a "when" chip into the ISO window the search API filters on.
+ * ANY sends nothing, so the backend keeps its "everything upcoming" default.
+ */
+function departureWindow(key: WhenKey): { departure_from?: string; departure_to?: string } {
+  const now = new Date();
+  switch (key) {
+    case 'NOW': {
+      const to = new Date(now.getTime() + 2 * 60 * 60 * 1000);
+      return { departure_to: to.toISOString() };
+    }
+    case 'TODAY': {
+      const end = new Date(now);
+      end.setHours(23, 59, 59, 999);
+      return { departure_to: end.toISOString() };
+    }
+    case 'TOMORROW': {
+      const start = new Date(now);
+      start.setDate(start.getDate() + 1);
+      start.setHours(0, 0, 0, 0);
+      const end = new Date(start);
+      end.setHours(23, 59, 59, 999);
+      return { departure_from: start.toISOString(), departure_to: end.toISOString() };
+    }
+    default:
+      return {};
+  }
+}
+
 function greetingKey(): 'good_morning' | 'good_afternoon' | 'good_evening' {
   const h = new Date().getHours();
   if (h < 12) return 'good_morning';
@@ -98,6 +136,7 @@ export default function HomeScreen() {
   const [destSug, setDestSug] = useState<any[]>([]);
   const [seats, setSeats] = useState(1);
   const [womenOnly, setWomenOnly] = useState(false);
+  const [when, setWhen] = useState<WhenKey>('ANY');
   const [rides, setRides] = useState<Ride[] | null>(null);
   const [searching, setSearching] = useState(false);
   const [showingCached, setShowingCached] = useState(false);
@@ -141,6 +180,7 @@ export default function HomeScreen() {
           pickup_lng: originCoords.lng, pickup_lat: originCoords.lat,
           drop_lng: destCoords.lng, drop_lat: destCoords.lat,
           max_detour_meters: 1500,
+          ...departureWindow(when),
           // Women-safety mode: backend returns women-only rides + women drivers,
           // and enforces that the searcher is female.
           women_only: womenOnly,
@@ -252,6 +292,24 @@ export default function HomeScreen() {
         <Suggestions items={destSug} onPick={(s) => {
           setDestination(s.place_name); setDestCoords({ lat: s.latitude ?? s.lat ?? 0, lng: s.longitude ?? s.lng ?? 0 }); setDestSug([]);
         }} />
+
+        {/* When. Previously absent entirely: results spanned every future ride,
+            so a commute leaving in 20 minutes sat alongside one three weeks
+            out. Anytime stays the default so existing behaviour is intact. */}
+        <View style={styles.whenPicker}>
+          {WHEN_OPTIONS.map((opt) => (
+            <HapticPressable
+              key={opt.key}
+              style={[styles.whenChip, when === opt.key && styles.whenChipOn]}
+              onPress={() => setWhen(opt.key)}
+              activeOpacity={0.85}
+            >
+              <Text style={[styles.whenChipText, when === opt.key && styles.whenChipTextOn]}>
+                {opt.label}
+              </Text>
+            </HapticPressable>
+          ))}
+        </View>
 
         {/* Seats + Women only */}
         <View style={styles.optRow}>
@@ -421,6 +479,11 @@ const styles = StyleSheet.create({
   vehicle: { fontFamily: font.sans, fontSize: 12.5, color: c.textTertiary, marginTop: 1 },
   fare: { fontFamily: font.monoBold, fontSize: 19, color: c.textPrimary, letterSpacing: -0.4 },
   perSeat: { fontFamily: font.sans, fontSize: 11, color: c.textTertiary },
+  whenPicker: { flexDirection: 'row', gap: 6, marginTop: space.md },
+  whenChip: { flex: 1, paddingVertical: 8, borderRadius: radius.sm, borderWidth: 1, borderColor: c.borderDefault, alignItems: 'center' },
+  whenChipOn: { backgroundColor: c.go, borderColor: c.go },
+  whenChipText: { fontFamily: font.sansMedium, fontSize: 12.5, color: c.textSecondary },
+  whenChipTextOn: { color: '#fff', fontFamily: font.sansSemibold },
   whenRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: space.md },
   whenText: { fontFamily: font.sansSemibold, fontSize: 13, color: c.textSecondary },
   whenSoon: { color: c.go },
