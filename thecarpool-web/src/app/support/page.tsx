@@ -69,11 +69,11 @@ export default function SupportPage() {
         <div className="space-y-3">
           <Faq
             q="How is the fare split calculated?"
-            a="The trip's fuel cost is shared fairly among co-passengers per seat, with a clear breakdown (seat fare, platform fee, and GST) shown before you confirm. Group discounts apply automatically when you book multiple seats."
+            a="The driver sets a price per seat and you see the full breakdown — seat fare and any optional insurance — before you confirm. There is no platform fee: the driver receives the fare in full."
           />
           <Faq
-            q="Why do I need to verify my identity (KYC)?"
-            a="Verification keeps the community safe — every rider and driver confirms identity (Aadhaar, PAN, and a selfie) before booking their first ride. Your documents are encrypted and used only for verification."
+            q="How do I know who I'm riding with?"
+            a="Every trip is rated by both the rider and the driver. Those ratings earn trust badges — Bronze, Silver and Gold — shown on each driver, and higher-rated drivers appear first in your search results."
           />
           <Faq
             q="How does the SOS button work?"
