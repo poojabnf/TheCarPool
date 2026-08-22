@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, Alert, ActivityIndicator, ScrollView } from 're
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import auth from '@react-native-firebase/auth';
-import { Lock, ChevronLeft, Circle, MapPin, Footprints } from 'lucide-react-native';
+import { Lock, ChevronLeft, Circle, MapPin, Footprints, Clock } from 'lucide-react-native';
 import RazorpayCheckout from 'react-native-razorpay';
 import { apiFetch } from './services/api';
 import * as haptics from './services/haptics';
@@ -11,6 +11,7 @@ import { useAuthStore } from './store/authStore';
 import { c, font, radius, space, shadowSm } from '../theme/tokens';
 import HapticPressable from './components/HapticPressable';
 import { formatMoney } from './services/currency';
+import { formatDeparture } from './services/datetime';
 
 function initials(name?: string) {
   if (!name) return 'D';
@@ -234,6 +235,15 @@ export default function ConfirmPay() {
               <Text style={styles.routeText} numberOfLines={1}>{p.destination || 'Destination'}</Text>
             </View>
           </View>
+          {/* Departure was missing from this screen entirely — riders were
+              committing money without ever being shown when the ride leaves. */}
+          {p.departure_time ? (
+            <View style={styles.departRow}>
+              <Clock color={c.textSecondary} size={14} strokeWidth={2.4} />
+              <Text style={styles.departLabel}>Departs</Text>
+              <Text style={styles.departValue}>{formatDeparture(p.departure_time)}</Text>
+            </View>
+          ) : null}
         </View>
 
         {/* Pickup options — the driver's declared stops plus route suggestions */}
@@ -359,6 +369,9 @@ const styles = StyleSheet.create({
   routeLine: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   routeConnector: { width: 1, height: 16, backgroundColor: c.borderStrong, marginLeft: 5, marginVertical: 2 },
   routeText: { flex: 1, fontFamily: font.sansMedium, fontSize: 14, color: c.textPrimary },
+  departRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: space.md, paddingTop: space.md, borderTopWidth: 1, borderTopColor: c.borderSubtle },
+  departLabel: { fontFamily: font.sans, fontSize: 13, color: c.textSecondary },
+  departValue: { marginLeft: 'auto', fontFamily: font.sansSemibold, fontSize: 14, color: c.textPrimary },
 
   mpTitle: { fontFamily: font.sansBold, fontSize: 14.5, color: c.textPrimary },
   mpSub: { fontFamily: font.sans, fontSize: 12, color: c.textTertiary, marginBottom: space.sm },

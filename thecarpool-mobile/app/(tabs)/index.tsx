@@ -5,7 +5,7 @@ import {
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import auth from '@react-native-firebase/auth';
-import { MapPin, Circle, Search, Wind, Venus, Users, Leaf } from 'lucide-react-native';
+import { MapPin, Circle, Search, Wind, Venus, Users, Leaf, Clock } from 'lucide-react-native';
 import { apiFetch } from '../services/api';
 import { useAuthStore } from '../store/authStore';
 import { useI18n } from '../services/i18n';
@@ -13,6 +13,7 @@ import * as haptics from '../services/haptics';
 import { c, font, radius, space, shadowSm, brass } from '../../theme/tokens';
 import HapticPressable from '../components/HapticPressable';
 import { formatMoney } from '../services/currency';
+import { formatDeparture, isDepartingSoon } from '../services/datetime';
 import VehicleIcon from '../components/VehicleIcon';
 
 // Offline-cached search (roadmap Phase 1, session-scoped): module-level so it
@@ -176,6 +177,20 @@ export default function HomeScreen() {
       Alert.alert('Select locations', 'Pick a pickup and destination from the suggestions.');
       return;
     }
+    // The seat stepper is set before results exist, so it can ask for more
+    // seats than a given ride has. Catch it here rather than letting the
+    // rider reach checkout and have the booking rejected server-side.
+    if (ride.seats_available != null && seats > ride.seats_available) {
+      Alert.alert(
+        'Not enough seats',
+        `This ride has ${ride.seats_available} seat${ride.seats_available === 1 ? '' : 's'} left, but you asked for ${seats}.`,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: `Book ${ride.seats_available}`, onPress: () => { setSeats(ride.seats_available); } },
+        ]
+      );
+      return;
+    }
     router.push({
       pathname: '/confirm',
       params: {
@@ -185,6 +200,7 @@ export default function HomeScreen() {
         vehicle_plate: ride.vehicle_plate || '',
         price_split: String(ride.price_split),
         seats: String(seats),
+        departure_time: ride.departure_time || '',
         pickup_lat: String(originCoords.lat), pickup_lng: String(originCoords.lng),
         drop_lat: String(destCoords.lat), drop_lng: String(destCoords.lng),
         origin, destination,
@@ -294,6 +310,25 @@ export default function HomeScreen() {
                   <Text style={styles.perSeat}>per seat</Text>
                 </View>
               </View>
+              {/* When it leaves and how many seats are left were both returned
+                  by the API but never shown — riders were choosing between
+                  rides, and paying, without either fact. */}
+              <View style={styles.whenRow}>
+                <Clock
+                  color={isDepartingSoon(ride.departure_time) ? c.go : c.textSecondary}
+                  size={13}
+                  strokeWidth={2.4}
+                />
+                <Text style={[styles.whenText, isDepartingSoon(ride.departure_time) && styles.whenSoon]}>
+                  {formatDeparture(ride.departure_time)}
+                </Text>
+                {ride.seats_available != null && (
+                  <Text style={[styles.seatsLeft, ride.seats_available <= 1 && styles.seatsLow]}>
+                    · {ride.seats_available} seat{ride.seats_available === 1 ? '' : 's'} left
+                  </Text>
+                )}
+              </View>
+
               <View style={styles.badgeRow}>
                 {['GOLD', 'SILVER', 'BRONZE'].includes((ride as any).driver_trust_level) && (
                   <View style={styles.badge}>
@@ -386,6 +421,11 @@ const styles = StyleSheet.create({
   vehicle: { fontFamily: font.sans, fontSize: 12.5, color: c.textTertiary, marginTop: 1 },
   fare: { fontFamily: font.monoBold, fontSize: 19, color: c.textPrimary, letterSpacing: -0.4 },
   perSeat: { fontFamily: font.sans, fontSize: 11, color: c.textTertiary },
+  whenRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: space.md },
+  whenText: { fontFamily: font.sansSemibold, fontSize: 13, color: c.textSecondary },
+  whenSoon: { color: c.go },
+  seatsLeft: { fontFamily: font.sans, fontSize: 12.5, color: c.textTertiary },
+  seatsLow: { color: c.danger, fontFamily: font.sansSemibold },
   badgeRow: { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginTop: space.md },
   badge: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: c.surfaceSunken, borderRadius: radius.pill, paddingHorizontal: 8, paddingVertical: 4 },
   badgeText: { fontFamily: font.sansSemibold, fontSize: 11, color: c.textSecondary },
