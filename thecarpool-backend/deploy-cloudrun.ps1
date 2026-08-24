@@ -23,6 +23,13 @@ gcloud iam service-accounts add-iam-policy-binding $RUNTIME_SA --member="service
 # 2) Deploy from source (builds the Dockerfile via Cloud Build).
 #    --session-affinity keeps Socket.IO connections sticky.
 #
+#    --min-instances 0, NOT 1: a warm idle instance bills around the clock
+#    whether or not anyone is using the app. This was 1, and every deploy
+#    silently reinstated it — a standing charge on a project that is meant to
+#    sit inside the free tier. The cost is a cold start (~2-5s) on the first
+#    request after idle; raise this only if that latency becomes a real
+#    problem, and expect the bill to follow.
+#
 #    --update-env-vars, NOT --set-env-vars: `--set-env-vars` REPLACES the
 #    service's entire plain env-var list, so every variable not repeated on
 #    this line is silently dropped by the deploy. That is exactly how
@@ -38,7 +45,7 @@ gcloud run deploy $SERVICE `
   --session-affinity `
   --timeout 3600 `
   --cpu 1 --memory 512Mi `
-  --min-instances 1 --max-instances 5 `
+  --min-instances 0 --max-instances 5 `
   --update-env-vars "NODE_ENV=production,GOOGLE_MAPS_API_KEY=AIzaSyBTkNesFuUVR-8u9FNOh4RmsuZn28DT5cM"
 
 # 3) After it prints the Service URL (https://thecarpool-backend-xxxx.a.run.app):
