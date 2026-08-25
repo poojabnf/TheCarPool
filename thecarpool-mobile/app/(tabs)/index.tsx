@@ -13,7 +13,7 @@ import * as haptics from '../services/haptics';
 import { c, font, radius, space, shadowSm, brass } from '../../theme/tokens';
 import HapticPressable from '../components/HapticPressable';
 import { formatMoney } from '../services/currency';
-import { searchPlaces, MIN_QUERY_LENGTH } from '../services/geo';
+import { searchPlaces, MIN_QUERY_LENGTH, warmUp } from '../services/geo';
 import { formatDeparture, isDepartingSoon } from '../services/datetime';
 import VehicleIcon from '../components/VehicleIcon';
 
@@ -149,6 +149,8 @@ export default function HomeScreen() {
   const destTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
+    // Wake the backend now rather than on the first keystroke — see warmUp().
+    warmUp();
     return () => {
       if (originTimeoutRef.current) clearTimeout(originTimeoutRef.current);
       if (destTimeoutRef.current) clearTimeout(destTimeoutRef.current);

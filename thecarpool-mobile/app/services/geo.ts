@@ -31,12 +31,35 @@ export type GeoOutcome =
 /** Below this we don't search: the backend ignores it and it wastes a round trip. */
 export const MIN_QUERY_LENGTH = 3;
 
+/**
+ * Nudge the backend awake.
+ *
+ * Cloud Run runs at min-instances=0, so after an idle spell the first request
+ * pays a ~4-10s cold start. Typing a place name was that first request, and it
+ * frequently timed out — the user saw "Could not load places" on a perfectly
+ * good connection. Calling this when a screen with a location field opens gives
+ * the container a head start while they're still typing.
+ *
+ * Deliberately fire-and-forget: nothing waits on it and a failure is silent,
+ * since it is only ever an optimisation.
+ */
+export function warmUp(): void {
+  apiFetch('/health', {}, { timeoutMs: 20000, retries: 0 }).catch(() => {});
+}
+
 export async function searchPlaces(query: string): Promise<GeoOutcome> {
   const q = query.trim();
   if (q.length < MIN_QUERY_LENGTH) return { status: 'idle' };
 
   try {
-    const res = await apiFetch(`/api/geo/search?query=${encodeURIComponent(q)}`);
+    // 25s, above apiFetch's 15s default: if warmUp() hasn't finished, this
+    // request wears the cold start itself, and giving up at 15s turned a slow
+    // container into a bogus "check your connection".
+    const res = await apiFetch(
+      `/api/geo/search?query=${encodeURIComponent(q)}`,
+      {},
+      { timeoutMs: 25000 }
+    );
     if (!res.ok) {
       // 401 here means the request went out before Firebase restored the
       // session. apiFetch now waits for auth, so this should be rare — but

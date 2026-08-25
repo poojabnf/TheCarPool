@@ -62,13 +62,22 @@ fastify.addContentTypeParser('application/json', { parseAs: 'buffer' }, (req, bo
 // Setup Firestore database and storage client and re-export for routes
 export { db, storage } from './lib/firestore';
 
-// Run self-healing Firestore database seeding check in background on boot
-import { seedFirestoreIfEmpty } from './services/firestoreSeed';
-seedFirestoreIfEmpty().then(() => {
-  fastify.log.info('Firestore database collections verified and seeded successfully.');
-}).catch((err) => {
-  fastify.log.error('Firestore database auto-seeding failed:', err);
-});
+// Seed demo data when the database is empty — development convenience only.
+//
+// This used to run on every boot, including production. With min-instances=0
+// the service cold-starts constantly, so that meant a Firestore read per cold
+// start, purely to re-learn that the database is not empty: billable, and it
+// competes for CPU during the startup window that users are waiting on.
+//
+// A populated production database can never need seeding, so it is off unless
+// SEED_FIRESTORE=true.
+if (process.env.SEED_FIRESTORE === 'true') {
+  import('./services/firestoreSeed').then(({ seedFirestoreIfEmpty }) =>
+    seedFirestoreIfEmpty()
+      .then(() => fastify.log.info('Firestore database collections verified and seeded successfully.'))
+      .catch((err) => fastify.log.error('Firestore database auto-seeding failed:', err))
+  );
+}
 
 // Attach Socket.IO to Fastify's underlying HTTP server so both the REST API
 // (handled by Fastify) and websockets share one port.
