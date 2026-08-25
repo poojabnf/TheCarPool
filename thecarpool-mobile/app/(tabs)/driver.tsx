@@ -7,6 +7,7 @@ import { apiFetch } from '../services/api';
 import * as haptics from '../services/haptics';
 import HapticPressable from '../components/HapticPressable';
 import { formatMoney } from '../services/currency';
+import { searchPlaces, MIN_QUERY_LENGTH } from '../services/geo';
 import auth from '@react-native-firebase/auth';
 import io from 'socket.io-client';
 import { API_URL } from '../services/api';
@@ -111,6 +112,9 @@ export default function DriverInterface() {
   const [pickupSug, setPickupSug] = useState<any[]>([]);
   const pickupTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [destSug, setDestSug] = useState<any[]>([]);
+  // Why the last place lookup returned nothing, so a blank dropdown isn't the
+  // only feedback the driver gets.
+  const [geoError, setGeoError] = useState('');
   const [seatsTotal, setSeatsTotal] = useState(3);
   // Departure: a day plus an hour/minute, combined on submit.
   const [depDay, setDepDay] = useState<Date>(() => { const d = new Date(); d.setHours(0,0,0,0); return d; });
@@ -506,16 +510,18 @@ export default function DriverInterface() {
 
   const searchGeo = async (q: string, setSuggestions: (s: any[]) => void, timeoutRef: React.MutableRefObject<any>) => {
     if (timeoutRef.current) clearTimeout(timeoutRef.current);
-    if (q.trim().length < 3) { setSuggestions([]); return; }
+    if (q.trim().length < MIN_QUERY_LENGTH) { setSuggestions([]); setGeoError(''); return; }
 
     timeoutRef.current = setTimeout(async () => {
-      try {
-        const res = await apiFetch(`/api/geo/search?query=${encodeURIComponent(q)}`);
-        if (!res.ok) { setSuggestions([]); return; }
-        const data = await res.json();
-        setSuggestions(data.results || data.suggestions || (Array.isArray(data) ? data : []));
-      } catch {
+      const outcome = await searchPlaces(q);
+      if (outcome.status === 'ok') {
+        setSuggestions(outcome.places);
+        // A genuine no-match is worth saying too — an empty dropdown reads as
+        // a broken field otherwise.
+        setGeoError(outcome.places.length === 0 ? 'No places found for that search.' : '');
+      } else if (outcome.status === 'error') {
         setSuggestions([]);
+        setGeoError(outcome.message);
       }
     }, 300);
   };
@@ -785,6 +791,9 @@ export default function DriverInterface() {
                   ))}
                 </View>
               )}
+              {!!geoError && source.trim().length >= MIN_QUERY_LENGTH && sourceSug.length === 0 && (
+                <Text style={styles.formHint}>{geoError}</Text>
+              )}
             </View>
 
             {/* Extra pickup points — riders aren't always at the origin */}
@@ -863,6 +872,9 @@ export default function DriverInterface() {
                     </HapticPressable>
                   ))}
                 </View>
+              )}
+              {!!geoError && destination.trim().length >= MIN_QUERY_LENGTH && destSug.length === 0 && (
+                <Text style={styles.formHint}>{geoError}</Text>
               )}
             </View>
 

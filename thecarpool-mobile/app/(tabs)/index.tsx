@@ -13,6 +13,7 @@ import * as haptics from '../services/haptics';
 import { c, font, radius, space, shadowSm, brass } from '../../theme/tokens';
 import HapticPressable from '../components/HapticPressable';
 import { formatMoney } from '../services/currency';
+import { searchPlaces, MIN_QUERY_LENGTH } from '../services/geo';
 import { formatDeparture, isDepartingSoon } from '../services/datetime';
 import VehicleIcon from '../components/VehicleIcon';
 
@@ -139,6 +140,8 @@ export default function HomeScreen() {
   const [when, setWhen] = useState<WhenKey>('ANY');
   const [rides, setRides] = useState<Ride[] | null>(null);
   const [searching, setSearching] = useState(false);
+  // Surfaced under the inputs so a failed lookup isn't just an empty dropdown.
+  const [geoError, setGeoError] = useState('');
   const [showingCached, setShowingCached] = useState(false);
   const { t } = useI18n();
 
@@ -154,15 +157,17 @@ export default function HomeScreen() {
 
   const searchGeo = async (q: string, set: (s: any[]) => void, timeoutRef: React.MutableRefObject<any>) => {
     if (timeoutRef.current) clearTimeout(timeoutRef.current);
-    if (q.trim().length < 3) { set([]); return; }
+    if (q.trim().length < MIN_QUERY_LENGTH) { set([]); setGeoError(''); return; }
 
     timeoutRef.current = setTimeout(async () => {
-      try {
-        const res = await apiFetch(`/api/geo/search?query=${encodeURIComponent(q)}`);
-        if (!res.ok) { set([]); return; }
-        const data = await res.json();
-        set(data.results || data.suggestions || (Array.isArray(data) ? data : []));
-      } catch { set([]); }
+      const outcome = await searchPlaces(q);
+      if (outcome.status === 'ok') {
+        set(outcome.places);
+        setGeoError(outcome.places.length === 0 ? 'No places found for that search.' : '');
+      } else if (outcome.status === 'error') {
+        set([]);
+        setGeoError(outcome.message);
+      }
     }, 300);
   };
 
@@ -292,6 +297,12 @@ export default function HomeScreen() {
         <Suggestions items={destSug} onPick={(s) => {
           setDestination(s.place_name); setDestCoords({ lat: s.latitude ?? s.lat ?? 0, lng: s.longitude ?? s.lng ?? 0 }); setDestSug([]);
         }} />
+
+        {/* Why the dropdown is empty — a blank list otherwise reads as a broken
+            field, which is exactly how the auth-race 401 presented. */}
+        {!!geoError && originSug.length === 0 && destSug.length === 0 && (
+          <Text style={styles.geoError}>{geoError}</Text>
+        )}
 
         {/* When. Previously absent entirely: results spanned every future ride,
             so a commute leaving in 20 minutes sat alongside one three weeks
@@ -454,6 +465,7 @@ const styles = StyleSheet.create({
   suggBox: { backgroundColor: c.surfaceSunken, borderRadius: radius.sm, borderWidth: 1, borderColor: c.borderSubtle, marginTop: 4 },
   suggItem: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 9, paddingHorizontal: 10, borderBottomWidth: 1, borderBottomColor: c.borderSubtle },
   suggText: { flex: 1, fontFamily: font.sans, fontSize: 13, color: c.textSecondary },
+  geoError: { fontFamily: font.sans, fontSize: 12, color: c.textTertiary, marginTop: 6, marginBottom: 2 },
 
   optRow: { flexDirection: 'row', alignItems: 'center', gap: space.sm, marginTop: space.md },
   seatBox: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: c.surfaceSunken, borderRadius: radius.sm, paddingHorizontal: 12, height: 38, borderWidth: 1, borderColor: c.borderSubtle },
