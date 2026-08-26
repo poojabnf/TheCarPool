@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { StyleSheet, View, Text, ScrollView, Switch, Alert, Linking, ActivityIndicator, Image } from 'react-native';
+import { StyleSheet, View, Text, ScrollView, Switch, Alert, Linking, ActivityIndicator, Image, TextInput } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   CreditCard, Settings, HelpCircle, ChevronRight, LogOut, Newspaper, ShieldCheck, Leaf, Receipt, Camera,
-  Landmark,
+  Landmark, Car,
 } from 'lucide-react-native';
 import { auth } from '../services/firebase';
 import { apiFetch } from '../services/api';
@@ -41,12 +41,19 @@ export default function AccountInterface() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { userProfile, setUserProfile } = useAuthStore();
-  const [view, setView] = useState<'menu' | 'settings' | 'help' | 'history'>('menu');
+  const [view, setView] = useState<'menu' | 'settings' | 'help' | 'history' | 'offered' | 'profile'>('menu');
   const [notifications, setNotifications] = useState(true);
   const [openFaq, setOpenFaq] = useState<number | null>(null);
   const [history, setHistory] = useState<any[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [payoutDestination, setPayoutDestination] = useState<string | null>(null);
+  const [offered, setOffered] = useState<any[]>([]);
+  const [offeredLoading, setOfferedLoading] = useState(false);
+  // Name is stored as one `name` field server-side; split for editing only.
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
+  const [addressInput, setAddressInput] = useState('');
+  const [savingProfile, setSavingProfile] = useState(false);
   const { t, lang, setLang } = useI18n();
 
   // Commute streaks (roadmap Phase 2 — community wedge).
@@ -90,6 +97,58 @@ export default function AccountInterface() {
       .catch(() => {})
       .finally(() => setHistoryLoading(false));
   }, [view]);
+
+  useEffect(() => {
+    if (view !== 'offered') return;
+    setOfferedLoading(true);
+    apiFetch('/api/rides/mine')
+      .then((r) => (r.ok ? r.json() : { rides: [] }))
+      .then((d) => setOffered(Array.isArray(d) ? d : (d.rides || [])))
+      .catch(() => {})
+      .finally(() => setOfferedLoading(false));
+  }, [view]);
+
+  // Seed the edit fields from the stored profile each time the form opens, so
+  // reopening after a cancel shows what is actually saved rather than the
+  // abandoned edit.
+  useEffect(() => {
+    if (view !== 'profile') return;
+    const parts = (userProfile?.name || '').trim().split(/\s+/).filter(Boolean);
+    setFirstName(parts[0] || '');
+    setLastName(parts.slice(1).join(' '));
+    setAddressInput(userProfile?.address || '');
+  }, [view, userProfile?.name, userProfile?.address]);
+
+  const saveProfile = async () => {
+    const first = firstName.trim();
+    const last = lastName.trim();
+    if (!first) {
+      Alert.alert('Add your first name', 'Co-travellers see this when you book or offer a ride.');
+      return;
+    }
+    setSavingProfile(true);
+    const fullName = [first, last].filter(Boolean).join(' ');
+    const address = addressInput.trim();
+    try {
+      const res = await apiFetch('/api/users/profile', {
+        method: 'POST',
+        // Address is optional: send an empty string to clear it rather than
+        // omitting the key, which the backend would read as "leave unchanged".
+        body: JSON.stringify({ name: fullName, address }),
+      }, { timeoutMs: 25000 });
+      if (!res.ok) {
+        const e = await res.json().catch(() => ({} as any));
+        Alert.alert('Could not save', e.error || 'Please try again.');
+        return;
+      }
+      setUserProfile({ name: fullName, address });
+      setView('menu');
+    } catch {
+      Alert.alert('Could not save', 'Check your connection and try again.');
+    } finally {
+      setSavingProfile(false);
+    }
+  };
 
   const user = auth().currentUser;
   const name = userProfile?.name || user?.displayName || 'TheCarPool User';
@@ -188,7 +247,13 @@ export default function AccountInterface() {
       <View style={[styles.screen, { paddingTop: insets.top + space.sm }]}>
         <View style={styles.subHeader}>
           <HapticPressable onPress={() => setView('menu')}><Text style={styles.back}>← Back</Text></HapticPressable>
-          <Text style={styles.subTitle}>{view === 'help' ? 'Help & Support' : view === 'history' ? 'Booking history' : 'Settings'}</Text>
+          <Text style={styles.subTitle}>{
+            view === 'help' ? 'Help & Support'
+              : view === 'history' ? 'Booking history'
+              : view === 'offered' ? 'Rides you offered'
+              : view === 'profile' ? 'Edit profile'
+              : 'Settings'
+          }</Text>
           <View style={{ width: 50 }} />
         </View>
         <ScrollView contentContainerStyle={{ padding: space.xl }}>
@@ -278,6 +343,86 @@ export default function AccountInterface() {
               ))}
             </>
           )}
+
+          {view === 'offered' && (
+            <>
+              {offeredLoading && <ActivityIndicator color={c.accent} style={{ marginTop: 20 }} />}
+              {!offeredLoading && offered.length === 0 && (
+                <Text style={styles.rowSub}>You haven't offered any rides yet. Post one from the Drive tab.</Text>
+              )}
+              {offered.map((r, i) => (
+                <HapticPressable
+                  key={r.id || i}
+                  style={styles.histRow}
+                  onPress={() => router.push('/(tabs)/driver')}
+                  activeOpacity={0.7}
+                >
+                  <View style={styles.histIcon}><Car color={c.textSecondary} size={16} /></View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.rowTitle} numberOfLines={1}>
+                      {r.source || 'Pickup'} → {r.destination || 'Destination'}
+                    </Text>
+                    <Text style={styles.rowSub}>
+                      {r.departure_time ? new Date(r.departure_time).toLocaleString() : ''}
+                      {r.status ? ` · ${r.status}` : ''}
+                      {typeof r.seats_available === 'number' && typeof r.seats_total === 'number'
+                        ? ` · ${r.seats_total - r.seats_available}/${r.seats_total} booked`
+                        : ''}
+                    </Text>
+                  </View>
+                  <Text style={styles.histAmount}>
+                    {formatMoney(Number(r.price_split || 0), { decimals: 0 })}
+                  </Text>
+                </HapticPressable>
+              ))}
+            </>
+          )}
+
+          {view === 'profile' && (
+            <>
+              <Text style={styles.fieldLabel}>First name *</Text>
+              <TextInput
+                style={styles.fieldInput}
+                value={firstName}
+                onChangeText={setFirstName}
+                placeholder="e.g. Pooja"
+                placeholderTextColor={c.textDisabled}
+                autoCapitalize="words"
+              />
+
+              <Text style={styles.fieldLabel}>Last name</Text>
+              <TextInput
+                style={styles.fieldInput}
+                value={lastName}
+                onChangeText={setLastName}
+                placeholder="e.g. Yadav"
+                placeholderTextColor={c.textDisabled}
+                autoCapitalize="words"
+              />
+
+              <Text style={styles.fieldLabel}>Address (optional)</Text>
+              <TextInput
+                style={styles.fieldInput}
+                value={addressInput}
+                onChangeText={setAddressInput}
+                placeholder="Helps match you with people on your route"
+                placeholderTextColor={c.textDisabled}
+              />
+
+              <HapticPressable
+                haptic="press"
+                style={[styles.saveProfileBtn, savingProfile && { opacity: 0.6 }]}
+                onPress={saveProfile}
+                disabled={savingProfile}
+                activeOpacity={0.9}
+              >
+                {savingProfile
+                  ? <ActivityIndicator color="#fff" />
+                  : <Text style={styles.saveProfileText}>Save</Text>}
+              </HapticPressable>
+            </>
+          )}
+
           {view === 'help' && (
             <>
               <View style={{ flexDirection: 'row', gap: space.sm, marginBottom: space.lg }}>
@@ -319,6 +464,14 @@ export default function AccountInterface() {
         <View style={{ flex: 1 }}>
           <Text style={styles.name}>{name}</Text>
           {!!contact && <Text style={styles.contact}>{contact}</Text>}
+          {/* Signing up no longer asks for a name, so this is where one gets
+              set. Phrased as "Add your name" until there is one, since
+              co-travellers otherwise see a generic placeholder. */}
+          <HapticPressable onPress={() => setView('profile')} activeOpacity={0.7}>
+            <Text style={styles.editProfileLink}>
+              {userProfile?.name ? 'Edit profile' : 'Add your name'}
+            </Text>
+          </HapticPressable>
         </View>
       </View>
 
@@ -359,6 +512,10 @@ export default function AccountInterface() {
           onPress={() => router.push('/payout-method')}
         />
         <MenuRow icon={<Receipt color={c.textSecondary} size={20} />} title="Booking history" sub="Your past rides & payments" onPress={() => setView('history')} />
+        {/* Rides the user OFFERED, as opposed to booked. Previously only
+            visible on the Driver tab, so someone looking for "my rides" under
+            their account found only the ones they had taken. */}
+        <MenuRow icon={<Car color={c.textSecondary} size={20} />} title="Rides you offered" sub="Trips you're driving" onPress={() => setView('offered')} />
         <MenuRow icon={<Newspaper color={c.textSecondary} size={20} />} title="Classifieds" sub="Community marketplace" onPress={() => router.push('/(tabs)/classifieds')} />
         <MenuRow icon={<Leaf color={c.textSecondary} size={20} />} title="Green leaderboard" sub="Top CO₂ savers in the community" onPress={() => router.push('/leaderboard')} last />
       </View>
@@ -427,6 +584,17 @@ const styles = StyleSheet.create({
   histRow: { flexDirection: 'row', alignItems: 'center', gap: space.md, backgroundColor: c.surfaceCard, padding: space.md, borderRadius: radius.md, marginBottom: space.sm, borderWidth: 1, borderColor: c.borderSubtle },
   histIcon: { width: 36, height: 36, borderRadius: radius.sm, backgroundColor: c.surfaceSunken, alignItems: 'center', justifyContent: 'center' },
   histAmount: { fontFamily: font.monoBold, fontSize: 14, color: c.textPrimary },
+  editProfileLink: { fontFamily: font.sansSemibold, fontSize: 12, color: c.textAccent, marginTop: 4 },
+  fieldLabel: { fontFamily: font.sansSemibold, fontSize: 12, color: c.textSecondary, marginTop: 16, marginBottom: 6 },
+  fieldInput: {
+    backgroundColor: c.surfaceSunken, borderRadius: radius.md, paddingHorizontal: 14, paddingVertical: 12,
+    fontFamily: font.sans, fontSize: 15, color: c.textPrimary, borderWidth: 1, borderColor: c.borderSubtle,
+  },
+  saveProfileBtn: {
+    backgroundColor: c.go, borderRadius: radius.md, paddingVertical: 15,
+    alignItems: 'center', justifyContent: 'center', marginTop: 24,
+  },
+  saveProfileText: { fontFamily: font.sansSemibold, fontSize: 15, color: '#fff' },
   streakRow: { flexDirection: 'row', gap: space.sm, marginBottom: space.md },
   streakCell: { flex: 1, backgroundColor: c.surfaceCard, borderRadius: radius.md, borderWidth: 1, borderColor: c.borderSubtle, alignItems: 'center', paddingVertical: space.md },
   streakValue: { fontFamily: font.monoBold, fontSize: 17, color: c.textPrimary },
