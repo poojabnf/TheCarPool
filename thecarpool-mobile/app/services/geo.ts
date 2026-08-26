@@ -28,8 +28,24 @@ export type GeoOutcome =
   | { status: 'idle' }
   | { status: 'error'; message: string };
 
-/** Below this we don't search: the backend ignores it and it wastes a round trip. */
-export const MIN_QUERY_LENGTH = 3;
+/**
+ * Below this we don't search.
+ *
+ * Raised from 3 to 4: every lookup is a billed Google Places request, and
+ * 3-character prefixes are both the least useful and the most numerous — you
+ * pass through one on the way to typing anything longer.
+ */
+export const MIN_QUERY_LENGTH = 4;
+
+/**
+ * How long the field must be idle before we spend a lookup.
+ *
+ * Was 300ms, which is shorter than an average typing pause, so production
+ * logs showed a billed request for nearly every character: "poo", "pooj",
+ * "pooja", "pooja."… 600ms coalesces normal typing into far fewer requests
+ * while still feeling immediate once you stop.
+ */
+export const SEARCH_DEBOUNCE_MS = 600;
 
 /**
  * Nudge the backend awake.

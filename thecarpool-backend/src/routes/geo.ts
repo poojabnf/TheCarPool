@@ -7,6 +7,45 @@ interface SearchQuery {
   query?: string;
 }
 
+/**
+ * In-process fallback cache for place lookups.
+ *
+ * The Redis cache below is the intended one, but REDIS_URL is not set in
+ * production, so `redisClient.isOpen` is always false and EVERY keystroke
+ * reached Google Places — a billed request per character typed. This keeps
+ * repeated queries off the paid API even with no Redis.
+ *
+ * Deliberately tiny and process-local: the container is short-lived at
+ * min-instances=0, so this is a burst cache (one user typing, several users
+ * searching the same landmarks), not durable storage. Redis still wins when
+ * configured, and this is skipped entirely in that case.
+ */
+const MEMO_TTL_MS = 5 * 60 * 1000;
+const MEMO_MAX_ENTRIES = 500;
+const memoCache = new Map<string, { at: number; payload: any }>();
+
+function memoGet(key: string): any | null {
+  const hit = memoCache.get(key);
+  if (!hit) return null;
+  if (Date.now() - hit.at > MEMO_TTL_MS) {
+    memoCache.delete(key);
+    return null;
+  }
+  // Refresh recency so the popular queries are the ones that survive eviction.
+  memoCache.delete(key);
+  memoCache.set(key, hit);
+  return hit.payload;
+}
+
+function memoSet(key: string, payload: any): void {
+  if (memoCache.size >= MEMO_MAX_ENTRIES) {
+    // Map preserves insertion order, so the first key is the least recently used.
+    const oldest = memoCache.keys().next().value;
+    if (oldest !== undefined) memoCache.delete(oldest);
+  }
+  memoCache.set(key, { at: Date.now(), payload });
+}
+
 export async function geoRoutes(fastify: FastifyInstance) {
 
   // 1. Search for a postal code or place name in Firestore
@@ -27,11 +66,21 @@ export async function geoRoutes(fastify: FastifyInstance) {
         if (cached) {
           return reply.send(JSON.parse(cached));
         }
+      } else {
+        // No Redis configured — fall back to the in-process cache rather than
+        // paying Google for a query we already answered.
+        const memo = memoGet(cacheKey);
+        if (memo) return reply.send(memo);
       }
+
+      // Never spend a paid Places lookup on something that cannot be a place.
+      // Production logs showed an email being typed into a location field,
+      // billing a Text Search request for every character of it.
+      const looksLikeAPlace = !/@/.test(lowerQuery);
 
       // Prefer real Google Places results (coords included). Falls back to the
       // local postal_codes dataset when the Maps key lacks the Places API.
-      const places = await searchPlaces(query.trim());
+      const places = looksLikeAPlace ? await searchPlaces(query.trim()) : null;
       if (places && places.length > 0) {
         const mapped = places.map((p) => ({
           id: p.place_id || p.place_name,
@@ -45,6 +94,8 @@ export async function geoRoutes(fastify: FastifyInstance) {
           redisClient.setEx(cacheKey, 300, JSON.stringify(mapped)).catch((err) => {
             fastify.log.error('Redis geo cache write failed:', err);
           });
+        } else {
+          memoSet(cacheKey, mapped);
         }
         return reply.send(mapped);
       }
@@ -77,10 +128,15 @@ export async function geoRoutes(fastify: FastifyInstance) {
         .slice(0, 10);
 
       // Cache for 5 minutes — postal code data is effectively static.
+      // Empty results are cached too, and deliberately: a query that matches
+      // nothing (a half-typed word, or an email pasted into a location field)
+      // would otherwise pay Google again on every repeat.
       if (redisClient.isOpen) {
         redisClient.setEx(cacheKey, 300, JSON.stringify(sortedResults)).catch(err => {
           fastify.log.error('Redis geo cache write failed:', err);
         });
+      } else {
+        memoSet(cacheKey, sortedResults);
       }
 
       return reply.send(sortedResults);

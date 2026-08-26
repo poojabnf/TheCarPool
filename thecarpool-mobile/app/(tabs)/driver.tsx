@@ -7,7 +7,7 @@ import { apiFetch } from '../services/api';
 import * as haptics from '../services/haptics';
 import HapticPressable from '../components/HapticPressable';
 import { formatMoney } from '../services/currency';
-import { searchPlaces, MIN_QUERY_LENGTH, warmUp } from '../services/geo';
+import { searchPlaces, MIN_QUERY_LENGTH, SEARCH_DEBOUNCE_MS, warmUp } from '../services/geo';
 import auth from '@react-native-firebase/auth';
 import io from 'socket.io-client';
 import { API_URL } from '../services/api';
@@ -572,7 +572,7 @@ export default function DriverInterface() {
         setSuggestions([]);
         setGeoError(outcome.message);
       }
-    }, 300);
+    }, SEARCH_DEBOUNCE_MS);
   };
 
   const handlePostRide = async () => {

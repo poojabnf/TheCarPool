@@ -13,7 +13,7 @@ import * as haptics from '../services/haptics';
 import { c, font, radius, space, shadowSm, brass } from '../../theme/tokens';
 import HapticPressable from '../components/HapticPressable';
 import { formatMoney } from '../services/currency';
-import { searchPlaces, MIN_QUERY_LENGTH, warmUp } from '../services/geo';
+import { searchPlaces, MIN_QUERY_LENGTH, SEARCH_DEBOUNCE_MS, warmUp } from '../services/geo';
 import { formatDeparture, isDepartingSoon } from '../services/datetime';
 import VehicleIcon from '../components/VehicleIcon';
 
@@ -170,7 +170,7 @@ export default function HomeScreen() {
         set([]);
         setGeoError(outcome.message);
       }
-    }, 300);
+    }, SEARCH_DEBOUNCE_MS);
   };
 
   const findRides = async () => {
