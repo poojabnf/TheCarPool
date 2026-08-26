@@ -44,3 +44,4 @@ screenshots/
 
 # Firebase service-account key — a signing credential, never committed.
 firebase-adminsdk*.json
+.vercel
