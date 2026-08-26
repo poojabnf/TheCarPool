@@ -1284,7 +1284,7 @@ export default function DriverInterface() {
               {formStep < FORM_STEPS.length - 1 ? (
                 <HapticPressable
                   haptic="press"
-                  style={[styles.submitBtn, { flex: 1, marginTop: 0 }]}
+                  style={[styles.submitBtn, { flex: 1, marginTop: 0, marginBottom: 0, minHeight: 52, justifyContent: 'center' }]}
                   onPress={() => setFormStep((s) => s + 1)}
                   activeOpacity={0.9}
                 >
@@ -1293,7 +1293,7 @@ export default function DriverInterface() {
               ) : (
                 <HapticPressable
                   haptic="press"
-                  style={[styles.submitBtn, { flex: 1, marginTop: 0 }]}
+                  style={[styles.submitBtn, { flex: 1, marginTop: 0, marginBottom: 0, minHeight: 52, justifyContent: 'center' }]}
                   onPress={handlePostRide}
                   activeOpacity={0.9}
                 >
@@ -1850,8 +1850,14 @@ const styles = StyleSheet.create({
   stepBarRow: { flexDirection: 'row', gap: 6, marginBottom: 20 },
   stepBar: { flex: 1, height: 3, borderRadius: 2, backgroundColor: colors.cardBorder },
   stepBarOn: { backgroundColor: colors.primary },
-  stepNav: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 20 },
-  stepBackBtn: { paddingHorizontal: 18, paddingVertical: 14, borderRadius: 12, borderWidth: 1, borderColor: colors.cardBorder },
+  // alignItems:'stretch' so Back matches Continue's height instead of being
+  // centred against it — the two buttons have different padding, and with
+  // 'center' the shorter one floated visibly off the taller one's baseline.
+  stepNav: { flexDirection: 'row', alignItems: 'stretch', gap: 10, marginTop: 20, marginBottom: 40 },
+  stepBackBtn: {
+    paddingHorizontal: 18, borderRadius: 12, borderWidth: 1, borderColor: colors.cardBorder,
+    alignItems: 'center', justifyContent: 'center', minHeight: 52,
+  },
   stepBackText: { fontSize: 14, fontWeight: '700', color: colors.text },
   formGroup: { marginBottom: 16 },
   formLabel: { fontSize: 13, color: colors.text, fontWeight: 'bold', marginBottom: 8 },
