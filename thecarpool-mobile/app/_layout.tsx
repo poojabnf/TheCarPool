@@ -16,6 +16,7 @@ import { useAuthStore } from './store/authStore';
 import { auth } from './services/firebase';
 import { registerForPushNotifications } from './services/notifications';
 import { apiFetch } from './services/api';
+import { warmUp } from './services/geo';
 
 // Cap Dynamic Type scaling app-wide. Text still scales for accessibility, but
 // is bounded to 1.3x so very large system-font settings can't overflow the
@@ -35,6 +36,13 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
   } = useAuthStore();
   const segments = useSegments();
   const router = useRouter();
+
+  // Wake the backend the moment the app opens. Cloud Run runs at
+  // min-instances=0 to stay inside the free tier, so the first request after
+  // an idle spell pays a ~9s cold start. Firing here rather than on the search
+  // screen buys the container the whole of launch and sign-in to warm up,
+  // instead of racing the user's first keystroke.
+  useEffect(() => { warmUp(); }, []);
 
   // Listen to Firebase auth state changes
   useEffect(() => {

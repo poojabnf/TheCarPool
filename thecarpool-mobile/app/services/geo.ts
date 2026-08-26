@@ -47,7 +47,7 @@ export function warmUp(): void {
   apiFetch('/health', {}, { timeoutMs: 20000, retries: 0 }).catch(() => {});
 }
 
-export async function searchPlaces(query: string): Promise<GeoOutcome> {
+export async function searchPlaces(query: string, attempt = 0): Promise<GeoOutcome> {
   const q = query.trim();
   if (q.length < MIN_QUERY_LENGTH) return { status: 'idle' };
 
@@ -75,6 +75,14 @@ export async function searchPlaces(query: string): Promise<GeoOutcome> {
     const places = data.results || data.suggestions || (Array.isArray(data) ? data : []);
     return { status: 'ok', places };
   } catch {
+    // The backend sleeps when idle and takes ~9s to wake. A lookup that lands
+    // in that window fails once and then succeeds, so retry before blaming the
+    // user's connection — reporting a network error for a waking server is
+    // both wrong and unactionable.
+    if (attempt < 1) {
+      await new Promise((r) => setTimeout(r, 1200));
+      return searchPlaces(query, attempt + 1);
+    }
     return { status: 'error', message: 'Could not load places. Check your connection.' };
   }
 }
