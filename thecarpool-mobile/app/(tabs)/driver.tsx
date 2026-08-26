@@ -117,6 +117,14 @@ export default function DriverInterface() {
   // Why the last place lookup returned nothing, so a blank dropdown isn't the
   // only feedback the driver gets.
   const [geoError, setGeoError] = useState('');
+  // Editing a posted ride: price and pickup stops only (see PATCH /rides/:id).
+  const [editRide, setEditRide] = useState<any | null>(null);
+  const [editPrice, setEditPrice] = useState('');
+  const [editStops, setEditStops] = useState<{ label: string; lat: number; lng: number }[]>([]);
+  const [editStopQuery, setEditStopQuery] = useState('');
+  const [editStopSug, setEditStopSug] = useState<any[]>([]);
+  const [savingEdit, setSavingEdit] = useState(false);
+  const editStopTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [seatsTotal, setSeatsTotal] = useState(3);
   // Departure: a day plus an hour/minute, combined on submit.
   const [depDay, setDepDay] = useState<Date>(() => { const d = new Date(); d.setHours(0,0,0,0); return d; });
@@ -304,6 +312,45 @@ export default function DriverInterface() {
   };
 
   // Driver moves the ride through its lifecycle; COMPLETED settles escrow, CANCELLED cancels it.
+  const openEdit = (ride: any) => {
+    setEditRide(ride);
+    setEditPrice(String(ride.price_split ?? ''));
+    setEditStops(Array.isArray(ride.pickup_points) ? [...ride.pickup_points] : []);
+    setEditStopQuery('');
+    setEditStopSug([]);
+  };
+
+  const saveEdit = async () => {
+    if (!editRide) return;
+    const price = parseFloat(editPrice);
+    if (!Number.isFinite(price) || price < 0) {
+      Alert.alert('Check the price', 'Enter a valid price per seat.');
+      return;
+    }
+    setSavingEdit(true);
+    try {
+      const res = await apiFetch(`/api/rides/${editRide.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ price_split: price, pickup_points: editStops }),
+      }, { timeoutMs: 25000 });
+      const data = await res.json().catch(() => ({} as any));
+      if (!res.ok) {
+        Alert.alert('Could not save', data.message || data.error || 'Please try again.');
+        return;
+      }
+      // Reflect the change locally so the list is right without a full refetch.
+      setMyRides((prev) => prev.map((r) => r.id === editRide.id
+        ? { ...r, price_split: data.price_split, pickup_points: data.pickup_points }
+        : r));
+      setEditRide(null);
+      Alert.alert('Ride updated', 'Riders who already booked keep the fare they paid.');
+    } catch {
+      Alert.alert('Could not save', 'Check your connection and try again.');
+    } finally {
+      setSavingEdit(false);
+    }
+  };
+
   const updateRideStatus = (rideId: string, status: 'STARTED' | 'COMPLETED' | 'CANCELLED') => {
     if (status === 'STARTED') {
       const passengers: any[] = manifests[rideId]?.passengers || [];
@@ -730,6 +777,9 @@ export default function DriverInterface() {
                       <>
                         <HapticPressable haptic="press" style={styles.startBtn} onPress={() => updateRideStatus(r.id, 'STARTED')} activeOpacity={0.9}>
                           <Text style={styles.startBtnText}>▶ Start trip</Text>
+                        </HapticPressable>
+                        <HapticPressable haptic="press" style={styles.editRideBtn} onPress={() => openEdit(r)} activeOpacity={0.9}>
+                          <Text style={styles.editRideBtnText}>✎ Edit</Text>
                         </HapticPressable>
                         <HapticPressable haptic="warning" style={styles.cancelRideBtn} onPress={() => updateRideStatus(r.id, 'CANCELLED')} activeOpacity={0.9}>
                           <Text style={styles.cancelRideBtnText}>✕ Cancel</Text>
@@ -1622,6 +1672,95 @@ export default function DriverInterface() {
           </View>
         </View>
       </Modal>
+
+      {/* Edit a posted ride — price and pickup stops only. Route, time and
+          seats stay fixed because riders booked against them. */}
+      <Modal visible={!!editRide} animationType="slide" transparent onRequestClose={() => setEditRide(null)}>
+        <View style={styles.editBackdrop}>
+          <View style={styles.editSheet}>
+            <View style={styles.editHeader}>
+              <Text style={styles.editTitle}>Edit ride</Text>
+              <HapticPressable onPress={() => setEditRide(null)} activeOpacity={0.7}>
+                <X color={colors.textMuted} size={22} />
+              </HapticPressable>
+            </View>
+
+            <ScrollView keyboardShouldPersistTaps="handled">
+              <Text style={styles.formLabel}>Price per seat</Text>
+              <TextInput
+                style={styles.formInput}
+                keyboardType="numeric"
+                value={editPrice}
+                onChangeText={setEditPrice}
+                placeholder="0"
+                placeholderTextColor={colors.inputPlaceholder}
+              />
+              <Text style={styles.formHint}>
+                Anyone who already booked keeps the fare they paid — this applies to new bookings.
+              </Text>
+
+              <Text style={[styles.formLabel, { marginTop: 18 }]}>Pickup stops</Text>
+              {editStops.length === 0 && (
+                <Text style={styles.formHint}>No stops yet. Riders near a stop can find your ride.</Text>
+              )}
+              {editStops.map((pt, i) => (
+                <View key={`${pt.lat},${pt.lng},${i}`} style={styles.pickupRow}>
+                  <Text style={styles.pickupLabel} numberOfLines={1}>{pt.label}</Text>
+                  <HapticPressable
+                    onPress={() => setEditStops((prev) => prev.filter((_, idx) => idx !== i))}
+                    activeOpacity={0.7}
+                  >
+                    <X color={"#ef4444"} size={18} />
+                  </HapticPressable>
+                </View>
+              ))}
+
+              {editStops.length < MAX_PICKUP_POINTS && (
+                <>
+                  <TextInput
+                    style={styles.formInput}
+                    placeholder="Add a pickup stop"
+                    placeholderTextColor={colors.inputPlaceholder}
+                    value={editStopQuery}
+                    onChangeText={(t) => { setEditStopQuery(t); searchGeo(t, setEditStopSug, editStopTimeoutRef); }}
+                  />
+                  {editStopSug.length > 0 && (
+                    <View style={styles.suggBox}>
+                      {editStopSug.slice(0, 5).map((sg, i) => (
+                        <HapticPressable key={i} style={styles.suggItem} onPress={() => {
+                          setEditStops((prev) => [...prev, {
+                            label: sg.place_name,
+                            lat: sg.latitude ?? sg.lat ?? 0,
+                            lng: sg.longitude ?? sg.lng ?? 0,
+                          }]);
+                          setEditStopQuery('');
+                          setEditStopSug([]);
+                        }}>
+                          <Text style={styles.suggText} numberOfLines={1}>
+                            {sg.place_name}{sg.state_name ? `, ${sg.state_name}` : ''}
+                          </Text>
+                        </HapticPressable>
+                      ))}
+                    </View>
+                  )}
+                </>
+              )}
+
+              <HapticPressable
+                haptic="press"
+                style={[styles.startBtn, { marginTop: 20 }, savingEdit && { opacity: 0.6 }]}
+                onPress={saveEdit}
+                disabled={savingEdit}
+                activeOpacity={0.9}
+              >
+                {savingEdit
+                  ? <ActivityIndicator color="#fff" />
+                  : <Text style={styles.startBtnText}>Save changes</Text>}
+              </HapticPressable>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -1686,6 +1825,12 @@ const styles = StyleSheet.create({
   startBtn: { flex: 1, backgroundColor: colors.success, borderRadius: 8, height: 42, alignItems: 'center', justifyContent: 'center' },
   cancelRideBtn: { paddingHorizontal: 14, backgroundColor: 'rgba(239,68,68,0.12)', borderWidth: 1, borderColor: '#ef4444', borderRadius: 8, height: 42, alignItems: 'center', justifyContent: 'center' },
   cancelRideBtnText: { color: '#ef4444', fontSize: 13, fontWeight: '700' },
+  editRideBtn: { paddingHorizontal: 14, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.cardBorder, borderRadius: 8, height: 42, alignItems: 'center', justifyContent: 'center' },
+  editRideBtnText: { color: colors.text, fontSize: 13, fontWeight: '700' },
+  editBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' },
+  editSheet: { backgroundColor: colors.background, borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 20, maxHeight: '85%' },
+  editHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 },
+  editTitle: { fontSize: 20, fontWeight: '900', color: colors.text },
   completeBtn: { flex: 1, backgroundColor: '#1E4E8C', borderRadius: 8, height: 42, alignItems: 'center', justifyContent: 'center' },
   startBtnText: { color: '#fff', fontSize: 13, fontWeight: '700' },
   chatMiniBtn: { width: 42, height: 42, borderRadius: 8, borderWidth: 1, borderColor: colors.cardBorder, alignItems: 'center', justifyContent: 'center' },

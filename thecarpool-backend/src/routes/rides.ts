@@ -182,6 +182,22 @@ function haversineDistance(lat1: number, lon1: number, lat2: number, lon2: numbe
 const MAX_RIDE_SCAN = 500;
 const DEFAULT_RESULT_LIMIT = 50;
 
+/**
+ * How far a rider may be from one of the driver's DECLARED pickup stops and
+ * still see the ride.
+ *
+ * Matching previously only measured the rider against the route polyline, so a
+ * driver could add "Sipri Bazar" as a stop and a rider standing there still
+ * would not find the ride unless the route happened to pass within
+ * max_detour_meters. A declared stop is a commitment by the driver, so it is
+ * matched far more generously than the route itself.
+ *
+ * 50 km is deliberately wide — it is a discovery radius, not a walking
+ * distance. The rider still has to reach the stop, so the result carries
+ * `via_pickup_point` and `pickup_deviation` for the UI to show how far it is.
+ */
+const PICKUP_POINT_RADIUS_METERS = 50_000;
+
 // Cheap bounding-box test: does the ride's route pass within `detourMeters`
 // of BOTH the pickup and drop points? Used to skip the expensive per-point
 // haversine pass for rides that are obviously far away.
@@ -489,7 +505,17 @@ export async function rideRoutes(fastify: FastifyInstance) {
         if (data.seats_available > 0) {
           // Coarse bbox prefilter — skip rides clearly out of range before
           // the expensive per-coordinate haversine pass below.
-          if (routeBboxIntersects(data.route_coords || [], pickup_lat, pickup_lng, drop_lat, drop_lng, max_detour_meters)) {
+          const nearRoute = routeBboxIntersects(
+            data.route_coords || [], pickup_lat, pickup_lng, drop_lat, drop_lng, max_detour_meters
+          );
+          // A ride can also qualify purely on a declared stop, which may sit
+          // well outside the route's bounding box — check those too, or the
+          // prefilter would discard the ride before the stop is ever compared.
+          const nearDeclaredStop = !nearRoute && (data.pickup_points || []).some((stop: any) =>
+            typeof stop?.lat === 'number' && typeof stop?.lng === 'number' &&
+            haversineDistance(pickup_lat, pickup_lng, stop.lat, stop.lng) <= PICKUP_POINT_RADIUS_METERS
+          );
+          if (nearRoute || nearDeclaredStop) {
             rides.push({ id: doc.id, ...data });
           }
         }
@@ -578,12 +604,39 @@ export async function rideRoutes(fastify: FastifyInstance) {
           }
         }
 
+        // The driver's declared stops are a promise to collect there, so a rider
+        // near one matches even when the polyline itself stays far away. Only
+        // considered when it beats the route distance, so a rider standing on
+        // the route is still reported against the route.
+        let pickupAllowance = max_detour_meters;
+        let viaPickupPoint: string | null = null;
+        for (const stop of (ride.pickup_points || [])) {
+          if (typeof stop?.lat !== 'number' || typeof stop?.lng !== 'number') continue;
+          const distToStop = haversineDistance(pickup_lat, pickup_lng, stop.lat, stop.lng);
+          if (distToStop > PICKUP_POINT_RADIUS_METERS || distToStop >= minPickupDist) continue;
+
+          // Anchor the stop to the route so the pickup-before-drop ordering
+          // below still means something.
+          let stopIndex = -1;
+          let stopToRoute = Infinity;
+          for (let i = 0; i < route_coords.length; i++) {
+            const rd = haversineDistance(stop.lat, stop.lng, route_coords[i].lat, route_coords[i].lng);
+            if (rd < stopToRoute) { stopToRoute = rd; stopIndex = i; }
+          }
+          if (stopIndex === -1) continue;
+
+          minPickupDist = distToStop;
+          pickupIndex = stopIndex;
+          pickupAllowance = PICKUP_POINT_RADIUS_METERS;
+          viaPickupPoint = stop.label || 'Driver stop';
+        }
+
         // direction correctness check (pickupIndex < dropIndex) and detour constraint
         if (
-          pickupIndex !== -1 && 
-          dropIndex !== -1 && 
-          pickupIndex < dropIndex && 
-          minPickupDist <= max_detour_meters && 
+          pickupIndex !== -1 &&
+          dropIndex !== -1 &&
+          pickupIndex < dropIndex &&
+          minPickupDist <= pickupAllowance &&
           minDropDist <= max_detour_meters
         ) {
           matchedResults.push({
@@ -617,6 +670,9 @@ export async function rideRoutes(fastify: FastifyInstance) {
             driver_rating_count: user.rating_count || 0,
             driver_trust_level: trustLevel(user.rating_count || 0, user.rating_avg || 0),
             pickup_deviation: parseFloat(minPickupDist.toFixed(2)),
+            // Names the driver stop that made this a match, so the rider can be
+            // told where to go rather than just how far away it is.
+            via_pickup_point: viaPickupPoint,
             drop_deviation: parseFloat(minDropDist.toFixed(2))
           });
         }
@@ -833,6 +889,102 @@ export async function rideRoutes(fastify: FastifyInstance) {
   // ── PATCH /:id/status — driver moves ride through lifecycle ──────────────
   // Valid transitions: SCHEDULED → STARTED → COMPLETED | CANCELLED
   // On COMPLETED, all HELD escrow bookings are auto-settled to the driver.
+  // ── Edit a ride the driver already posted ────────────────────────────────
+  // Price and pickup stops only. Route, timing and seat count are deliberately
+  // NOT editable: riders booked against those, and silently moving them under
+  // a paid booking is a different (and much larger) problem than fixing a typo
+  // in the fare.
+  //
+  // An existing booking keeps the price it was made at — `price_split` is
+  // copied onto the booking at purchase, so changing it here affects only
+  // future bookings and never retro-charges anyone.
+  fastify.patch('/:id', { preHandler: [requireAuth] }, async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const uid = String(request.user!.id);
+    const body = (request.body || {}) as { price_split?: number; pickup_points?: any[] };
+
+    const rideRef = db.collection('rides').doc(id);
+    const rideDoc = await rideRef.get();
+    if (!rideDoc.exists) return reply.code(404).send({ error: 'Ride not found.' });
+
+    const ride = rideDoc.data()!;
+    if (String(ride.driver_uid ?? ride.driver_id) !== uid) {
+      return reply.code(403).send({ error: 'Forbidden: only the ride driver can edit this ride.' });
+    }
+    // Once a ride is under way its terms are fixed — riders are in the car.
+    const current = String(ride.status || 'SCHEDULED');
+    if (current !== 'SCHEDULED') {
+      return reply.code(409).send({
+        error: 'NOT_EDITABLE',
+        message: `A ${current.toLowerCase()} ride can no longer be edited.`,
+        current_status: current,
+      });
+    }
+
+    const updates: Record<string, any> = {};
+
+    if (body.price_split !== undefined) {
+      const price = Number(body.price_split);
+      if (!Number.isFinite(price) || price < 0) {
+        return reply.code(400).send({ error: 'INVALID_PRICE', message: 'Enter a valid price per seat.' });
+      }
+      updates.price_split = round2(price);
+    }
+
+    if (body.pickup_points !== undefined) {
+      if (!Array.isArray(body.pickup_points)) {
+        return reply.code(400).send({ error: 'INVALID_PICKUP_POINTS', message: 'Pickup points must be a list.' });
+      }
+      if (body.pickup_points.length > MAX_PICKUP_POINTS) {
+        return reply.code(400).send({
+          error: 'TOO_MANY_PICKUP_POINTS',
+          message: `At most ${MAX_PICKUP_POINTS} pickup points.`,
+        });
+      }
+      const cleaned = body.pickup_points.map((p: any) => ({
+        label: String(p?.label || '').slice(0, 120),
+        lat: Number(p?.lat),
+        lng: Number(p?.lng),
+      }));
+      if (cleaned.some((p) => !Number.isFinite(p.lat) || !Number.isFinite(p.lng)
+        || p.lat > 90 || p.lat < -90 || p.lng > 180 || p.lng < -180)) {
+        return reply.code(400).send({
+          error: 'INVALID_PICKUP_POINTS',
+          message: 'Every pickup point needs a valid location — pick them from the suggestions.',
+        });
+      }
+      updates.pickup_points = cleaned;
+    }
+
+    if (Object.keys(updates).length === 0) {
+      return reply.code(400).send({ error: 'NOTHING_TO_UPDATE', message: 'Send a price or pickup points to change.' });
+    }
+
+    updates.updated_at = new Date().toISOString();
+    await rideRef.update(updates);
+
+    // Riders who already booked chose this ride on its old terms, so tell them
+    // it moved. Best-effort: a push failure must not fail the edit.
+    if (updates.price_split !== undefined || updates.pickup_points !== undefined) {
+      activeRiderUids(id).then((riders) => {
+        for (const rider of riders) {
+          sendPushToUser(rider, 'Ride updated',
+            'The driver changed the details of a ride you booked. Your fare is unchanged.',
+            { type: 'RIDE_UPDATED', ride_id: id });
+        }
+      }).catch(() => { /* notifications are best-effort */ });
+    }
+
+    const fresh = await rideRef.get();
+    const data = fresh.data()!;
+    return reply.send({
+      id,
+      updated: true,
+      price_split: data.price_split,
+      pickup_points: data.pickup_points ?? [],
+    });
+  });
+
   fastify.patch('/:id/status', { preHandler: [requireAuth] }, async (request, reply) => {
     const { id } = request.params as { id: string };
     const { status } = request.body as { status: string };
@@ -867,6 +1019,60 @@ export async function rideRoutes(fastify: FastifyInstance) {
 
       if (status !== 'COMPLETED') {
         await rideRef.update({ status, updated_at: new Date().toISOString() });
+
+        // A driver cancelling refunds every held booking IN FULL — fare and
+        // insurance. The rider did nothing wrong, so the rider-side
+        // cancellation tiers in lib/fees deliberately do not apply here; those
+        // price a rider changing their mind, not a driver withdrawing the ride.
+        //
+        // This previously did nothing at all: riders were pushed "Any amount
+        // paid is being refunded" while their money stayed in escrow.
+        if (status === 'CANCELLED') {
+          const heldSnap = await db.collection('bookings')
+            .where('ride_id', '==', id)
+            .where('escrow_status', '==', 'HELD')
+            .get();
+
+          for (const bookingDoc of heldSnap.docs) {
+            const booking = bookingDoc.data();
+            const riderUid = String(booking.rider_uid ?? booking.rider_id ?? '');
+            if (!riderUid) continue;
+            const refund = round2(
+              (Number(booking.amount_paid) || 0) + (Number(booking.insurance_premium) || 0)
+            );
+            const riderWalletRef = db.collection('wallets').doc(riderUid);
+
+            try {
+              await db.runTransaction(async (tx) => {
+                // All reads before writes, per Firestore.
+                const freshBooking = await tx.get(bookingDoc.ref);
+                if (freshBooking.data()?.escrow_status !== 'HELD') return; // already settled
+                const walletDoc = await tx.get(riderWalletRef);
+                const cur = walletDoc.exists
+                  ? walletDoc.data()!
+                  : { available_wallet_balance: 0, escrow_locked_balance: 0, currency: defaultCurrency() };
+
+                tx.update(bookingDoc.ref, {
+                  escrow_status: 'CANCELLED',
+                  payment_status: 'CANCELLED_REFUNDED',
+                  cancelled_by: 'DRIVER',
+                  cancellation_fee: 0,
+                  refunded_amount: refund,
+                  cancelled_at: new Date().toISOString(),
+                });
+                tx.set(riderWalletRef, {
+                  ...cur,
+                  available_wallet_balance: round2((cur.available_wallet_balance || 0) + refund),
+                }, { merge: true });
+              });
+            } catch (err) {
+              // Never let one rider's refund abort the rest, but make it loud:
+              // this is stranded money and needs manual reconciliation.
+              fastify.log.error({ err, booking: bookingDoc.id, ride: id },
+                'Driver-cancel refund failed for booking');
+            }
+          }
+        }
 
         // Tell the riders. Fire-and-forget: a push failure must never stop a
         // driver starting or cancelling their trip.
