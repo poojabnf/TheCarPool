@@ -63,7 +63,8 @@
         "EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID": "953521578640-khu8idmh7f9bmqli6pps2a2bjfmn8p9g.apps.googleusercontent.com",
         "EXPO_PUBLIC_GOOGLE_MAPS_API_KEY": "AIzaSyBTkNesFuUVR-8u9FNOh4RmsuZn28DT5cM"
       },
-      "channel": "production"
+      "channel": "production",
+      "credentialsSource": "local"
     }
   },
   "submit": {
