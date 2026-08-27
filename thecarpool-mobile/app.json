@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "TheCarPool",
-    "slug": "thecarpool-mobile",
+    "slug": "thecarpool",
     "version": "1.4.7",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -61,10 +61,10 @@
     },
     "extra": {
       "eas": {
-        "projectId": "e5fe9be8-04c9-4010-9c97-7bc66579b052"
+        "projectId": "c33bc874-1636-427f-9dbd-0a49765dda78"
       }
     },
-    "owner": "poojaya2k19",
+    "owner": "aayanshy2k19",
     "plugins": [
       "@react-native-firebase/app",
       "@react-native-firebase/auth",
@@ -96,7 +96,7 @@
       "policy": "appVersion"
     },
     "updates": {
-      "url": "https://u.expo.dev/e5fe9be8-04c9-4010-9c97-7bc66579b052",
+      "url": "https://u.expo.dev/c33bc874-1636-427f-9dbd-0a49765dda78",
       "fallbackToCacheTimeout": 8000
     }
   }
