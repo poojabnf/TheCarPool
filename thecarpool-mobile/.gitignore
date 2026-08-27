@@ -19,3 +19,6 @@ scratch_payload.json
 
 # App Store Connect API key (never commit)
 AuthKey_*.p8
+
+# EAS signing credentials (keystore passwords) — never commit.
+credentials.json
