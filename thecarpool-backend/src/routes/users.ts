@@ -1,7 +1,61 @@
 import { FastifyInstance } from 'fastify';
 import { db, storage } from '../server';
 import { requireAuth, requireAdmin } from '../middleware/auth';
-import { normalisePhone, phoneKey, phoneOf, portableProfile, decideLink } from '../lib/identity';
+import {
+  normalisePhone, phoneKey, phoneOf, portableProfile, decideLink,
+  normaliseEmail, emailKey, emailOf,
+} from '../lib/identity';
+
+/**
+ * Anchor this sign-in to its email, adopting an existing profile if the same
+ * address has been here before under a different provider's uid.
+ *
+ * The phone index alone left a real gap: someone who signed up with Google
+ * (no phone on the token) and later used phone OTP got two profiles, because
+ * neither sign-in ever presented a number the other had claimed. Email is the
+ * second anchor, and works the same way.
+ *
+ * Best-effort, exactly like the phone linker: a failure here must never stop
+ * someone loading their profile.
+ */
+async function linkByEmail(
+  uid: string,
+  tokenEmail: string | undefined,
+  existing: Record<string, any> | null,
+  log: FastifyInstance['log']
+): Promise<Record<string, any>> {
+  const email = normaliseEmail(tokenEmail) ?? emailOf(existing);
+  if (!email) return {};
+
+  try {
+    const indexRef = db.collection('email_identities').doc(emailKey(email));
+    const owner = (await indexRef.get()).data()?.uid ?? null;
+    const { claimIndex, adoptFrom } = decideLink(uid, owner);
+
+    if (claimIndex) {
+      await indexRef.set({ uid, email, linked_at: new Date().toISOString() }, { merge: true });
+    }
+
+    const updates: Record<string, any> = {};
+    if (adoptFrom) {
+      const source = (await db.collection('users').doc(adoptFrom).get()).data() ?? null;
+      Object.assign(updates, portableProfile(source, existing));
+      updates.linked_from_uid = adoptFrom;
+    }
+    // Keep the address on the profile so a later token without one (a phone
+    // OTP sign-in) can still find its way back to the same identity.
+    if (!existing?.email) updates.email = email;
+
+    if (Object.keys(updates).length > 0) {
+      updates.identity_linked_at = new Date().toISOString();
+      await db.collection('users').doc(uid).set(updates, { merge: true });
+    }
+    return updates;
+  } catch (err) {
+    log.error(err, 'Email identity linking failed');
+    return {};
+  }
+}
 
 /**
  * Anchor this sign-in to its phone number, adopting an existing profile if the
@@ -83,8 +137,14 @@ export async function userRoutes(fastify: FastifyInstance) {
       const stored = doc.exists ? doc.data()! : null;
 
       // Same person, new sign-in provider: carry their profile across rather
-      // than making them do it all again.
-      const adopted = await linkByPhone(uid, request.user!.phone, stored, fastify.log);
+      // than making them do it all again. Phone first — it is the stronger
+      // anchor, being verified by OTP — then email for the Google/Apple case
+      // where no number is ever presented. The email pass sees what the phone
+      // pass adopted, so it fills only what is still missing.
+      const byPhone = await linkByPhone(uid, request.user!.phone, stored, fastify.log);
+      const afterPhone = { ...(stored ?? {}), ...byPhone };
+      const byEmail = await linkByEmail(uid, request.user!.email, afterPhone, fastify.log);
+      const adopted = { ...byPhone, ...byEmail };
       const data = { ...(stored ?? {}), ...adopted };
 
       if (!doc.exists && Object.keys(adopted).length === 0) {

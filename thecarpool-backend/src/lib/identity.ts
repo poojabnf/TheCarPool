@@ -25,7 +25,15 @@ export function phoneKey(e164: string): string {
  */
 export function normalisePhone(raw: unknown): string | null {
   if (typeof raw !== 'string' && typeof raw !== 'number') return null;
-  let digits = String(raw).replace(/\D/g, '');
+
+  // Already E.164 — which is exactly what a Firebase token carries. Trust it
+  // rather than forcing it through the India-specific rules below: sign-in now
+  // supports 27 countries, and a US or UK number would otherwise normalise to
+  // null and silently never link across devices.
+  const asString = String(raw).trim();
+  if (/^\+[1-9]\d{7,14}$/.test(asString)) return asString;
+
+  let digits = asString.replace(/\D/g, '');
   if (!digits) return null;
 
   // Strip an international prefix written as 00 rather than '+'.
@@ -45,6 +53,40 @@ export function phoneOf(source: Record<string, any> | null | undefined): string 
   return normalisePhone(
     source.phone_number ?? source.phoneNumber ?? source.phone ?? null
   );
+}
+
+/**
+ * Normalise an email for use as an identity key, or null if it isn't one.
+ *
+ * Lower-cased and trimmed, and nothing more. Deliberately NOT applying
+ * provider-specific rules (Gmail ignoring dots, +tags): those would merge
+ * addresses that a user may consider separate accounts, and wrongly merging
+ * two people's profiles is far worse than failing to merge one person's.
+ */
+export function normaliseEmail(raw: unknown): string | null {
+  if (typeof raw !== 'string') return null;
+  const email = raw.trim().toLowerCase();
+  // Deliberately loose: this validates "is this shaped like an address we can
+  // key on", not deliverability.
+  if (!/^[^\s@]+@[^\s@.]+\.[^\s@]+$/.test(email)) return null;
+  return email;
+}
+
+/**
+ * Firestore document id for an email.
+ *
+ * '/' is the only character Firestore forbids outright, and a lone '.' or
+ * '..' is reserved — none of which a valid address produces, but the slash is
+ * replaced defensively rather than trusting that.
+ */
+export function emailKey(email: string): string {
+  return email.replace(/\//g, '_');
+}
+
+/** The email attached to an identity, from a token or a stored profile. */
+export function emailOf(source: Record<string, any> | null | undefined): string | null {
+  if (!source) return null;
+  return normaliseEmail(source.email ?? source.corporate_email ?? null);
 }
 
 /**

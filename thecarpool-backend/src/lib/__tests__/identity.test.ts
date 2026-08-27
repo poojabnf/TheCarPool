@@ -1,7 +1,71 @@
 // Jest is the project test runner; describe/it/expect are globals.
 import {
   normalisePhone, phoneKey, phoneOf, portableProfile, decideLink, PORTABLE_FIELDS,
+  normaliseEmail, emailKey, emailOf,
 } from '../identity';
+
+describe('normalisePhone — international', () => {
+  it('accepts an E.164 number from any country, as a Firebase token supplies', () => {
+    expect(normalisePhone('+14155551234')).toBe('+14155551234');   // US
+    expect(normalisePhone('+447700900123')).toBe('+447700900123'); // UK
+    expect(normalisePhone('+971501234567')).toBe('+971501234567'); // UAE
+    expect(normalisePhone(' +6598765432 ')).toBe('+6598765432');   // SG, padded
+  });
+
+  it('still normalises bare Indian numbers', () => {
+    expect(normalisePhone('9876543210')).toBe('+919876543210');
+  });
+
+  it('rejects malformed E.164', () => {
+    expect(normalisePhone('+0123456789')).toBeNull(); // country code can't start 0
+    expect(normalisePhone('+123')).toBeNull();        // too short
+  });
+});
+
+describe('normaliseEmail', () => {
+  it('lower-cases and trims', () => {
+    expect(normaliseEmail('  Pooja.BNF@Gmail.COM ')).toBe('pooja.bnf@gmail.com');
+  });
+
+  it('rejects anything not shaped like an address', () => {
+    expect(normaliseEmail('not-an-email')).toBeNull();
+    expect(normaliseEmail('missing@domain')).toBeNull();
+    expect(normaliseEmail('two words@x.com')).toBeNull();
+    expect(normaliseEmail('')).toBeNull();
+    expect(normaliseEmail(undefined)).toBeNull();
+    expect(normaliseEmail(42)).toBeNull();
+  });
+
+  it('does NOT fold Gmail dots or +tags', () => {
+    // Merging these would fuse accounts a user may consider separate, and a
+    // wrong merge is far worse than a missed one.
+    expect(normaliseEmail('a.b@gmail.com')).toBe('a.b@gmail.com');
+    expect(normaliseEmail('ab+tag@gmail.com')).toBe('ab+tag@gmail.com');
+  });
+});
+
+describe('emailKey', () => {
+  it('keeps a normal address intact', () => {
+    expect(emailKey('pooja@example.com')).toBe('pooja@example.com');
+  });
+
+  it('replaces the one character Firestore forbids in a doc id', () => {
+    expect(emailKey('we/ird@example.com')).toBe('we_ird@example.com');
+  });
+});
+
+describe('emailOf', () => {
+  it('reads email, then corporate_email', () => {
+    expect(emailOf({ email: 'A@B.com' })).toBe('a@b.com');
+    expect(emailOf({ corporate_email: 'work@corp.io' })).toBe('work@corp.io');
+  });
+
+  it('returns null when there is nothing usable', () => {
+    expect(emailOf(null)).toBeNull();
+    expect(emailOf({})).toBeNull();
+    expect(emailOf({ email: 'nope' })).toBeNull();
+  });
+});
 
 describe('normalisePhone', () => {
   it('accepts the shapes people and providers actually send', () => {
@@ -13,12 +77,15 @@ describe('normalisePhone', () => {
     }
   });
 
-  it('rejects anything that is not an Indian mobile', () => {
+  it('rejects a bare number that is not an Indian mobile', () => {
     // Landlines and 1-5 leading digits are not mobiles; short/long is not a number.
+    // NOTE: this is about numbers with NO country code, where India is the only
+    // safe assumption. A properly formed E.164 number from any country is
+    // accepted — see the 'international' block below. '+14155552671' used to be
+    // asserted null here, back when sign-in was India-only.
     expect(normalisePhone('1234567890')).toBeNull();
     expect(normalisePhone('5876543210')).toBeNull();
     expect(normalisePhone('98765')).toBeNull();
-    expect(normalisePhone('+14155552671')).toBeNull();
     expect(normalisePhone('')).toBeNull();
     expect(normalisePhone(null)).toBeNull();
     expect(normalisePhone(undefined)).toBeNull();
