@@ -51,11 +51,13 @@
       "autoIncrement": true,
       "ios": {
         "image": "latest",
-        "distribution": "store"
+        "distribution": "store",
+        "credentialsSource": "remote"
       },
       "android": {
         "image": "latest",
-        "resourceClass": "medium"
+        "resourceClass": "medium",
+        "credentialsSource": "local"
       },
       "env": {
         "EXPO_PUBLIC_API_URL": "https://thecarpool-backend-953521578640.asia-south1.run.app",
@@ -63,8 +65,7 @@
         "EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID": "953521578640-khu8idmh7f9bmqli6pps2a2bjfmn8p9g.apps.googleusercontent.com",
         "EXPO_PUBLIC_GOOGLE_MAPS_API_KEY": "AIzaSyBTkNesFuUVR-8u9FNOh4RmsuZn28DT5cM"
       },
-      "channel": "production",
-      "credentialsSource": "local"
+      "channel": "production"
     }
   },
   "submit": {
