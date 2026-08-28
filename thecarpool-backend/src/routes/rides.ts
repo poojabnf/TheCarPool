@@ -2,7 +2,7 @@ import { FastifyInstance } from 'fastify';
 import { defaultCurrency } from '../lib/config';
 import { randomUUID } from 'crypto';
 import { db, redisClient } from '../server';
-import { requireAuth, requireAdmin } from '../middleware/auth';
+import { requireAuth, requireAdmin, requireCronOrAdmin } from '../middleware/auth';
 import { canTransition, isSettableStatus, SETTABLE_STATUSES } from '../lib/rideLifecycle';
 import { noShowOutcome } from '../lib/fees';
 import { planPayout, maskPayoutMethod } from '../lib/payouts';
@@ -240,7 +240,7 @@ export async function rideRoutes(fastify: FastifyInstance) {
   // ── POST /notify-upcoming — one-hour departure reminders ─────────────────
   // Intended for a scheduler (every ~5 min comfortably covers the window).
   // Idempotent: a ride is flagged once reminded, so a double-run cannot spam.
-  fastify.post('/notify-upcoming', { preHandler: [requireAdmin] }, async (_request, reply) => {
+  fastify.post('/notify-upcoming', { preHandler: [requireCronOrAdmin] }, async (_request, reply) => {
     const now = new Date();
     const horizon = new Date(now.getTime() + 65 * 60 * 1000).toISOString();
 
@@ -285,7 +285,7 @@ export async function rideRoutes(fastify: FastifyInstance) {
   // ready when the driver is still an hour away is worse than saying nothing.
   //
   // Idempotent per booking, so overlapping sweeps cannot double-notify.
-  fastify.post('/notify-boarding', { preHandler: [requireAdmin] }, async (_request, reply) => {
+  fastify.post('/notify-boarding', { preHandler: [requireCronOrAdmin] }, async (_request, reply) => {
     const now = new Date();
     // Wide enough to cover late stops on a long route, since a stop's ETA can
     // sit well after the ride's departure time.
@@ -360,7 +360,7 @@ export async function rideRoutes(fastify: FastifyInstance) {
   //
   // Idempotent: settled bookings leave HELD, and isSettlementDue is re-checked
   // inside the transaction, so overlapping runs cannot double-pay.
-  fastify.post('/settle-due', { preHandler: [requireAdmin] }, async (_request, reply) => {
+  fastify.post('/settle-due', { preHandler: [requireCronOrAdmin] }, async (_request, reply) => {
     const now = new Date();
     const snap = await db.collection('rides')
       .where('status', '==', 'COMPLETED')

@@ -1,5 +1,6 @@
 import { FastifyRequest, FastifyReply } from 'fastify';
 import * as admin from 'firebase-admin';
+import { timingSafeEqual } from 'crypto';
 
 // Extend FastifyRequest to include user object.
 // id is the Firebase UID (a string), not a numeric id.
@@ -60,4 +61,29 @@ export async function requireAdmin(request: FastifyRequest, reply: FastifyReply)
   if (request.user?.role !== 'ADMIN') {
     return reply.code(403).send({ error: 'Forbidden: admin access required.' });
   }
+}
+
+/**
+ * Auth for scheduled sweeps (Cloud Scheduler → Cloud Run).
+ *
+ * These endpoints move money and send messages, so they cannot be public — but
+ * a scheduler cannot hold a Firebase ID token either: tokens expire in an hour
+ * and there is no user to mint one. It presents a shared secret instead, and a
+ * human admin can still call the same endpoint with their token.
+ *
+ * The comparison is timing-safe. A plain === leaks how much of the secret
+ * matched via response timing, which is enough to recover it byte by byte.
+ */
+export async function requireCronOrAdmin(request: FastifyRequest, reply: FastifyReply) {
+  const configured = process.env.CRON_SECRET;
+  const supplied = request.headers['x-cron-key'];
+
+  if (configured && typeof supplied === 'string') {
+    const a = Buffer.from(configured);
+    const b = Buffer.from(supplied);
+    if (a.length === b.length && timingSafeEqual(a, b)) return; // authorised
+  }
+
+  // Not a scheduler call — fall back to a real admin user.
+  return requireAdmin(request, reply);
 }
