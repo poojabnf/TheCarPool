@@ -1,7 +1,7 @@
 // Jest is the project test runner; describe/it/expect are globals.
 import {
   isAtDestination, isDisputeWindowOpen, disputeMinutesRemaining,
-  isSettlementDue, settlementDueAt,
+  isSettlementDue, settlementDueAt, canResolveDispute,
   ARRIVAL_RADIUS_METERS, DISPUTE_WINDOW_MINUTES, SETTLEMENT_HOLD_MINUTES,
 } from '../settlement';
 
@@ -117,6 +117,23 @@ describe('isSettlementDue', () => {
   it('does not settle a ride that was never completed', () => {
     expect(isSettlementDue({ ...held, completed_at: null }, NOW)).toBe(false);
     expect(isSettlementDue({ ...held, completed_at: 'nope' }, NOW)).toBe(false);
+  });
+});
+
+describe('canResolveDispute', () => {
+  it('allows resolving an open dispute over money still in escrow', () => {
+    expect(canResolveDispute({ disputed: true, escrow_status: 'HELD' })).toBe(true);
+  });
+
+  it('refuses when there is no dispute', () => {
+    expect(canResolveDispute({ disputed: false, escrow_status: 'HELD' })).toBe(false);
+    expect(canResolveDispute({ escrow_status: 'HELD' })).toBe(false);
+  });
+
+  it('refuses once the fare has left escrow — that money is already gone', () => {
+    expect(canResolveDispute({ disputed: true, escrow_status: 'SETTLED' })).toBe(false);
+    expect(canResolveDispute({ disputed: true, escrow_status: 'CANCELLED' })).toBe(false);
+    expect(canResolveDispute({ disputed: true })).toBe(false);
   });
 });
 

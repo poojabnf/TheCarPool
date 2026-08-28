@@ -3,7 +3,7 @@ import { defaultCurrency } from '../lib/config';
 import { z } from 'zod';
 import { randomUUID, randomInt, timingSafeEqual } from 'crypto';
 import { db } from '../server';
-import { requireAuth } from '../middleware/auth';
+import { requireAuth, requireAdmin } from '../middleware/auth';
 import { parseOrReply } from '../lib/validate';
 import { sendPushToUser } from '../lib/fcm';
 import {
@@ -12,7 +12,7 @@ import {
 } from '../lib/bookingNotifications';
 import {
   isAtDestination, isDisputeWindowOpen, disputeMinutesRemaining,
-  settlementDueAt, DISPUTE_WINDOW_MINUTES,
+  settlementDueAt, DISPUTE_WINDOW_MINUTES, canResolveDispute,
 } from '../lib/settlement';
 
 import { getUserEmail, buildRiderBookingEmail, buildDriverPassengerBookedEmail, sendEmail } from '../lib/email';
@@ -681,6 +681,126 @@ export async function bookingRoutes(fastify: FastifyInstance) {
 
     fastify.log.warn({ booking_id: id, ride_id: booking.ride_id, rider: uid }, 'Ride completion disputed');
     return reply.send({ id, disputed: true, message: 'Your fare is on hold while we look into this.' });
+  });
+
+  // ── Admin: list open disputes ────────────────────────────────────────────
+  // Without this a disputed fare is invisible unless someone goes looking in
+  // Firestore. The money is parked until a human decides, so there has to be
+  // somewhere that shows what is waiting.
+  fastify.get('/disputes', { preHandler: [requireAdmin] }, async (_request, reply) => {
+    const snap = await db.collection('bookings')
+      .where('disputed', '==', true)
+      .where('escrow_status', '==', 'HELD')
+      .limit(100)
+      .get();
+
+    const disputes = await Promise.all(snap.docs.map(async (d) => {
+      const b = d.data();
+      const rideSnap = await db.collection('rides').doc(String(b.ride_id)).get();
+      const ride = rideSnap.exists ? rideSnap.data() : null;
+      return {
+        booking_id: d.id,
+        ride_id: b.ride_id,
+        rider_id: b.rider_id,
+        driver_uid: ride?.driver_uid ?? ride?.driver_id ?? null,
+        amount_held: round2(Number(b.total_paid) || 0),
+        fare_amount: b.fare_amount ?? null,
+        boarding_verified: b.boarding_verified ?? false,
+        completed_at: b.completed_at ?? null,
+        disputed_at: b.disputed_at ?? null,
+        dispute_reason: b.dispute_reason ?? null,
+        route: ride ? `${ride.source ?? '?'} → ${ride.destination ?? '?'}` : null,
+      };
+    }));
+
+    return reply.send({ count: disputes.length, disputes });
+  });
+
+  // ── Admin: resolve a dispute ─────────────────────────────────────────────
+  // Two outcomes, both final. PAY_DRIVER clears the flag and lets the normal
+  // settlement sweep pay out; REFUND_RIDER returns the whole amount and closes
+  // the booking. Deliberately no partial split: splitting a fare needs a policy
+  // this product does not have yet, and inventing one here would bury it.
+  fastify.post('/:id/resolve-dispute', { preHandler: [requireAdmin] }, async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const { resolution, note } = (request.body || {}) as { resolution?: string; note?: string };
+
+    if (resolution !== 'PAY_DRIVER' && resolution !== 'REFUND_RIDER') {
+      return reply.code(400).send({
+        error: 'INVALID_RESOLUTION',
+        message: 'resolution must be PAY_DRIVER or REFUND_RIDER.',
+      });
+    }
+
+    const bookingRef = db.collection('bookings').doc(id);
+    const bookingDoc = await bookingRef.get();
+    if (!bookingDoc.exists) return reply.code(404).send({ error: 'Booking not found.' });
+    const booking = bookingDoc.data()!;
+
+    if (!canResolveDispute(booking)) {
+      return reply.code(409).send({
+        error: 'NOT_RESOLVABLE',
+        message: booking.disputed !== true
+          ? 'That booking is not disputed.'
+          : 'That fare has already left escrow.',
+      });
+    }
+
+    const resolvedAt = new Date().toISOString();
+    const auditNote = String(note ?? '').slice(0, 500) || null;
+
+    if (resolution === 'PAY_DRIVER') {
+      // Clearing the flag is enough: settle-due already re-checks every
+      // condition, so the fare pays out on the next sweep through the normal
+      // path rather than a second, divergent copy of the payout maths.
+      await bookingRef.update({
+        disputed: false,
+        dispute_resolution: 'PAY_DRIVER',
+        dispute_resolved_at: resolvedAt,
+        dispute_resolution_note: auditNote,
+      });
+      fastify.log.warn({ booking_id: id, resolution }, 'Dispute resolved in favour of driver');
+      return reply.send({ id, resolution, settles_on_next_sweep: true });
+    }
+
+    // REFUND_RIDER — return the full amount and close the booking out.
+    const riderUid = String(booking.rider_id ?? booking.rider_uid ?? '');
+    const refund = round2(Number(booking.total_paid) || 0);
+    const riderWalletRef = db.collection('wallets').doc(riderUid);
+
+    try {
+      await db.runTransaction(async (tx) => {
+        const fresh = await tx.get(bookingRef);
+        if (!canResolveDispute(fresh.data() as any)) throw new Error('ALREADY_RESOLVED');
+        const walletDoc = await tx.get(riderWalletRef);
+        const cur = walletDoc.exists
+          ? walletDoc.data()!
+          : { available_wallet_balance: 0, escrow_locked_balance: 0, currency: defaultCurrency() };
+
+        tx.update(bookingRef, {
+          disputed: false,
+          dispute_resolution: 'REFUND_RIDER',
+          dispute_resolved_at: resolvedAt,
+          dispute_resolution_note: auditNote,
+          escrow_status: 'CANCELLED',
+          payment_status: 'CANCELLED_REFUNDED',
+          refunded_amount: refund,
+        });
+        tx.set(riderWalletRef, {
+          ...cur,
+          available_wallet_balance: round2((cur.available_wallet_balance || 0) + refund),
+        }, { merge: true });
+      });
+    } catch (err: any) {
+      if (String(err?.message) === 'ALREADY_RESOLVED') {
+        return reply.code(409).send({ error: 'NOT_RESOLVABLE', message: 'That dispute was already resolved.' });
+      }
+      fastify.log.error({ err, booking_id: id }, 'Dispute refund failed');
+      return reply.code(500).send({ error: 'Could not resolve that dispute.' });
+    }
+
+    fastify.log.warn({ booking_id: id, resolution, refund }, 'Dispute resolved in favour of rider');
+    return reply.send({ id, resolution, refunded_amount: refund });
   });
 
   fastify.post('/:id/verify-boarding-otp', { preHandler: [requireAuth] }, async (request, reply) => {

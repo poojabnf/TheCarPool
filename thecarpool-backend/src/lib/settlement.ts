@@ -116,6 +116,32 @@ export function isSettlementDue(
   return (now.getTime() - t) / 60000 >= SETTLEMENT_HOLD_MINUTES;
 }
 
+/**
+ * How a human resolves a disputed fare.
+ *
+ * A dispute deliberately parks the money rather than deciding for itself, so
+ * these are the only two ways it can end. Both are final: the fare leaves
+ * escrow either way, and the booking can never be settled twice.
+ */
+export type DisputeResolution = 'PAY_DRIVER' | 'REFUND_RIDER';
+
+export interface DisputeResolvable {
+  disputed?: boolean;
+  escrow_status?: string | null;
+}
+
+/**
+ * Can this dispute still be resolved?
+ *
+ * Only an open dispute over money still in escrow. Once the fare has settled
+ * or been refunded there is nothing left to decide, and pretending otherwise
+ * would let an admin move money that is already gone.
+ */
+export function canResolveDispute(booking: DisputeResolvable): boolean {
+  if (booking?.disputed !== true) return false;
+  return String(booking?.escrow_status ?? '') === 'HELD';
+}
+
 /** ISO time this booking becomes settleable, for storing on the doc. */
 export function settlementDueAt(completedAtIso: string): string | null {
   const t = Date.parse(String(completedAtIso));
