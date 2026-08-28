@@ -11,6 +11,7 @@ import { apiFetch } from '../services/api';
 import * as haptics from '../services/haptics';
 import HapticPressable from '../components/HapticPressable';
 import { formatMoney } from '../services/currency';
+import * as Location from 'expo-location';
 
 interface Booking {
   id: string;
@@ -25,6 +26,26 @@ interface Booking {
   vehicle_plate: string | null;
   ride_status: string | null;
   price_split: number | null;
+  booking_status?: string;
+  /** Set once the ride is marked finished; starts the dispute countdown. */
+  completed_at?: string | null;
+  disputed?: boolean;
+  drop_point?: { lat: number; lng: number } | null;
+}
+
+/**
+ * How long the rider has to challenge a completion.
+ *
+ * Mirrors DISPUTE_WINDOW_MINUTES on the server, which is the authority — this
+ * copy only decides whether to show the button. The server re-checks, so a
+ * stale client can never dispute outside the real window.
+ */
+const DISPUTE_WINDOW_MINUTES = 10;
+
+function disputeMinutesLeft(completedAt: string | null | undefined): number {
+  const t = Date.parse(String(completedAt ?? ''));
+  if (!Number.isFinite(t)) return 0;
+  return Math.max(0, Math.ceil(DISPUTE_WINDOW_MINUTES - (Date.now() - t) / 60000));
 }
 
 function statusColor(escrow: string, ride: string | null) {
@@ -138,6 +159,103 @@ export default function TripsScreen() {
     );
   };
 
+  /**
+   * Rider ends their own ride.
+   *
+   * Sends their coordinates when the OS will give them: the server then treats
+   * it as an arrival and checks they really are at the drop-off. If location is
+   * unavailable or refused, it falls back to a plain tap, which the server
+   * accepts as a deliberate confirmation and needs no proximity check.
+   */
+  const completeRide = async (b: Booking) => {
+    haptics.press();
+    let body: Record<string, number> = {};
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status === 'granted') {
+        const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
+        body = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+      }
+    } catch { /* fall through to the manual path */ }
+
+    try {
+      const res = await apiFetch(`/api/bookings/${b.id}/complete`, {
+        method: 'POST',
+        body: JSON.stringify(body),
+      }, { timeoutMs: 25000 });
+      const d = await res.json().catch(() => ({} as any));
+
+      if (!res.ok) {
+        // Not close enough for the automatic path — offer the manual one
+        // rather than leaving them stuck behind a GPS reading.
+        if (d.error === 'NOT_AT_DESTINATION') {
+          Alert.alert(
+            'Not at the drop-off yet',
+            "We couldn't confirm you're at the destination. Finish the ride anyway?",
+            [
+              { text: 'Not yet', style: 'cancel' },
+              {
+                text: 'Finish ride',
+                onPress: async () => {
+                  const r2 = await apiFetch(`/api/bookings/${b.id}/complete`, {
+                    method: 'POST', body: JSON.stringify({}),
+                  }, { timeoutMs: 25000 });
+                  if (r2.ok) { haptics.success(); load(true); }
+                  else Alert.alert('Could not complete', 'Please try again.');
+                },
+              },
+            ]
+          );
+          return;
+        }
+        Alert.alert('Could not complete', d.message || d.error || 'Please try again.');
+        return;
+      }
+
+      haptics.success();
+      Alert.alert(
+        'Ride completed',
+        `Thanks for riding. The driver is paid shortly — you have ${d.dispute_minutes_remaining ?? DISPUTE_WINDOW_MINUTES} minutes to tell us if anything was wrong.`
+      );
+      load(true);
+    } catch {
+      Alert.alert('Could not complete', 'Check your connection and try again.');
+    }
+  };
+
+  /** Rider says the completion was wrong. Freezes the fare pending review. */
+  const disputeRide = async (b: Booking) => {
+    haptics.warning();
+    Alert.alert(
+      'Report a problem',
+      "We'll hold the payment to the driver while we look into this.",
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Report',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              const res = await apiFetch(`/api/bookings/${b.id}/dispute`, {
+                method: 'POST',
+                body: JSON.stringify({ reason: 'Reported from the app' }),
+              }, { timeoutMs: 25000 });
+              const d = await res.json().catch(() => ({} as any));
+              if (!res.ok) {
+                Alert.alert('Could not report', d.message || d.error || 'Please contact support.');
+                return;
+              }
+              Alert.alert('Reported', d.message || 'Your payment is on hold while we look into this.');
+              load(true);
+            } catch {
+              Alert.alert('Could not report', 'Check your connection and try again.');
+            }
+          },
+        },
+      ]
+    );
+  };
+
   const upcoming = bookings.filter(b => b.ride_status !== 'COMPLETED' && b.escrow_status !== 'SETTLED');
   const past = bookings.filter(b => b.ride_status === 'COMPLETED' || b.escrow_status === 'SETTLED');
 
@@ -182,7 +300,11 @@ export default function TripsScreen() {
                 <BookingCard
                   key={b.id} b={b}
                   onPress={() => router.push(`/trip/${b.ride_id}`)}
-                  onCancel={b.ride_status === 'SCHEDULED' ? () => cancelBooking(b) : undefined}
+                  onCancel={b.ride_status === 'SCHEDULED' && !b.completed_at ? () => cancelBooking(b) : undefined}
+                  // Offer completion once the trip is under way and not already ended.
+                  onComplete={b.ride_status === 'STARTED' && !b.completed_at && b.booking_status !== 'REQUESTED' ? () => completeRide(b) : undefined}
+                  // Dispute stays available while the window is open and the fare unsettled.
+                  onDispute={b.completed_at && b.escrow_status === 'HELD' && disputeMinutesLeft(b.completed_at) > 0 ? () => disputeRide(b) : undefined}
                 />
               ))}
             </>
@@ -199,7 +321,10 @@ export default function TripsScreen() {
   );
 }
 
-function BookingCard({ b, onPress, onCancel }: { b: Booking; onPress: () => void; onCancel?: () => void }) {
+function BookingCard({ b, onPress, onCancel, onComplete, onDispute }: {
+  b: Booking; onPress: () => void; onCancel?: () => void;
+  onComplete?: () => void; onDispute?: () => void;
+}) {
   const color = statusColor(b.escrow_status, b.ride_status);
   const label = statusLabel(b.escrow_status, b.ride_status);
   const isLive = b.ride_status === 'STARTED';
@@ -235,6 +360,39 @@ function BookingCard({ b, onPress, onCancel }: { b: Booking; onPress: () => void
           <Text style={styles.price}>{formatMoney(b.price_split * b.seats_booked, { decimals: 0 })} escrow</Text>
         )}
       </View>
+
+      {b.booking_status === 'REQUESTED' && (
+        <Text style={styles.awaitingNote}>
+          Waiting for the driver to accept. You'll be refunded in full if they can't take you.
+        </Text>
+      )}
+
+      {/* The ride is under way and not yet finished — let the rider end it. */}
+      {onComplete && (
+        <HapticPressable style={styles.completeBtn} onPress={onComplete} activeOpacity={0.85}>
+          <Text style={styles.completeText}>I've reached my destination</Text>
+        </HapticPressable>
+      )}
+
+      {/* Finished, money not yet released. Say how long they have, because a
+          deadline nobody was told about is not a real opportunity to object. */}
+      {onDispute && !b.disputed && (
+        <View style={styles.disputeBox}>
+          <Text style={styles.disputeNote}>
+            Ride marked complete. Payment goes to the driver shortly — {disputeMinutesLeft(b.completed_at)} min
+            left to tell us if something was wrong.
+          </Text>
+          <HapticPressable style={styles.disputeBtn} onPress={onDispute} activeOpacity={0.85}>
+            <Text style={styles.disputeText}>Something's wrong</Text>
+          </HapticPressable>
+        </View>
+      )}
+
+      {b.disputed && (
+        <Text style={styles.disputedNote}>
+          You reported a problem. Your payment is on hold while we look into it.
+        </Text>
+      )}
 
       {onCancel && (
         <HapticPressable style={styles.cancelBtn} onPress={onCancel} activeOpacity={0.85}>
@@ -273,4 +431,12 @@ const styles = StyleSheet.create({
   price: { fontFamily: font.monoBold, fontSize: 13, color: c.textAccent, marginLeft: 'auto' },
   cancelBtn: { marginTop: space.sm, height: 38, borderRadius: radius.sm, borderWidth: 1, borderColor: c.dangerSoft, backgroundColor: c.dangerSoft, alignItems: 'center', justifyContent: 'center' },
   cancelText: { fontFamily: font.sansSemibold, fontSize: 12.5, color: c.danger },
+  awaitingNote: { fontFamily: font.sans, fontSize: 12, color: c.textTertiary, marginTop: 10, lineHeight: 17 },
+  completeBtn: { marginTop: 12, backgroundColor: c.go, borderRadius: radius.md, paddingVertical: 12, alignItems: 'center' },
+  completeText: { fontFamily: font.sansSemibold, fontSize: 14, color: '#fff' },
+  disputeBox: { marginTop: 12, padding: 12, borderRadius: radius.md, backgroundColor: c.surfaceSunken, borderWidth: 1, borderColor: c.borderSubtle },
+  disputeNote: { fontFamily: font.sans, fontSize: 12, color: c.textSecondary, lineHeight: 17 },
+  disputeBtn: { marginTop: 10, paddingVertical: 9, borderRadius: radius.sm, borderWidth: 1, borderColor: c.danger, alignItems: 'center' },
+  disputeText: { fontFamily: font.sansSemibold, fontSize: 13, color: c.danger },
+  disputedNote: { fontFamily: font.sans, fontSize: 12, color: c.danger, marginTop: 10, lineHeight: 17 },
 });

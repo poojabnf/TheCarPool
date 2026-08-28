@@ -989,6 +989,11 @@ export async function bookingRoutes(fastify: FastifyInstance) {
           // the one place the code is legitimately exposed.
           boarding_otp: b.boarding_otp ?? null,
           boarding_verified: b.boarding_verified ?? false,
+          // Completion + dispute state, so the rider UI can offer to finish
+          // the ride and show how long they have to challenge it.
+          booking_status: b.booking_status ?? 'CONFIRMED',
+          completed_at: b.completed_at ?? null,
+          disputed: b.disputed === true,
           // Ride snapshot fields
           departure_time: ride?.departure_time ?? null,
           driver_name: ride?.driver_name ?? null,
