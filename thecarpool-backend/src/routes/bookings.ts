@@ -1059,6 +1059,10 @@ export async function bookingRoutes(fastify: FastifyInstance) {
               seats_booked: b.seats_booked,
               pickup_point: b.pickup_point ?? null,
               escrow_status: b.escrow_status,
+              // Drives the accept/decline controls. Bookings made before
+              // approvals existed have no status and were confirmed by
+              // definition, so they must not render as pending requests.
+              booking_status: b.booking_status ?? 'CONFIRMED',
               // Never the code itself — only whether this rider is verified, so
               // the driver UI can show who still needs to board.
               boarding_verified: b.boarding_verified ?? false,

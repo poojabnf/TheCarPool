@@ -72,6 +72,41 @@ function Linkedin({ size = 16, color, style }: { size?: number; color?: string; 
 
 const MAX_PICKUP_POINTS = 10;
 
+/**
+ * Keep a stop-time field to digits and a single colon as it is typed, and
+ * insert the colon automatically after two digits.
+ *
+ * Deliberately permissive while typing — validity is judged at submit by
+ * stopTimeToIso, so the field never fights the user mid-entry.
+ */
+function formatTimeInput(raw: string): string {
+  const digits = raw.replace(/\D/g, '').slice(0, 4);
+  if (digits.length <= 2) return digits;
+  return `${digits.slice(0, 2)}:${digits.slice(2)}`;
+}
+
+/**
+ * Turn a stop's "HH:MM" into an ISO timestamp on the ride's departure date.
+ *
+ * A stop earlier in the clock than departure is assumed to be the next day —
+ * an overnight run leaving 23:30 and stopping at 00:40 is a real journey, and
+ * reading that as 22 hours earlier would put the whole route in the past.
+ * Returns null for anything unusable, so the backend falls back to Google.
+ */
+function stopTimeToIso(timeText: string | undefined, departure: Date): string | null {
+  if (!timeText) return null;
+  const m = /^(\d{1,2}):(\d{2})$/.exec(timeText.trim());
+  if (!m) return null;
+  const hh = Number(m[1]);
+  const mm = Number(m[2]);
+  if (hh > 23 || mm > 59) return null;
+
+  const d = new Date(departure);
+  d.setHours(hh, mm, 0, 0);
+  if (d.getTime() < departure.getTime()) d.setDate(d.getDate() + 1);
+  return d.toISOString();
+}
+
 export default function DriverInterface() {
   const router = useRouter();
   const userId = auth().currentUser?.uid ?? null;
@@ -109,7 +144,15 @@ export default function DriverInterface() {
   const [sourceSug, setSourceSug] = useState<any[]>([]);
   // Extra stops the driver will collect from, for riders who aren't at the
   // single origin. Stored on the ride and offered to riders at booking.
-  const [pickupPoints, setPickupPoints] = useState<{ label: string; lat: number; lng: number }[]>([]);
+  // `timeText` is the driver's own "HH:MM" for this stop, held as typed and
+  // resolved to a full timestamp against the departure date at submit.
+  const [pickupPoints, setPickupPoints] = useState<
+    { label: string; lat: number; lng: number; timeText?: string }[]
+  >([]);
+  // Whether this ride needs the driver to approve each rider.
+  const [requiresApproval, setRequiresApproval] = useState(false);
+  // Booking id currently being accepted/declined, to disable its buttons.
+  const [decidingBooking, setDecidingBooking] = useState<string | null>(null);
   const [pickupQuery, setPickupQuery] = useState('');
   const [pickupSug, setPickupSug] = useState<any[]>([]);
   const pickupTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -312,6 +355,50 @@ export default function DriverInterface() {
   };
 
   // Driver moves the ride through its lifecycle; COMPLETED settles escrow, CANCELLED cancels it.
+  /**
+   * Accept or decline a pending seat request.
+   *
+   * Declining is confirmed first: the rider's fare is already held, and a
+   * decline refunds it and releases the seat — not something to fire on a
+   * mistaken tap.
+   */
+  const decideBooking = async (bookingId: string, decision: 'ACCEPT' | 'DECLINE', rideId: string) => {
+    const run = async () => {
+      setDecidingBooking(bookingId);
+      try {
+        const res = await apiFetch(`/api/bookings/${bookingId}/decision`, {
+          method: 'PATCH',
+          body: JSON.stringify({ decision }),
+        }, { timeoutMs: 25000 });
+        const data = await res.json().catch(() => ({} as any));
+        if (!res.ok) {
+          Alert.alert('Could not update', data.message || data.error || 'Please try again.');
+          return;
+        }
+        await loadMyRides();
+        Alert.alert(
+          decision === 'ACCEPT' ? 'Seat confirmed' : 'Request declined',
+          decision === 'ACCEPT'
+            ? 'The rider has been told and given their boarding code.'
+            : 'The rider has been refunded in full and the seat is back.'
+        );
+      } catch {
+        Alert.alert('Could not update', 'Check your connection and try again.');
+      } finally {
+        setDecidingBooking(null);
+      }
+    };
+
+    if (decision === 'DECLINE') {
+      Alert.alert('Decline this request?', 'They will be refunded in full and the seat freed up.', [
+        { text: 'Keep it', style: 'cancel' },
+        { text: 'Decline', style: 'destructive', onPress: run },
+      ]);
+      return;
+    }
+    run();
+  };
+
   const openEdit = (ride: any) => {
     setEditRide(ride);
     setEditPrice(String(ride.price_split ?? ''));
@@ -612,7 +699,15 @@ export default function DriverInterface() {
           vehicle_model: vehicleModel.trim(),
           vehicle_colour: vehicleColour.trim(),
           vehicle_plate: vehiclePlate.trim(),
-          pickup_points: pickupPoints,
+          // Strip the UI-only timeText and send each stop's committed arrival
+          // as an ISO timestamp; stops left blank get a computed estimate.
+          pickup_points: pickupPoints.map((p) => ({
+            label: p.label,
+            lat: p.lat,
+            lng: p.lng,
+            eta: stopTimeToIso(p.timeText, departureAt),
+          })),
+          requires_approval: requiresApproval,
           // Derived from source/destination. The backend prices the optional
           // journey insurance from this; omitting it made insurance invisible.
           distance_km: parseFloat(distanceKm) || undefined,
@@ -736,6 +831,29 @@ export default function DriverInterface() {
                               <Text style={styles.manifestRow}>
                                 {p.rider_name}{p.rider_rating ? ` ★${p.rider_rating}` : ''} · {p.seats_booked} seat{p.seats_booked > 1 ? 's' : ''}
                               </Text>
+                              {/* Awaiting this driver's decision. Their fare is
+                                  already held, so declining refunds it. */}
+                              {p.booking_status === 'REQUESTED' && (
+                                <View style={styles.decisionRow}>
+                                  <Text style={styles.pendingTag}>Awaiting your approval</Text>
+                                  <HapticPressable
+                                    haptic="press"
+                                    style={styles.seatAcceptBtn}
+                                    onPress={() => decideBooking(p.booking_id, 'ACCEPT', r.id)}
+                                    disabled={decidingBooking === p.booking_id}
+                                  >
+                                    <Text style={styles.seatAcceptBtnText}>Accept</Text>
+                                  </HapticPressable>
+                                  <HapticPressable
+                                    haptic="warning"
+                                    style={styles.seatDeclineBtn}
+                                    onPress={() => decideBooking(p.booking_id, 'DECLINE', r.id)}
+                                    disabled={decidingBooking === p.booking_id}
+                                  >
+                                    <Text style={styles.seatDeclineBtnText}>Decline</Text>
+                                  </HapticPressable>
+                                </View>
+                              )}
                               {p.rider_phone && (
                                 <Text style={styles.passengerPhoneText}>📞 {p.rider_phone}</Text>
                               )}
@@ -857,16 +975,35 @@ export default function DriverInterface() {
               </Text>
 
               {pickupPoints.map((pt, i) => (
-                <View key={`${pt.lat},${pt.lng},${i}`} style={styles.pickupRow}>
-                  <MapPin color={colors.primary} size={16} />
-                  <Text style={styles.pickupLabel} numberOfLines={1}>{pt.label}</Text>
-                  <HapticPressable
-                    haptic="warning"
-                    onPress={() => setPickupPoints((prev) => prev.filter((_, j) => j !== i))}
-                    accessibilityLabel={`Remove ${pt.label}`}
-                  >
-                    <X color={colors.textMuted} size={16} />
-                  </HapticPressable>
+                <View key={`${pt.lat},${pt.lng},${i}`}>
+                  <View style={styles.pickupRow}>
+                    <MapPin color={colors.primary} size={16} />
+                    <Text style={styles.pickupLabel} numberOfLines={1}>{pt.label}</Text>
+                    <HapticPressable
+                      haptic="warning"
+                      onPress={() => setPickupPoints((prev) => prev.filter((_, j) => j !== i))}
+                      accessibilityLabel={`Remove ${pt.label}`}
+                    >
+                      <X color={colors.textMuted} size={16} />
+                    </HapticPressable>
+                  </View>
+                  {/* Optional: what time the driver expects to be here. Left
+                      blank, riders see an estimate worked out from the route
+                      instead — the driver's own figure always wins. */}
+                  <View style={styles.stopTimeRow}>
+                    <Text style={styles.stopTimeLabel}>Reaches at</Text>
+                    <TextInput
+                      style={styles.stopTimeInput}
+                      placeholder="HH:MM (optional)"
+                      placeholderTextColor={colors.inputPlaceholder}
+                      keyboardType="numbers-and-punctuation"
+                      maxLength={5}
+                      value={pt.timeText ?? ''}
+                      onChangeText={(t) => setPickupPoints((prev) =>
+                        prev.map((p, j) => (j === i ? { ...p, timeText: formatTimeInput(t) } : p))
+                      )}
+                    />
+                  </View>
                 </View>
               ))}
 
@@ -1216,6 +1353,22 @@ export default function DriverInterface() {
               <Switch
                 value={womenOnlyRide}
                 onValueChange={setWomenOnlyRide}
+                trackColor={{ false: colors.cardBorder, true: colors.success }}
+              />
+            </View>
+
+            <View style={styles.prefSwitchRow}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.prefLabel}>Approve each rider</Text>
+                <Text style={styles.prefHint}>
+                  {requiresApproval
+                    ? "You'll accept or decline each request. Riders pay upfront and are refunded if you decline."
+                    : 'Seats are confirmed instantly when someone books.'}
+                </Text>
+              </View>
+              <Switch
+                value={requiresApproval}
+                onValueChange={setRequiresApproval}
                 trackColor={{ false: colors.cardBorder, true: colors.success }}
               />
             </View>
@@ -1800,6 +1953,12 @@ const styles = StyleSheet.create({
   routeDest: { fontSize: 18, fontWeight: 'bold', color: colors.text },
   noRidesText: { color: colors.textMuted, fontSize: 13, marginTop: 8 },
   manifestRow: { color: colors.textMuted, fontSize: 12, marginBottom: 2 },
+  decisionRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 6, marginBottom: 4, flexWrap: 'wrap' },
+  pendingTag: { fontSize: 11, color: '#C9851A', fontWeight: '700' },
+  seatAcceptBtn: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8, backgroundColor: colors.success },
+  seatAcceptBtnText: { color: '#fff', fontSize: 12, fontWeight: '700' },
+  seatDeclineBtn: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8, borderWidth: 1, borderColor: '#ef4444' },
+  seatDeclineBtnText: { color: '#ef4444', fontSize: 12, fontWeight: '700' },
   passengerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 4, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.04)' },
   passengerPhoneText: { color: colors.success, fontSize: 11, fontWeight: '600', marginTop: 1 },
   passengerContactIcons: { flexDirection: 'row', gap: 6, marginLeft: 8 },
@@ -1865,6 +2024,9 @@ const styles = StyleSheet.create({
   vehicleDetailRow: { flexDirection: 'row', gap: 8, marginBottom: 8 },
   pickupRow: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: colors.inputBackground, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 10, marginBottom: 8, borderWidth: 1, borderColor: colors.cardBorder },
   pickupLabel: { flex: 1, fontSize: 13, color: colors.text },
+  stopTimeRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: -4, marginBottom: 10, paddingLeft: 24 },
+  stopTimeLabel: { fontSize: 12, color: colors.textMuted },
+  stopTimeInput: { flex: 1, backgroundColor: colors.inputBackground, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 8, fontSize: 13, color: colors.text, borderWidth: 1, borderColor: colors.cardBorder },
   depSummary: { fontSize: 12.5, color: colors.success, fontWeight: '600', marginTop: 4 },
   depSummaryBad: { color: '#C0392B' },
   derivedValue: { fontSize: 18, color: colors.text, fontWeight: '700' },
@@ -1930,6 +2092,7 @@ const styles = StyleSheet.create({
   formSectionTitle: { fontSize: 14, fontWeight: 'bold', color: colors.text, marginVertical: 14, textTransform: 'uppercase', letterSpacing: 0.5 },
   prefSwitchRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
   prefLabel: { color: colors.textMuted, fontSize: 13 },
+  prefHint: { color: colors.textMuted, fontSize: 11, opacity: 0.75, marginTop: 2, paddingRight: 12 },
   chatSelectRow: { flexDirection: 'row', gap: 8 },
   chatBtn: { flex: 1, backgroundColor: colors.inputBackground, paddingVertical: 8, borderRadius: 8, alignItems: 'center', borderWidth: 1, borderColor: colors.cardBorder },
   chatBtnActive: { backgroundColor: colors.success, borderColor: colors.success },
