@@ -45,3 +45,9 @@ screenshots/
 # Firebase service-account key — a signing credential, never committed.
 firebase-adminsdk*.json
 .vercel
+
+# EAS tooling regenerates a stub app.json at the repo root. Any eas command
+# run from here reads it INSTEAD of thecarpool-mobile/app.json, which has
+# silently pointed builds at the wrong project. The real config lives in
+# thecarpool-mobile/.
+/app.json
