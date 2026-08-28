@@ -18,6 +18,7 @@ import {
 import { getUserEmail, buildRiderBookingEmail, buildDriverPassengerBookedEmail, sendEmail } from '../lib/email';
 import { claimPaymentInTransaction } from '../lib/wallet';
 import { getRazorpay, isRazorpayConfigured, refundPaymentToSource } from '../lib/razorpay';
+import { isRouteConfigured, createHeldTransfer } from '../lib/route';
 import {
   CONVENIENCE_FEE,
   bookingTotal,
@@ -335,6 +336,41 @@ export async function bookingRoutes(fastify: FastifyInstance) {
       // Rich, privacy-safe messages across every configured channel. The old
       // pair of bare pushes said "a rider has booked" and nothing a driver
       // could act on — no name, no pickup point, no time.
+      // ── Route: split the fare to the driver, held ──────────────────────────
+      // Only for Razorpay-funded bookings (a transfer needs a payment to split)
+      // and only when the driver has a linked account on file. Everyone else
+      // keeps the wallet path, so no driver loses earnings by not being
+      // onboarded yet.
+      //
+      // Held rather than settled: the money stays with Razorpay until the ride
+      // completes, the dispute window closes, and settle-due releases it.
+      if (payment_method === 'RAZORPAY' && razorpay_payment_id && driverUid && isRouteConfigured()) {
+        try {
+          const driverSnap = await db.collection('users').doc(String(driverUid)).get();
+          const linkedAccount = driverSnap.data()?.razorpay_account_id;
+          if (linkedAccount) {
+            const transfer = await createHeldTransfer({
+              paymentId: String(razorpay_payment_id),
+              accountId: String(linkedAccount),
+              // The driver's share is the fare. The insurance premium is held
+              // for the insurer and is never part of their payout.
+              amountRupees: fareAmount,
+              notes: { booking_id: bookingId, ride_id: String(ride_id) },
+            });
+            await db.collection('bookings').doc(bookingId).update({
+              route_transfer_id: transfer.id,
+              route_transfer_status: transfer.status,
+            });
+          }
+        } catch (err) {
+          // Never fail a paid booking because the split did not happen — the
+          // rider has been charged and holds a seat. Without a transfer the
+          // booking settles through the wallet instead, which is recoverable;
+          // rejecting it here would not be.
+          fastify.log.error({ err, booking_id: bookingId }, 'Route transfer creation failed; falling back to wallet settlement');
+        }
+      }
+
       const notifyIds = { rideId: String(ride_id), riderUid: String(rider_id), driverUid };
       const notifyBooking = { ...result, seats_booked, pickup_label: pickupLabelFor(rideSnap, pickup_lat, pickup_lng) };
       if (result.booking_status === 'REQUESTED') {
@@ -681,6 +717,42 @@ export async function bookingRoutes(fastify: FastifyInstance) {
 
     fastify.log.warn({ booking_id: id, ride_id: booking.ride_id, rider: uid }, 'Ride completion disputed');
     return reply.send({ id, disputed: true, message: 'Your fare is on hold while we look into this.' });
+  });
+
+  // ── Admin: attach a driver's Route linked account ────────────────────────
+  // Creating a linked account involves Razorpay's onboarding and activation
+  // flow (identity, PAN, bank, product configuration), which is done in the
+  // Razorpay dashboard. This records the resulting acc_… id against the
+  // driver, which is all the transfer API needs.
+  //
+  // Once set, that driver's fares split to them at Razorpay instead of
+  // accruing in the in-app wallet. Drivers without one are unaffected.
+  fastify.post('/driver/:uid/linked-account', { preHandler: [requireAdmin] }, async (request, reply) => {
+    const { uid } = request.params as { uid: string };
+    const { account_id } = (request.body || {}) as { account_id?: string };
+
+    // Razorpay linked account ids are prefixed acc_. Checking the shape here
+    // stops a typo becoming a transfer failure at booking time, when the rider
+    // has already paid.
+    if (typeof account_id !== 'string' || !/^acc_[A-Za-z0-9]+$/.test(account_id.trim())) {
+      return reply.code(400).send({
+        error: 'INVALID_ACCOUNT_ID',
+        message: 'account_id must be a Razorpay linked account id, e.g. acc_XXXXXXXX.',
+      });
+    }
+
+    const userRef = db.collection('users').doc(String(uid));
+    if (!(await userRef.get()).exists) {
+      return reply.code(404).send({ error: 'User not found.' });
+    }
+
+    await userRef.set({
+      razorpay_account_id: account_id.trim(),
+      razorpay_account_linked_at: new Date().toISOString(),
+    }, { merge: true });
+
+    fastify.log.warn({ uid, account_id: account_id.trim() }, 'Route linked account attached to driver');
+    return reply.send({ uid, razorpay_account_id: account_id.trim(), payouts_via: 'ROUTE' });
   });
 
   // ── Admin: list open disputes ────────────────────────────────────────────

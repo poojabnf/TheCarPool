@@ -19,6 +19,7 @@ import { defaultCurrency } from './config';
 import { noShowOutcome } from './fees';
 import { planPayout, maskPayoutMethod } from './payouts';
 import { isSettlementDue } from './settlement';
+import { releaseTransfer } from './route';
 
 function round2(n: number): number {
   return Math.round((n + Number.EPSILON) * 100) / 100;
@@ -82,6 +83,10 @@ export async function settleDueBookingsForRide(
     let skipped = 0;
     const riderCredits = new Map<string, number>();
     const bookingWrites: { ref: FirebaseFirestore.DocumentReference; data: any }[] = [];
+    // Route transfers to release AFTER the transaction commits — an outbound
+    // API call inside a Firestore transaction would be retried with it, and
+    // releasing the same transfer twice is not something to risk.
+    const routeReleases: { transferId: string; bookingId: string }[] = [];
 
     for (const doc of bookingDocs) {
       // Re-checked under the transaction: a dispute or cancellation between the
@@ -92,8 +97,13 @@ export async function settleDueBookingsForRide(
       const premium = Number(b.insurance_premium || 0);
 
       if (b.boarding_verified === true) {
-        driverTotal += fare;
         paidCount += 1;
+        // A Route transfer already holds this driver's share at Razorpay, so
+        // releasing it IS the payout — crediting the wallet as well would pay
+        // twice. Only bookings without a transfer add to the wallet total.
+        if (!b.route_transfer_id) driverTotal += fare;
+        else routeReleases.push({ transferId: String(b.route_transfer_id), bookingId: doc.id });
+
         bookingWrites.push({
           ref: doc.ref,
           data: {
@@ -103,6 +113,7 @@ export async function settleDueBookingsForRide(
             driver_payout: fare,
             insurance_retained: premium,
             settled_at: settledAt,
+            settled_via: b.route_transfer_id ? 'ROUTE' : 'WALLET',
           },
         });
       } else {
@@ -128,7 +139,7 @@ export async function settleDueBookingsForRide(
     }
 
     if (bookingWrites.length === 0) {
-      return { paid: 0, no_shows: 0, driver_credited: 0, skipped };
+      return { paid: 0, no_shows: 0, driver_credited: 0, skipped, routeReleases: [] };
     }
 
     for (const w of bookingWrites) tx.update(w.ref, w.data);
@@ -179,7 +190,26 @@ export async function settleDueBookingsForRide(
       }, { merge: true });
     }
 
-    return { paid: paidCount, no_shows: noShowCount, driver_credited: round2(driverTotal), skipped };
+    return { paid: paidCount, no_shows: noShowCount, driver_credited: round2(driverTotal), skipped, routeReleases };
+  }).then(async (outcome) => {
+    // Committed. Release the Route holds now, outside the transaction: each is
+    // an outbound API call, and Firestore retries a transaction body — which
+    // would repeat the release.
+    for (const r of outcome.routeReleases ?? []) {
+      try {
+        await releaseTransfer(r.transferId);
+      } catch (err) {
+        // The booking is already SETTLED, so nothing retries this on its own.
+        // Log loudly: the driver is owed money that is still sitting on hold
+        // at Razorpay and needs releasing by hand.
+        log?.error(
+          { err, transfer_id: r.transferId, booking_id: r.bookingId },
+          'Route transfer release FAILED after settlement - driver money still held'
+        );
+      }
+    }
+    const { routeReleases: _released, ...rest } = outcome;
+    return rest as SettleOutcome;
   }).catch((err) => {
     log?.error({ err, ride_id: rideId }, 'Ride settlement failed');
     return { paid: 0, no_shows: 0, driver_credited: 0, skipped: 0 };
