@@ -9,7 +9,9 @@ import { planPayout, maskPayoutMethod } from '../lib/payouts';
 import { classifyVehicle, listMakes, listModels, VEHICLE_CLASSES } from '../lib/vehicles';
 import { needsDepartureReminder, minutesUntil } from '../lib/rideNotifications';
 import { needsBoardingReminder, minutesUntil as etaMinutesUntil, BOARDING_REMINDER_MINUTES } from '../lib/eta';
-import { notifyBoardingSoon, resolveStopEtasForRide } from '../lib/bookingNotifications';
+import { notifyBoardingSoon, resolveStopEtasForRide, notifyRideCompleted } from '../lib/bookingNotifications';
+import { settlementDueAt, DISPUTE_WINDOW_MINUTES } from '../lib/settlement';
+import { settleDueBookingsForRide } from '../lib/rideSettlement';
 import { sendPushToUser } from '../lib/fcm';
 import { getUserEmail, buildRideOfferedEmail, sendEmail } from '../lib/email';
 
@@ -348,6 +350,42 @@ export async function rideRoutes(fastify: FastifyInstance) {
     }
 
     return reply.send({ scanned: snap.size, riders_notified: notified });
+  });
+
+  // ── POST /settle-due — pay out rides whose hold has matured ──────────────
+  // The other half of deferred settlement. Completion only starts the clock;
+  // this is what actually moves money, once the hold has elapsed and nobody
+  // has disputed. Must be scheduled (Cloud Scheduler) — without something
+  // calling it, drivers are never paid at all.
+  //
+  // Idempotent: settled bookings leave HELD, and isSettlementDue is re-checked
+  // inside the transaction, so overlapping runs cannot double-pay.
+  fastify.post('/settle-due', { preHandler: [requireAdmin] }, async (_request, reply) => {
+    const now = new Date();
+    const snap = await db.collection('rides')
+      .where('status', '==', 'COMPLETED')
+      .where('settlement_due_at', '<', now.toISOString())
+      .limit(100)
+      .get();
+
+    let ridesSettled = 0;
+    const totals = { paid: 0, no_shows: 0, driver_credited: 0, skipped: 0 };
+
+    for (const doc of snap.docs) {
+      const ride = doc.data();
+      if (ride.escrow_settled === true) continue;
+      const driverUid = String(ride.driver_uid ?? ride.driver_id ?? '');
+      if (!driverUid) continue;
+
+      const outcome = await settleDueBookingsForRide(doc.id, driverUid, fastify.log);
+      totals.paid += outcome.paid;
+      totals.no_shows += outcome.no_shows;
+      totals.driver_credited = round2(totals.driver_credited + outcome.driver_credited);
+      totals.skipped += outcome.skipped;
+      if (outcome.paid > 0 || outcome.no_shows > 0) ridesSettled += 1;
+    }
+
+    return reply.send({ scanned: snap.size, rides_settled: ridesSettled, ...totals });
   });
 
   // ── GET /vehicle-catalogue — makes, models and size classes ──────────────
@@ -1185,179 +1223,44 @@ export async function rideRoutes(fastify: FastifyInstance) {
         return reply.send({ id, status, updated: true });
       }
 
-      // ── COMPLETED: settle every HELD booking AND pay the driver ────────────
-      // Previously this only flipped the booking flags and never moved money,
-      // so a completed trip left the fare stranded — the driver was never paid
-      // and `settled_amount` stayed undefined (wallet history showed -0).
-      const bookingsSnap = await db.collection('bookings')
+      // ── COMPLETED: start the payout clock, do not pay yet ─────────────────
+      // This used to settle escrow inline, which left a rider no recourse if a
+      // ride was marked complete wrongly — the money was simply gone. It now
+      // records the completion and lets it mature: the rider has a short window
+      // to dispute, and the fare settles only after the hold elapses with no
+      // dispute (see lib/settlement and POST /settle-due).
+      const completedAt = new Date().toISOString();
+      const dueAt = settlementDueAt(completedAt);
+
+      const heldSnap = await db.collection('bookings')
         .where('ride_id', '==', id)
         .where('escrow_status', '==', 'HELD')
         .get();
 
-      // Per-rider outcome depends ONLY on whether the driver verified that
-      // rider's boarding OTP:
-      //   verified  → the driver receives 100% of that rider's fare.
-      //   unverified → treated as a no-show: the rider gets 80% back to their
-      //                wallet, the driver 5% for turning up, platform keeps 15%.
-      // The insurance premium is never part of the driver payout — it is held
-      // for the insurer, and refunded to the rider on a no-show.
-      const driverWalletRef = db.collection('wallets').doc(uid);
-      const settledAt = new Date().toISOString();
-      // Read outside the transaction: it only decides routing, and Firestore
-      // requires all reads before writes inside one.
-      const driverDoc = await db.collection('users').doc(uid).get();
-      const driverPayoutMethod = driverDoc.data()?.payout_method ?? null;
-      let payoutPlan: ReturnType<typeof planPayout> | null = null;
-
-      const outcome = await db.runTransaction(async (tx) => {
-        // Firestore requires ALL reads before ANY writes.
-        const freshRide = await tx.get(rideRef);
-        if (String(freshRide.data()?.status) === 'COMPLETED') {
-          throw new Error('ALREADY_COMPLETED');
-        }
-        const bookingDocs = await Promise.all(bookingsSnap.docs.map((d) => tx.get(d.ref)));
-
-        // Collect the rider wallets we may need to refund, de-duplicated.
-        const riderRefs = new Map<string, FirebaseFirestore.DocumentReference>();
-        for (const doc of bookingDocs) {
-          if (!doc.exists || doc.data()?.escrow_status !== 'HELD') continue;
-          if (doc.data()?.boarding_verified === true) continue;
-          const rid = String(doc.data()?.rider_id);
-          if (rid && !riderRefs.has(rid)) riderRefs.set(rid, db.collection('wallets').doc(rid));
-        }
-        const driverWalletDoc = await tx.get(driverWalletRef);
-        const riderWalletDocs = new Map<string, FirebaseFirestore.DocumentSnapshot>();
-        for (const [rid, ref] of riderRefs) {
-          riderWalletDocs.set(rid, await tx.get(ref));
-        }
-
-        // ── Compute, then write ───────────────────────────────────────────
-        let driverTotal = 0;
-        let paidCount = 0;
-        let noShowCount = 0;
-        const riderCredits = new Map<string, number>();
-        const bookingWrites: { ref: FirebaseFirestore.DocumentReference; data: any }[] = [];
-
-        for (const doc of bookingDocs) {
-          // Re-check under the transaction: a rider may have cancelled between
-          // the query above and this transaction.
-          if (!doc.exists || doc.data()?.escrow_status !== 'HELD') continue;
-          const b = doc.data()!;
-          const fare = Number(b.fare_amount ?? Number(ride.price_split || 0) * Number(b.seats_booked || 1));
-          const premium = Number(b.insurance_premium || 0);
-
-          if (b.boarding_verified === true) {
-            driverTotal += fare;
-            paidCount += 1;
-            bookingWrites.push({
-              ref: doc.ref,
-              data: {
-                escrow_status: 'SETTLED',
-                payment_status: 'RELEASED',
-                settled_amount: fare,
-                driver_payout: fare,
-                insurance_retained: premium,
-                settled_at: settledAt,
-              },
-            });
-          } else {
-            const ns = noShowOutcome(fare, premium);
-            const rid = String(b.rider_id);
-            driverTotal += ns.driver_share;
-            noShowCount += 1;
-            riderCredits.set(rid, (riderCredits.get(rid) || 0) + ns.refund + ns.insurance_refund);
-            bookingWrites.push({
-              ref: doc.ref,
-              data: {
-                escrow_status: 'SETTLED',
-                payment_status: 'NO_SHOW',
-                no_show: true,
-                settled_amount: ns.driver_share,
-                driver_payout: ns.driver_share,
-                rider_refund: ns.refund + ns.insurance_refund,
-                platform_share: ns.platform_share,
-                settled_at: settledAt,
-              },
-            });
-          }
-        }
-
-        tx.update(rideRef, { status, updated_at: settledAt });
-        for (const w of bookingWrites) tx.update(w.ref, w.data);
-
-        if (driverTotal > 0) {
-          const cur = driverWalletDoc.exists
-            ? driverWalletDoc.data()!
-            : { available_wallet_balance: 0, escrow_locked_balance: 0, currency: defaultCurrency() };
-
-          // Earnings always land in the wallet first — it is the single source
-          // of truth for what the driver is owed. What differs is what happens
-          // next:
-          //   payout details on file -> a payout is queued for ~2h from now and
-          //     debits the wallet when it is sent
-          //   nothing on file        -> it stays in the wallet, spendable
-          //     immediately, with no hold
-          //
-          // The old 24h `withdrawable_after` is gone from this path. That rule
-          // is for a RIDER withdrawing a refund, not for driver earnings.
-          const plan = planPayout({ method: driverPayoutMethod, completedAt: new Date(settledAt) });
-
-          tx.set(driverWalletRef, {
-            ...cur,
-            available_wallet_balance: round2((cur.available_wallet_balance || 0) + driverTotal),
-            withdrawable_after: null,
-          }, { merge: true });
-
-          if (plan.destination === 'BANK') {
-            // Queued rather than paid inline: an irreversible transfer inside
-            // the completion transaction has no safe failure mode.
-            tx.set(db.collection('scheduled_payouts').doc(`${id}_${uid}`), {
-              ride_id: id,
-              driver_uid: uid,
-              amount: driverTotal,
-              payout_method: driverPayoutMethod,
-              destination: maskPayoutMethod(driverPayoutMethod),
-              due_at: plan.due_at,
-              status: 'PENDING',
-              created_at: settledAt,
-            });
-          }
-          payoutPlan = plan;
-        }
-        for (const [rid, amount] of riderCredits) {
-          if (amount <= 0) continue;
-          const ref = riderRefs.get(rid)!;
-          const doc = riderWalletDocs.get(rid)!;
-          const cur = doc.exists
-            ? doc.data()!
-            : { available_wallet_balance: 0, escrow_locked_balance: 0, currency: defaultCurrency() };
-          tx.set(ref, {
-            ...cur,
-            available_wallet_balance: round2((cur.available_wallet_balance || 0) + amount),
-          }, { merge: true });
-        }
-
-        return { paid: paidCount, no_shows: noShowCount, driver_credited: round2(driverTotal), payout: payoutPlan };
+      const batch = db.batch();
+      batch.update(rideRef, {
+        status,
+        completed_at: completedAt,
+        settlement_due_at: dueAt,
+        updated_at: completedAt,
       });
+      // Stamped on each booking too, so the sweep can select on the booking
+      // alone and a per-rider dispute can block just that rider's payout.
+      for (const d of heldSnap.docs) {
+        batch.update(d.ref, { completed_at: completedAt, settlement_due_at: dueAt });
+      }
+      await batch.commit();
 
-      fastify.log.info({ ride_id: id, ...outcome }, 'Settled escrow on ride completion');
-
-      activeRiderUids(id).then((riders) => {
-        for (const rider of riders) {
-          sendPushToUser(rider, '✅ Trip completed',
-            'Hope you had a good ride. Tap to rate your driver.',
-            { type: 'RIDE_COMPLETED', ride_id: id });
-        }
-      }).catch(() => { /* best-effort */ });
+      notifyRideCompleted(id, fastify.log).catch(() => { /* best-effort */ });
 
       return reply.send({
         id,
         status,
         updated: true,
-        bookings_paid: outcome.paid,
-        no_shows: outcome.no_shows,
-        driver_credited: outcome.driver_credited,
-        payout: outcome.payout,
+        completed_at: completedAt,
+        settlement_due_at: dueAt,
+        bookings_awaiting_settlement: heldSnap.size,
+        dispute_window_minutes: DISPUTE_WINDOW_MINUTES,
       });
     } catch (err: any) {
       if (err.message === 'ALREADY_COMPLETED') {

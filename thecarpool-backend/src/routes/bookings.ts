@@ -8,7 +8,23 @@ import { parseOrReply } from '../lib/validate';
 import { sendPushToUser } from '../lib/fcm';
 import {
   notifyBookingRequested, notifyBookingConfirmed, notifyBookingDeclined,
+  notifyRideCompletedForBooking,
 } from '../lib/bookingNotifications';
+import {
+  isAtDestination, isDisputeWindowOpen, disputeMinutesRemaining,
+  settlementDueAt, DISPUTE_WINDOW_MINUTES,
+} from '../lib/settlement';
+
+import { getUserEmail, buildRiderBookingEmail, buildDriverPassengerBookedEmail, sendEmail } from '../lib/email';
+import { claimPaymentInTransaction } from '../lib/wallet';
+import { getRazorpay, isRazorpayConfigured, refundPaymentToSource } from '../lib/razorpay';
+import {
+  CONVENIENCE_FEE,
+  bookingTotal,
+  insurancePremium,
+  cancellationOutcome,
+  noShowOutcome,
+} from '../lib/fees';
 
 /**
  * Name the driver stop this rider is boarding at, when their pickup matches
@@ -31,16 +47,6 @@ function pickupLabelFor(
   );
   return match?.label ? String(match.label) : null;
 }
-import { getUserEmail, buildRiderBookingEmail, buildDriverPassengerBookedEmail, sendEmail } from '../lib/email';
-import { claimPaymentInTransaction } from '../lib/wallet';
-import { getRazorpay, isRazorpayConfigured, refundPaymentToSource } from '../lib/razorpay';
-import {
-  CONVENIENCE_FEE,
-  bookingTotal,
-  insurancePremium,
-  cancellationOutcome,
-  noShowOutcome,
-} from '../lib/fees';
 
 /** Rounds to paise — booking amounts are rupees held as JS numbers. */
 function round2(n: number): number {
@@ -572,6 +578,109 @@ export async function bookingRoutes(fastify: FastifyInstance) {
       fastify.log
     );
     return reply.send({ id, booking_status: 'DECLINED', refunded_amount: refund });
+  });
+
+  // ── Rider confirms the ride is over ──────────────────────────────────────
+  // Two ways in, both landing here:
+  //   - the rider taps "complete" in the app
+  //   - the app reports their location and they are at the destination
+  // The geofence is checked SERVER-side: a client that could self-report
+  // arrival could complete a ride it never took and start a payout clock.
+  fastify.post('/:id/complete', { preHandler: [requireAuth] }, async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const { lat, lng } = (request.body || {}) as { lat?: number; lng?: number };
+    const uid = String(request.user!.id);
+
+    const bookingRef = db.collection('bookings').doc(id);
+    const bookingDoc = await bookingRef.get();
+    if (!bookingDoc.exists) return reply.code(404).send({ error: 'Booking not found.' });
+    const booking = bookingDoc.data()!;
+
+    if (String(booking.rider_id ?? booking.rider_uid) !== uid) {
+      return reply.code(403).send({ error: 'Forbidden: only the rider can complete their own booking.' });
+    }
+    if (String(booking.escrow_status) !== 'HELD') {
+      return reply.code(409).send({ error: 'NOT_ACTIVE', message: 'That booking is already settled or cancelled.' });
+    }
+    if (booking.completed_at) {
+      return reply.send({
+        id, already: true, completed_at: booking.completed_at,
+        dispute_minutes_remaining: disputeMinutesRemaining(booking.completed_at),
+      });
+    }
+
+    // When coordinates are supplied this is the automatic path, and the rider
+    // must genuinely be at the drop point. Without coordinates it is a
+    // deliberate tap, which needs no proximity check.
+    if (lat !== undefined || lng !== undefined) {
+      const drop = booking.drop_point ?? {};
+      if (!isAtDestination(lat, lng, drop.lat, drop.lng)) {
+        return reply.code(409).send({
+          error: 'NOT_AT_DESTINATION',
+          message: 'You do not appear to be at the drop-off point yet.',
+        });
+      }
+    }
+
+    const completedAt = new Date().toISOString();
+    await bookingRef.update({
+      completed_at: completedAt,
+      settlement_due_at: settlementDueAt(completedAt),
+      completed_by: lat !== undefined ? 'ARRIVAL' : 'RIDER',
+    });
+
+    notifyRideCompletedForBooking(
+      { rideId: String(booking.ride_id), riderUid: uid },
+      { ...booking, id },
+      fastify.log
+    );
+
+    return reply.send({
+      id,
+      completed_at: completedAt,
+      dispute_minutes_remaining: DISPUTE_WINDOW_MINUTES,
+    });
+  });
+
+  // ── Rider disputes a completion ──────────────────────────────────────────
+  // Money stays exactly where it is: escrow. A dispute does NOT auto-refund
+  // (which would let a dishonest rider travel free) and does not pay out
+  // (which would strand a rider who was wrongly marked complete). It freezes
+  // the fare and flags it, and a human decides.
+  fastify.post('/:id/dispute', { preHandler: [requireAuth] }, async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const { reason } = (request.body || {}) as { reason?: string };
+    const uid = String(request.user!.id);
+
+    const bookingRef = db.collection('bookings').doc(id);
+    const bookingDoc = await bookingRef.get();
+    if (!bookingDoc.exists) return reply.code(404).send({ error: 'Booking not found.' });
+    const booking = bookingDoc.data()!;
+
+    if (String(booking.rider_id ?? booking.rider_uid) !== uid) {
+      return reply.code(403).send({ error: 'Forbidden: only the rider can dispute their own ride.' });
+    }
+    if (String(booking.escrow_status) !== 'HELD') {
+      return reply.code(409).send({
+        error: 'ALREADY_SETTLED',
+        message: 'That fare has already been settled. Contact support.',
+      });
+    }
+    if (!isDisputeWindowOpen(booking.completed_at)) {
+      return reply.code(409).send({
+        error: 'WINDOW_CLOSED',
+        message: `Disputes close ${DISPUTE_WINDOW_MINUTES} minutes after the ride is marked complete. Contact support.`,
+      });
+    }
+
+    await bookingRef.update({
+      disputed: true,
+      disputed_at: new Date().toISOString(),
+      dispute_reason: String(reason ?? '').slice(0, 500) || null,
+    });
+
+    fastify.log.warn({ booking_id: id, ride_id: booking.ride_id, rider: uid }, 'Ride completion disputed');
+    return reply.send({ id, disputed: true, message: 'Your fare is on hold while we look into this.' });
   });
 
   fastify.post('/:id/verify-boarding-otp', { preHandler: [requireAuth] }, async (request, reply) => {

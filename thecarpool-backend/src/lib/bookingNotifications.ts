@@ -12,10 +12,11 @@
 import { db } from '../server';
 import { notifyUser } from './notify';
 import { fetchLegDurations, resolveStopEtas, StopInput } from './eta';
+import { DISPUTE_WINDOW_MINUTES } from './settlement';
 import {
   RideMessageContext, BuiltMessage,
   riderBookingConfirmed, riderRequestSubmitted, driverBookingRequested,
-  driverBookingConfirmed, riderRequestDeclined, riderBoardingSoon,
+  driverBookingConfirmed, riderRequestDeclined, riderBoardingSoon, riderRideCompleted,
 } from './rideMessages';
 
 type Log = { error: (...args: any[]) => void };
@@ -210,6 +211,45 @@ export async function resolveStopEtasForRide(
 
   return resolveStopEtas(String(ride?.departure_time ?? ''), stops, legs)
     .map((s) => ({ label: s.label, lat: s.lat, lng: s.lng, eta: s.eta }));
+}
+
+/** One rider's ride is complete — tell them, with the dispute deadline. */
+export async function notifyRideCompletedForBooking(
+  ids: BookingContextIds,
+  booking: Record<string, any>,
+  log?: Log
+): Promise<void> {
+  try {
+    const r = await resolve(ids, booking);
+    await dispatch(
+      ids.riderUid, r.riderPhone,
+      riderRideCompleted(r.ctx, DISPUTE_WINDOW_MINUTES),
+      { type: 'RIDE_COMPLETED', booking_id: String(booking.id), ride_id: ids.rideId },
+      log
+    );
+  } catch (err) {
+    log?.error({ err, ...ids }, 'Ride-completed notification failed');
+  }
+}
+
+/** Whole-ride completion: notify every rider still holding a fare on it. */
+export async function notifyRideCompleted(rideId: string, log?: Log): Promise<void> {
+  try {
+    const snap = await db.collection('bookings')
+      .where('ride_id', '==', rideId)
+      .where('escrow_status', '==', 'HELD')
+      .get();
+    await Promise.all(snap.docs.map((d) => {
+      const b = d.data();
+      return notifyRideCompletedForBooking(
+        { rideId, riderUid: String(b.rider_id ?? b.rider_uid) },
+        { ...b, id: d.id },
+        log
+      );
+    }));
+  } catch (err) {
+    log?.error({ err, ride_id: rideId }, 'Ride-completed fan-out failed');
+  }
 }
 
 /** Driver turned the request down; the rider has been refunded. */

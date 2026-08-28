@@ -184,6 +184,25 @@ export function driverBookingConfirmed(ctx: RideMessageContext): BuiltMessage {
   return { title: 'Booking confirmed', body: scrubContact(body) };
 }
 
+/**
+ * Sent to the RIDER when the ride is marked complete.
+ *
+ * States the dispute window explicitly. Someone whose ride was completed
+ * wrongly has a limited time to say so, and they can only act on a deadline
+ * they were actually told about.
+ */
+export function riderRideCompleted(
+  ctx: RideMessageContext,
+  disputeMinutes: number
+): BuiltMessage {
+  const body = joinLines([
+    `Your ride with ${shortName(ctx.driver_name, 'your driver')} is marked complete.`,
+    ctx.origin && ctx.destination ? `${ctx.origin} → ${ctx.destination}` : null,
+    `If this is wrong, tell us in the app within ${disputeMinutes} minutes and we'll hold the payment.`,
+  ]);
+  return { title: 'Ride completed', body: scrubContact(body) };
+}
+
 /** Sent to the RIDER when the driver declines their request. */
 export function riderRequestDeclined(ctx: RideMessageContext): BuiltMessage {
   const body = joinLines([
