@@ -29,7 +29,11 @@ export default function PayoutMethodScreen() {
   const [ifsc, setIfsc] = useState('');
   const [holderName, setHolderName] = useState('');
   const [saving, setSaving] = useState(false);
-  const [current, setCurrent] = useState<{ configured: boolean; destination: string } | null>(null);
+  const [current, setCurrent] = useState<{
+    configured: boolean; destination: string;
+    /** Whether the server can send payouts at all (RazorpayX configured). */
+    payouts_available?: boolean;
+  } | null>(null);
   const [balance, setBalance] = useState(0);
   const [withdrawing, setWithdrawing] = useState(false);
 
@@ -153,7 +157,11 @@ export default function PayoutMethodScreen() {
         {current?.configured && (
           <View style={styles.currentBox}>
             <Text style={styles.currentText}>Currently paying to {current.destination}</Text>
-            {balance > 0 && (
+            {/* Only offer the button when this deployment can actually send
+                money. Previously it was shown regardless, so tapping it
+                retried a 503 three times and then failed — with nothing
+                explaining that payouts were switched off server-side. */}
+            {balance > 0 && current.payouts_available !== false && (
               <HapticPressable
                 haptic="press"
                 style={[styles.withdrawBtn, withdrawing && styles.disabled]}
@@ -164,6 +172,13 @@ export default function PayoutMethodScreen() {
                   ? <ActivityIndicator color={c.goStrong} />
                   : <Text style={styles.withdrawText}>Withdraw {formatMoney(balance, { decimals: 2 })} now</Text>}
               </HapticPressable>
+            )}
+            {balance > 0 && current.payouts_available === false && (
+              <Text style={styles.payoutsOffNote}>
+                Withdrawals to UPI and bank aren't switched on yet. Your{' '}
+                {formatMoney(balance, { decimals: 2 })} is safe in your wallet and can be
+                spent on rides in the meantime.
+              </Text>
             )}
           </View>
         )}
@@ -286,6 +301,7 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: c.goStrong, backgroundColor: 'transparent',
   },
   withdrawText: { fontFamily: font.sansBold, fontSize: 14, color: c.goStrong },
+  payoutsOffNote: { fontFamily: font.sans, fontSize: 12, color: c.textSecondary, lineHeight: 17, marginTop: 8 },
   typeRow: { flexDirection: 'row', gap: 10, marginBottom: space.lg },
   typeBtn: { flex: 1, paddingVertical: 12, borderRadius: radius.md, borderWidth: 1, borderColor: c.borderDefault, alignItems: 'center', backgroundColor: c.surfaceCard },
   typeBtnOn: { borderColor: c.accent, backgroundColor: c.accentSoft },

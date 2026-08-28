@@ -275,6 +275,13 @@ export async function paymentRoutes(fastify: FastifyInstance) {
       configured: hasPayoutMethod(method),
       type: method?.type ?? null,
       destination: maskPayoutMethod(method),
+      // Whether this deployment can actually send money out at all, as opposed
+      // to whether THIS user has given us somewhere to send it. Without it the
+      // app offered a Withdraw button that could only ever fail: RazorpayX is
+      // a separate product from Razorpay, and payouts stay unavailable until
+      // RAZORPAYX_ACCOUNT_NUMBER is set. Earnings still accrue in the wallet
+      // meanwhile — they simply cannot be moved to a bank or UPI yet.
+      payouts_available: isRazorpayXConfigured(),
     });
   });
 
