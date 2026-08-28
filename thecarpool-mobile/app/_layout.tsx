@@ -60,18 +60,25 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
           const res = await apiFetch('/api/users/me');
           if (res.ok) {
             const data = await res.json();
-            // Rehydrate profile fields if present
-            if (data.name || data.address || data.company || data.photo_url) {
-              setUserProfile({
-                name: data.name,
-                phone: user.phoneNumber || '',
-                email: data.email,
-                address: data.address,
-                company: data.company,
-                role: data.role,
-                photoUrl: data.photo_url,
-              });
+            // Only pass through fields the server actually returned.
+            //
+            // setUserProfile spreads its argument over the existing profile,
+            // so passing `name: undefined` OVERWRITES a good name with
+            // nothing. That is how a saved name could vanish: any response
+            // carrying an address or photo but no name wiped it.
+            const fields: Record<string, any> = {
+              name: data.name,
+              email: data.email,
+              address: data.address,
+              company: data.company,
+              role: data.role,
+              photoUrl: data.photo_url,
+            };
+            for (const k of Object.keys(fields)) {
+              if (fields[k] === undefined || fields[k] === null) delete fields[k];
             }
+            if (user.phoneNumber) fields.phone = user.phoneNumber;
+            if (Object.keys(fields).length > 0) setUserProfile(fields);
           }
         } catch {
           /* non-fatal — user proceeds with local state */

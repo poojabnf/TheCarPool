@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { StyleSheet, View, Text, ScrollView, Switch, Alert, Linking, ActivityIndicator, Image, TextInput } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   CreditCard, Settings, HelpCircle, ChevronRight, LogOut, Newspaper, ShieldCheck, Leaf, Receipt, Camera,
@@ -77,6 +77,24 @@ export default function AccountInterface() {
       .then((d) => setGender(d?.gender ?? null))
       .catch(() => {});
   }, []);
+
+  useFocusEffect(useCallback(() => {
+    if (!auth().currentUser) return;
+    apiFetch('/api/users/me')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (!d) return;
+        const fields: Record<string, any> = {
+          name: d.name, email: d.email, address: d.address,
+          company: d.company, role: d.role, photoUrl: d.photo_url,
+        };
+        for (const k of Object.keys(fields)) {
+          if (fields[k] === undefined || fields[k] === null) delete fields[k];
+        }
+        if (Object.keys(fields).length > 0) setUserProfile(fields);
+      })
+      .catch(() => { /* keep whatever is already on screen */ });
+  }, [setUserProfile]));
 
   const updateGender = async (g: 'FEMALE' | 'MALE' | 'OTHER') => {
     setGender(g);

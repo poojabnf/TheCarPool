@@ -1,8 +1,8 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
   View, Text, StyleSheet, TextInput, ScrollView, Alert, ActivityIndicator, Image,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import auth from '@react-native-firebase/auth';
 import { MapPin, Circle, Search, Wind, Venus, Users, Leaf, Clock } from 'lucide-react-native';
@@ -52,6 +52,17 @@ function vehicleLabel(ride: Ride): string {
 }
 
 type Coords = { lat: number; lng: number };
+
+/** A ride you're driving, or a seat you've booked — shown as a home shortcut. */
+interface ActivityItem {
+  kind: 'OFFERED' | 'BOOKED';
+  id: string;
+  /** Departure time where known; used only for ordering. */
+  at?: string | null;
+  title: string;
+  subtitle: string;
+  href: string;
+}
 
 type WhenKey = 'ANY' | 'NOW' | 'TODAY' | 'TOMORROW';
 
@@ -143,10 +154,79 @@ export default function HomeScreen() {
   // Surfaced under the inputs so a failed lookup isn't just an empty dropdown.
   const [geoError, setGeoError] = useState('');
   const [showingCached, setShowingCached] = useState(false);
+  const [activity, setActivity] = useState<ActivityItem[]>([]);
   const { t } = useI18n();
 
   const originTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const destTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  /**
+   * Rides you're driving and seats you've booked, newest first.
+   *
+   * Refetched whenever the tab regains focus so a booking made elsewhere in
+   * the app shows up on return without a manual reload. Failures are silent:
+   * this is a shortcut list, and an empty one is better than an error where
+   * the search box should be.
+   */
+  const loadActivity = useCallback(async () => {
+    try {
+      const [bookingsRes, ridesRes] = await Promise.all([
+        apiFetch('/api/bookings/mine'),
+        apiFetch('/api/rides/mine'),
+      ]);
+
+      const items: ActivityItem[] = [];
+
+      if (bookingsRes.ok) {
+        const d = await bookingsRes.json();
+        for (const b of (d.bookings ?? [])) {
+          // Finished and settled trips belong in history, not on the home screen.
+          if (b.ride_status === 'COMPLETED' || b.escrow_status === 'SETTLED') continue;
+          if (b.ride_status === 'CANCELLED') continue;
+          items.push({
+            kind: 'BOOKED',
+            id: String(b.id),
+            at: b.departure_time || b.created_at,
+            title: b.driver_name ? `Ride with ${b.driver_name}` : 'Your booking',
+            subtitle: [
+              b.booking_status === 'REQUESTED' ? 'Awaiting driver' : null,
+              formatDeparture(b.departure_time),
+              b.vehicle,
+            ].filter(Boolean).join(' · '),
+            href: `/trip/${b.ride_id}`,
+          });
+        }
+      }
+
+      if (ridesRes.ok) {
+        const d = await ridesRes.json();
+        for (const r of (Array.isArray(d) ? d : (d.rides ?? []))) {
+          if (r.status === 'COMPLETED' || r.status === 'CANCELLED') continue;
+          const seatsBooked = typeof r.seats_total === 'number' && typeof r.seats_available === 'number'
+            ? r.seats_total - r.seats_available
+            : null;
+          items.push({
+            kind: 'OFFERED',
+            id: String(r.id),
+            at: r.departure_time,
+            title: `${r.source ?? 'Pickup'} → ${r.destination ?? 'Destination'}`,
+            subtitle: [
+              formatDeparture(r.departure_time),
+              seatsBooked !== null ? `${seatsBooked}/${r.seats_total} booked` : null,
+            ].filter(Boolean).join(' · '),
+            href: '/(tabs)/driver',
+          });
+        }
+      }
+
+      items.sort((a, b) => String(a.at ?? '').localeCompare(String(b.at ?? '')));
+      setActivity(items.slice(0, 5));
+    } catch {
+      /* a shortcut list is not worth an error state */
+    }
+  }, []);
+
+  useFocusEffect(useCallback(() => { loadActivity(); }, [loadActivity]));
 
   useEffect(() => {
     // Wake the backend now rather than on the first keystroke — see warmUp().
@@ -425,19 +505,29 @@ export default function HomeScreen() {
       {/* Frequent routes + CO2 (shown before searching) */}
       {rides === null && (
         <>
-          <Text style={styles.sectionTitle}>{t('frequent_routes')}</Text>
-          {[
-            { t: 'Morning commute', s: 'Home → Office · Mon–Fri' },
-            { t: 'Evening return', s: 'Office → Home · 6:45 PM' },
-          ].map((r) => (
-            <View key={r.t} style={styles.routeRow}>
-              <View style={styles.routeDot} />
-              <View style={{ flex: 1 }}>
-                <Text style={styles.routeTitle}>{r.t}</Text>
-                <Text style={styles.routeSub}>{r.s}</Text>
-              </View>
-            </View>
-          ))}
+          {/* Your actual rides and bookings, replacing two hardcoded rows
+              ("Morning commute", "Evening return") that were the same for
+              every user and led nowhere. Each row here opens the real thing. */}
+          {activity.length > 0 && (
+            <>
+              <Text style={styles.sectionTitle}>Your activity</Text>
+              {activity.map((a) => (
+                <HapticPressable
+                  key={`${a.kind}-${a.id}`}
+                  style={styles.routeRow}
+                  onPress={() => router.push(a.href as any)}
+                  activeOpacity={0.8}
+                >
+                  <View style={[styles.routeDot, a.kind === 'OFFERED' && { backgroundColor: brass[500] }]} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.routeTitle} numberOfLines={1}>{a.title}</Text>
+                    <Text style={styles.routeSub} numberOfLines={1}>{a.subtitle}</Text>
+                  </View>
+                  <Text style={styles.activityTag}>{a.kind === 'OFFERED' ? 'Driving' : 'Booked'}</Text>
+                </HapticPressable>
+              ))}
+            </>
+          )}
           <View style={styles.co2Card}>
             <View style={styles.co2Icon}><Leaf color={c.goStrong} size={20} strokeWidth={2.2} /></View>
             <View>
@@ -514,6 +604,7 @@ const styles = StyleSheet.create({
   routeRow: { flexDirection: 'row', alignItems: 'center', gap: space.md, backgroundColor: c.surfaceCard, borderRadius: radius.md, padding: space.md, borderWidth: 1, borderColor: c.borderSubtle, marginBottom: space.sm },
   routeDot: { width: 10, height: 10, borderRadius: 5, borderWidth: 2.5, borderColor: c.accent },
   routeTitle: { fontFamily: font.sansSemibold, fontSize: 14, color: c.textPrimary },
+  activityTag: { fontFamily: font.sansSemibold, fontSize: 11, color: c.textTertiary },
   routeSub: { fontFamily: font.sans, fontSize: 12, color: c.textTertiary, marginTop: 1 },
 
   co2Card: { flexDirection: 'row', alignItems: 'center', gap: space.md, backgroundColor: c.goSoft, borderRadius: radius.lg, padding: space.lg, marginTop: space.md },
