@@ -8,6 +8,8 @@ import { noShowOutcome } from '../lib/fees';
 import { planPayout, maskPayoutMethod } from '../lib/payouts';
 import { classifyVehicle, listMakes, listModels, VEHICLE_CLASSES } from '../lib/vehicles';
 import { needsDepartureReminder, minutesUntil } from '../lib/rideNotifications';
+import { needsBoardingReminder, minutesUntil as etaMinutesUntil, BOARDING_REMINDER_MINUTES } from '../lib/eta';
+import { notifyBoardingSoon, resolveStopEtasForRide } from '../lib/bookingNotifications';
 import { sendPushToUser } from '../lib/fcm';
 import { getUserEmail, buildRideOfferedEmail, sendEmail } from '../lib/email';
 
@@ -41,16 +43,22 @@ const MAX_PICKUP_POINTS = 10;
  */
 function normalisePickupPoints(
   raw: unknown
-): { label: string | null; lat: number; lng: number }[] {
+): { label: string | null; lat: number; lng: number; eta: string | null }[] {
   if (!Array.isArray(raw)) return [];
-  const out: { label: string | null; lat: number; lng: number }[] = [];
+  const out: { label: string | null; lat: number; lng: number; eta: string | null }[] = [];
   for (const p of raw) {
     const lat = Number((p as any)?.lat);
     const lng = Number((p as any)?.lng);
     if (!Number.isFinite(lat) || !Number.isFinite(lng)) continue;
     if (lat < -90 || lat > 90 || lng < -180 || lng > 180) continue;
     if (lat === 0 && lng === 0) continue;
-    out.push({ label: clean((p as any)?.label), lat, lng });
+    // Optional arrival time the driver committed to for this stop. Stored as
+    // an ISO string; anything unparseable is dropped rather than kept as junk,
+    // and the stop then falls back to a computed estimate.
+    const rawEta = (p as any)?.eta ?? (p as any)?.driver_eta ?? null;
+    const parsed = Date.parse(String(rawEta ?? ''));
+    const eta = Number.isFinite(parsed) ? new Date(parsed).toISOString() : null;
+    out.push({ label: clean((p as any)?.label), lat, lng, eta });
     if (out.length >= MAX_PICKUP_POINTS) break;
   }
   return out;
@@ -268,6 +276,80 @@ export async function rideRoutes(fastify: FastifyInstance) {
     return reply.send({ scanned: snap.size, rides_notified: notified });
   });
 
+  // ── POST /notify-boarding — "be ready" nudge, ~30 min before pickup ──────
+  // Separate from the departure reminder above, and deliberately per-RIDER:
+  // it fires 30 minutes before the driver reaches THAT rider's stop, not 30
+  // minutes before the ride departs. Telling someone at the last stop to be
+  // ready when the driver is still an hour away is worse than saying nothing.
+  //
+  // Idempotent per booking, so overlapping sweeps cannot double-notify.
+  fastify.post('/notify-boarding', { preHandler: [requireAdmin] }, async (_request, reply) => {
+    const now = new Date();
+    // Wide enough to cover late stops on a long route, since a stop's ETA can
+    // sit well after the ride's departure time.
+    const horizon = new Date(now.getTime() + 4 * 60 * 60 * 1000).toISOString();
+
+    const snap = await db.collection('rides')
+      .where('status', '==', 'SCHEDULED')
+      .where('departure_time', '>', new Date(now.getTime() - 4 * 60 * 60 * 1000).toISOString())
+      .where('departure_time', '<', horizon)
+      .limit(200)
+      .get();
+
+    let notified = 0;
+    for (const rideDoc of snap.docs) {
+      const ride = rideDoc.data();
+      const stops = Array.isArray(ride.pickup_points) ? ride.pickup_points : [];
+
+      // Resolve each stop's arrival once per ride — cached in lib/eta, so a
+      // ride with many riders still costs a single Directions lookup.
+      let stopEtas: Awaited<ReturnType<typeof resolveStopEtasForRide>> = [];
+      try {
+        stopEtas = await resolveStopEtasForRide(ride, stops);
+      } catch { /* fall through: riders without an ETA are simply skipped */ }
+
+      const bookingsSnap = await db.collection('bookings')
+        .where('ride_id', '==', rideDoc.id)
+        .where('escrow_status', '==', 'HELD')
+        .get();
+
+      for (const bookingDoc of bookingsSnap.docs) {
+        const booking = bookingDoc.data();
+        if (String(booking.booking_status ?? 'CONFIRMED') !== 'CONFIRMED') continue;
+        if (booking.boarding_reminder_sent === true) continue;
+
+        // Which stop is this rider boarding at? Fall back to the ride's
+        // departure when they are not on a declared stop.
+        const pickup = booking.pickup_point ?? {};
+        const match = stopEtas.find((s) =>
+          typeof pickup.lat === 'number' && typeof pickup.lng === 'number' &&
+          Math.abs(s.lat - pickup.lat) < 0.001 && Math.abs(s.lng - pickup.lng) < 0.001
+        );
+        const eta = match?.eta ?? ride.departure_time ?? null;
+        if (!needsBoardingReminder(eta, false, now)) continue;
+
+        const claimed = await db.runTransaction(async (tx) => {
+          const fresh = await tx.get(bookingDoc.ref);
+          if (fresh.data()?.boarding_reminder_sent === true) return false;
+          tx.update(bookingDoc.ref, { boarding_reminder_sent: true });
+          return true;
+        }).catch(() => false);
+        if (!claimed) continue;
+
+        const mins = etaMinutesUntil(eta, now) ?? BOARDING_REMINDER_MINUTES;
+        notifyBoardingSoon(
+          { rideId: rideDoc.id, riderUid: String(booking.rider_id ?? booking.rider_uid) },
+          { ...booking, id: bookingDoc.id, pickup_label: match?.label ?? null },
+          mins,
+          fastify.log
+        );
+        notified += 1;
+      }
+    }
+
+    return reply.send({ scanned: snap.size, riders_notified: notified });
+  });
+
   // ── GET /vehicle-catalogue — makes, models and size classes ──────────────
   // One source of truth for the driver's pickers and the rider's icons, so the
   // two can't disagree about what a "Creta" is.
@@ -380,6 +462,10 @@ export async function rideRoutes(fastify: FastifyInstance) {
           ? Math.round(Number(distance_km) * 10) / 10
           : null,
         pickup_points: normalisePickupPoints(pickup_points),
+        // Opt-in per ride: when true, a booking arrives as REQUESTED and waits
+        // for the driver to accept. Defaults to false so every existing ride,
+        // and every driver who does not ask for it, keeps booking instantly.
+        requires_approval: (request.body as any)?.requires_approval === true,
         vehicle_make: clean(vehicle_make),
         // Derived server-side, never taken from the client: a ride could
         // otherwise claim SUV for a two-seater and mislead riders at booking.
@@ -901,7 +987,11 @@ export async function rideRoutes(fastify: FastifyInstance) {
   fastify.patch('/:id', { preHandler: [requireAuth] }, async (request, reply) => {
     const { id } = request.params as { id: string };
     const uid = String(request.user!.id);
-    const body = (request.body || {}) as { price_split?: number; pickup_points?: any[] };
+    const body = (request.body || {}) as {
+      price_split?: number;
+      pickup_points?: any[];
+      requires_approval?: boolean;
+    };
 
     const rideRef = db.collection('rides').doc(id);
     const rideDoc = await rideRef.get();
@@ -941,19 +1031,20 @@ export async function rideRoutes(fastify: FastifyInstance) {
           message: `At most ${MAX_PICKUP_POINTS} pickup points.`,
         });
       }
-      const cleaned = body.pickup_points.map((p: any) => ({
-        label: String(p?.label || '').slice(0, 120),
-        lat: Number(p?.lat),
-        lng: Number(p?.lng),
-      }));
-      if (cleaned.some((p) => !Number.isFinite(p.lat) || !Number.isFinite(p.lng)
-        || p.lat > 90 || p.lat < -90 || p.lng > 180 || p.lng < -180)) {
+      // Shares normalisePickupPoints with ride creation so an edited stop
+      // carries its arrival time in exactly the same shape as a created one.
+      const cleaned = normalisePickupPoints(body.pickup_points);
+      if (cleaned.length !== body.pickup_points.length) {
         return reply.code(400).send({
           error: 'INVALID_PICKUP_POINTS',
           message: 'Every pickup point needs a valid location — pick them from the suggestions.',
         });
       }
       updates.pickup_points = cleaned;
+    }
+
+    if (body.requires_approval !== undefined) {
+      updates.requires_approval = body.requires_approval === true;
     }
 
     if (Object.keys(updates).length === 0) {

@@ -6,6 +6,31 @@ import { db } from '../server';
 import { requireAuth } from '../middleware/auth';
 import { parseOrReply } from '../lib/validate';
 import { sendPushToUser } from '../lib/fcm';
+import {
+  notifyBookingRequested, notifyBookingConfirmed, notifyBookingDeclined,
+} from '../lib/bookingNotifications';
+
+/**
+ * Name the driver stop this rider is boarding at, when their pickup matches
+ * one. Falls back to null so the message simply omits the line rather than
+ * inventing a location — and never echoes raw coordinates, which are as
+ * identifying as an address.
+ */
+function pickupLabelFor(
+  rideSnap: FirebaseFirestore.DocumentSnapshot,
+  lat: number,
+  lng: number
+): string | null {
+  const stops = rideSnap.exists ? rideSnap.data()?.pickup_points : null;
+  if (!Array.isArray(stops)) return null;
+  // ~100m: close enough to be the same stop, loose enough for map jitter.
+  const TOLERANCE = 0.001;
+  const match = stops.find((s: any) =>
+    typeof s?.lat === 'number' && typeof s?.lng === 'number' &&
+    Math.abs(s.lat - lat) < TOLERANCE && Math.abs(s.lng - lng) < TOLERANCE
+  );
+  return match?.label ? String(match.label) : null;
+}
 import { getUserEmail, buildRiderBookingEmail, buildDriverPassengerBookedEmail, sendEmail } from '../lib/email';
 import { claimPaymentInTransaction } from '../lib/wallet';
 import { getRazorpay, isRazorpayConfigured, refundPaymentToSource } from '../lib/razorpay';
@@ -271,6 +296,15 @@ export async function bookingRoutes(fastify: FastifyInstance) {
           razorpay_payment_id: razorpay_payment_id ?? null,
           payment_status: 'PAID',
           escrow_status: 'HELD',
+          // Drivers can require approval per ride. Off unless the ride asks
+          // for it, so every existing ride keeps booking instantly.
+          //
+          // The seat is decremented and the fare held either way: a request
+          // that did not hold its seat could be accepted after the ride sold
+          // out, and one that did not hold the fare would need the rider to
+          // come back and pay at the worst possible moment. A decline refunds
+          // in full and returns the seat.
+          booking_status: ride.requires_approval === true ? 'REQUESTED' : 'CONFIRMED',
           created_at: new Date().toISOString()
         };
         transaction.set(bookingRef, bookingData);
@@ -284,6 +318,7 @@ export async function bookingRoutes(fastify: FastifyInstance) {
           total_paid: totalDue,
           payment_status: 'PAID',
           escrow_status: 'HELD',
+          booking_status: bookingData.booking_status,
         };
       });
 
@@ -291,20 +326,15 @@ export async function bookingRoutes(fastify: FastifyInstance) {
       const rideSnap = await db.collection('rides').doc(String(ride_id)).get();
       const driverUid = rideSnap.exists ? rideSnap.data()?.driver_uid : null;
 
-      sendPushToUser(
-        String(rider_id),
-        '✅ Booking Confirmed!',
-        `Your seat is reserved. Escrow locked. Booking #${bookingId}`,
-        { booking_id: bookingId, type: 'BOOKING_CONFIRMED' }
-      );
-
-      if (driverUid) {
-        sendPushToUser(
-          driverUid,
-          '🚗 New Seat Booked',
-          `A rider has booked a seat on your commute. ${seats_booked} seat(s) filled.`,
-          { booking_id: bookingId, type: 'RIDER_JOINED' }
-        );
+      // Rich, privacy-safe messages across every configured channel. The old
+      // pair of bare pushes said "a rider has booked" and nothing a driver
+      // could act on — no name, no pickup point, no time.
+      const notifyIds = { rideId: String(ride_id), riderUid: String(rider_id), driverUid };
+      const notifyBooking = { ...result, seats_booked, pickup_label: pickupLabelFor(rideSnap, pickup_lat, pickup_lng) };
+      if (result.booking_status === 'REQUESTED') {
+        notifyBookingRequested(notifyIds, notifyBooking, fastify.log);
+      } else {
+        notifyBookingConfirmed(notifyIds, notifyBooking, fastify.log);
       }
 
       // Fire-and-forget email notifications to Rider & Driver
@@ -443,6 +473,107 @@ export async function bookingRoutes(fastify: FastifyInstance) {
   // Only the ride's own driver may call this. The code is short (4 digits), so
   // guessing is cheap — attempts are capped and counted atomically on the
   // booking doc, and the comparison is timing-safe.
+  // ── Driver accepts or declines a seat request ────────────────────────────
+  // Only reachable for rides the driver marked requires_approval. The seat and
+  // the fare are already held from the moment of the request, so accepting is
+  // just a state change; declining refunds in full and returns the seat.
+  fastify.patch('/:id/decision', { preHandler: [requireAuth] }, async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const { decision } = (request.body || {}) as { decision?: string };
+    const uid = String(request.user!.id);
+
+    if (decision !== 'ACCEPT' && decision !== 'DECLINE') {
+      return reply.code(400).send({ error: 'INVALID_DECISION', message: 'decision must be ACCEPT or DECLINE.' });
+    }
+
+    const bookingRef = db.collection('bookings').doc(id);
+    const bookingDoc = await bookingRef.get();
+    if (!bookingDoc.exists) return reply.code(404).send({ error: 'Booking not found.' });
+    const booking = bookingDoc.data()!;
+
+    const rideRef = db.collection('rides').doc(String(booking.ride_id));
+    const rideDoc = await rideRef.get();
+    if (!rideDoc.exists) return reply.code(404).send({ error: 'Ride not found.' });
+    const ride = rideDoc.data()!;
+
+    if (String(ride.driver_uid ?? ride.driver_id) !== uid) {
+      return reply.code(403).send({ error: 'Forbidden: only the ride driver can decide on this request.' });
+    }
+    // Anything already settled is out of scope — re-deciding a confirmed or
+    // declined booking would double-refund or resurrect a released seat.
+    if (String(booking.booking_status ?? 'CONFIRMED') !== 'REQUESTED') {
+      return reply.code(409).send({
+        error: 'NOT_PENDING',
+        message: 'That request has already been decided.',
+        booking_status: booking.booking_status ?? 'CONFIRMED',
+      });
+    }
+
+    const riderUid = String(booking.rider_id ?? booking.rider_uid ?? '');
+
+    if (decision === 'ACCEPT') {
+      await bookingRef.update({
+        booking_status: 'CONFIRMED',
+        decided_at: new Date().toISOString(),
+      });
+      notifyBookingConfirmed(
+        { rideId: String(booking.ride_id), riderUid, driverUid: uid },
+        { ...booking, id },
+        fastify.log
+      );
+      return reply.send({ id, booking_status: 'CONFIRMED' });
+    }
+
+    // DECLINE — refund everything the rider paid and give the seat back. The
+    // rider did nothing wrong, so no cancellation fee applies; those tiers
+    // price a rider changing their mind, not a driver turning them away.
+    const refund = round2((Number(booking.total_paid) || 0));
+    const riderWalletRef = db.collection('wallets').doc(riderUid);
+    try {
+      await db.runTransaction(async (tx) => {
+        const freshBooking = await tx.get(bookingRef);
+        if (String(freshBooking.data()?.booking_status) !== 'REQUESTED') {
+          throw new Error('ALREADY_DECIDED');
+        }
+        const freshRide = await tx.get(rideRef);
+        const walletDoc = await tx.get(riderWalletRef);
+        const cur = walletDoc.exists
+          ? walletDoc.data()!
+          : { available_wallet_balance: 0, escrow_locked_balance: 0, currency: defaultCurrency() };
+
+        tx.update(bookingRef, {
+          booking_status: 'DECLINED',
+          escrow_status: 'CANCELLED',
+          payment_status: 'CANCELLED_REFUNDED',
+          cancelled_by: 'DRIVER',
+          cancellation_fee: 0,
+          refunded_amount: refund,
+          decided_at: new Date().toISOString(),
+        });
+        tx.update(rideRef, {
+          seats_available: (freshRide.data()?.seats_available || 0) + (Number(booking.seats_booked) || 0),
+        });
+        tx.set(riderWalletRef, {
+          ...cur,
+          available_wallet_balance: round2((cur.available_wallet_balance || 0) + refund),
+        }, { merge: true });
+      });
+    } catch (err: any) {
+      if (String(err?.message) === 'ALREADY_DECIDED') {
+        return reply.code(409).send({ error: 'NOT_PENDING', message: 'That request has already been decided.' });
+      }
+      fastify.log.error({ err, booking: id }, 'Declining booking failed');
+      return reply.code(500).send({ error: 'Could not decline that request.' });
+    }
+
+    notifyBookingDeclined(
+      { rideId: String(booking.ride_id), riderUid, driverUid: uid },
+      { ...booking, id },
+      fastify.log
+    );
+    return reply.send({ id, booking_status: 'DECLINED', refunded_amount: refund });
+  });
+
   fastify.post('/:id/verify-boarding-otp', { preHandler: [requireAuth] }, async (request, reply) => {
     const { id } = request.params as { id: string };
     const { otp } = (request.body as { otp?: string }) || {};
@@ -461,6 +592,21 @@ export async function bookingRoutes(fastify: FastifyInstance) {
       }
 
       const booking = bookingDoc.data()!;
+
+      // A seat still awaiting the driver's decision cannot be boarded — that
+      // would let an unapproved rider on and settle their fare at completion.
+      // Bookings predating this field have no booking_status and are treated
+      // as confirmed, which is what they were.
+      const bookingStatus = String(booking.booking_status ?? 'CONFIRMED');
+      if (bookingStatus !== 'CONFIRMED') {
+        return reply.code(409).send({
+          error: 'NOT_CONFIRMED',
+          message: bookingStatus === 'REQUESTED'
+            ? 'Accept this seat request before verifying the boarding code.'
+            : 'That booking is not active.',
+          booking_status: bookingStatus,
+        });
+      }
 
       // Authorisation: the caller must be the driver of the booking's ride.
       // Without this any authenticated user could mark any booking as boarded.
