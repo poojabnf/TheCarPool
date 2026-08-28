@@ -39,7 +39,7 @@ function getTransporter(): nodemailer.Transporter | null {
 
 export async function getUserEmail(uid: string): Promise<{ email: string; name: string } | null> {
   try {
-    const { db } = await import('../server');
+    const { db } = await import('./firestore');
     const doc = await db.collection('users').doc(uid).get();
     if (!doc.exists) return null;
     const data = doc.data()!;

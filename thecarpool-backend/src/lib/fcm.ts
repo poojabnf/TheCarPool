@@ -9,7 +9,7 @@
  * logged but does not bubble up to the caller.
  */
 import * as admin from 'firebase-admin';
-import { db } from '../server';
+import { db } from './firestore';
 
 export async function sendPushToUser(
   uid: string,

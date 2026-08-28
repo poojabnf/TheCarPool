@@ -1,4 +1,4 @@
-import { db } from '../server';
+import { db } from './firestore';
 import { defaultCurrency } from './config';
 
 /**

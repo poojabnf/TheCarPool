@@ -69,16 +69,33 @@ export function validateEnv(logger?: Logger): void {
  * non-INR value here needs a payment provider that supports it. The
  * constant exists so the rest of the system stops assuming.
  */
+// Both values are read from the environment, which cannot change while the
+// process is alive, so they are parsed once. `undefined` means "not computed
+// yet" — distinct from a computed value, so a legitimately falsy result is
+// still cached rather than re-derived on every call.
+let currencyCache: string | undefined;
+let originsCache: string[] | true | undefined;
+
 export function defaultCurrency(): string {
+  if (currencyCache !== undefined) return currencyCache;
   const raw = process.env.DEFAULT_CURRENCY?.trim().toUpperCase();
-  return raw && /^[A-Z]{3}$/.test(raw) ? raw : 'INR';
+  currencyCache = raw && /^[A-Z]{3}$/.test(raw) ? raw : 'INR';
+  return currencyCache;
 }
 
 /** Comma-separated allowlist of web origins permitted for CORS / Socket.IO. */
 export function allowedOrigins(): string[] | true {
+  if (originsCache !== undefined) return originsCache;
   const raw = process.env.CORS_ALLOWED_ORIGINS?.trim();
   // Default to permissive in development so localhost tooling keeps working.
-  if (!raw) return process.env.NODE_ENV === 'production' ? [] : true;
-  if (raw === '*') return true;
-  return raw.split(',').map((o) => o.trim()).filter(Boolean);
+  if (!raw) originsCache = process.env.NODE_ENV === 'production' ? [] : true;
+  else if (raw === '*') originsCache = true;
+  else originsCache = raw.split(',').map((o) => o.trim()).filter(Boolean);
+  return originsCache;
+}
+
+/** Tests mutate process.env between cases; let them start clean. */
+export function __resetConfigCache(): void {
+  currencyCache = undefined;
+  originsCache = undefined;
 }

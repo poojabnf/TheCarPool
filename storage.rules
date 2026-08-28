@@ -2,9 +2,10 @@ rules_version = '2';
 
 // TheCarPool Firebase Storage security rules.
 //
-// KYC documents live under users/{uid}/kyc/** and must be readable/writable
-// only by their owner. Uploads from the app use a signed URL minted by the
-// backend, but these rules add defence-in-depth for any direct client access.
+// Per-user assets (avatars, classified photos) live under users/{uid}/** and
+// are readable/writable only by their owner. Uploads from the app use a signed
+// URL minted by the backend, but these rules add defence-in-depth for any
+// direct client access.
 service firebase.storage {
   match /b/{bucket}/o {
 
@@ -16,19 +17,29 @@ service firebase.storage {
       return request.auth != null && request.auth.token.admin == true;
     }
 
+    function withinSizeLimit() {
+      return request.resource.size < 10 * 1024 * 1024;
+    }
+
     // Per-user KYC documents — owner only, images up to 10 MB.
+    //
+    // create/update and delete are separate on purpose. `allow write` covers
+    // all three, but on a DELETE `request.resource` is null, so the size and
+    // content-type checks error out and silently block every deletion — which
+    // is also what stopped the retention policy from ever removing anything.
     match /users/{uid}/kyc/{allPaths=**} {
       allow read: if isOwner(uid) || isAdmin();
-      allow write: if isOwner(uid)
-        && request.resource.size < 10 * 1024 * 1024
+      allow create, update: if isOwner(uid)
+        && withinSizeLimit()
         && request.resource.contentType.matches('image/.*');
+      allow delete: if isOwner(uid) || isAdmin();
     }
 
     // Any other per-user assets — owner only, up to 10 MB.
     match /users/{uid}/{allPaths=**} {
       allow read: if isOwner(uid) || isAdmin();
-      allow write: if isOwner(uid)
-        && request.resource.size < 10 * 1024 * 1024;
+      allow create, update: if isOwner(uid) && withinSizeLimit();
+      allow delete: if isOwner(uid) || isAdmin();
     }
 
     // Deny everything else by default.

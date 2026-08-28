@@ -37,7 +37,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     // onIdTokenChanged fires on sign-in/out AND hourly token refreshes, so the
-    // __session cookie (verified server-side in proxy.ts) never goes stale.
+    // __session cookie never goes stale.
+    //
+    // NOTE: that cookie is NOT currently verified server-side. The guard that
+    // would do it lives in src/proxy.ts, but Next.js only runs middleware from
+    // a file named `middleware.ts`, so it has never executed. Protected pages
+    // are therefore guarded client-side only. Data is still safe — the backend
+    // re-verifies every API call with the Admin SDK — but the page shell is
+    // not, and the admin bundle is served to anyone who asks. Renaming
+    // proxy.ts to middleware.ts activates it; do that deliberately and verify
+    // dashboard access before it reaches production.
     const unsubscribe = onIdTokenChanged(auth, async (currentUser) => {
       setUser(currentUser);
       setLoading(false);

@@ -9,7 +9,7 @@
  * and reserved a seat by the time we notify anyone, so a failed push must
  * never surface as a failed booking — callers fire these without awaiting.
  */
-import { db } from '../server';
+import { db } from './firestore';
 import { notifyUser } from './notify';
 import { fetchLegDurations, resolveStopEtas, StopInput } from './eta';
 import { DISPUTE_WINDOW_MINUTES } from './settlement';

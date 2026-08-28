@@ -14,7 +14,7 @@
  * The insurance premium is never part of the driver payout — it is held for
  * the insurer, and refunded to the rider on a no-show.
  */
-import { db } from '../server';
+import { db } from './firestore';
 import { defaultCurrency } from './config';
 import { noShowOutcome } from './fees';
 import { planPayout, maskPayoutMethod } from './payouts';

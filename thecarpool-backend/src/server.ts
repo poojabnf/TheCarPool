@@ -147,6 +147,48 @@ const start = async () => {
   }
 };
 
+/**
+ * Drain cleanly when Cloud Run shuts the instance down.
+ *
+ * Cloud Run sends SIGTERM and then kills the container ~10s later. Without a
+ * handler, in-flight requests are cut mid-response and Socket.IO clients see
+ * an abrupt drop — which matters most during a deploy, when every instance is
+ * replaced. fastify.close() stops accepting new connections and waits for
+ * the ones already running.
+ *
+ * Guarded so a second signal during shutdown does not start it twice, and
+ * force-exits if draining stalls, because being killed at the deadline with
+ * no log is worse than exiting deliberately.
+ */
+let shuttingDown = false;
+async function shutdown(signal: string) {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  fastify.log.info(`${signal} received — draining`);
+
+  const force = setTimeout(() => {
+    fastify.log.error('Drain timed out — exiting anyway');
+    process.exit(1);
+  }, 8000);
+  // Do not let the timer itself keep the process alive once draining is done.
+  force.unref?.();
+
+  try {
+    io.close();
+    await fastify.close();
+    if (redisClient.isOpen) await redisClient.quit();
+    fastify.log.info('Drained cleanly');
+    process.exit(0);
+  } catch (err) {
+    captureError(err);
+    fastify.log.error(err, 'Error while draining');
+    process.exit(1);
+  }
+}
+
 if (process.env.NODE_ENV !== 'test') {
+  for (const sig of ['SIGTERM', 'SIGINT'] as const) {
+    process.on(sig, () => { void shutdown(sig); });
+  }
   start();
 }

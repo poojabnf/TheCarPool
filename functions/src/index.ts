@@ -35,7 +35,13 @@ export const instantiateRecurringRides = onSchedule(
     let batch = db.batch();
     let batchCount = 0;
 
+    let skipped = 0;
+
     for (const doc of snap.docs) {
+      // Isolated per document: one malformed template used to abort the whole
+      // run, so every later recurring ride silently failed to be created that
+      // day. Log the offending id and carry on.
+      try {
       const t = doc.data();
       const days: number[] = Array.isArray(t.days_of_week) ? t.days_of_week : [];
       if (!days.includes(dow)) continue;
@@ -73,6 +79,10 @@ export const instantiateRecurringRides = onSchedule(
         batch = db.batch();
         batchCount = 0;
       }
+      } catch (err) {
+        skipped++;
+        logger.error(`Recurring ride template ${doc.id} skipped`, err);
+      }
     }
 
     // Commit any remaining writes.
@@ -80,7 +90,10 @@ export const instantiateRecurringRides = onSchedule(
       await batch.commit();
     }
 
-    logger.info(`Recurring rides: created ${created} ride(s) for ${yyyymmdd} (dow=${dow}).`);
+    logger.info(
+      `Recurring rides: created ${created} ride(s) for ${yyyymmdd} (dow=${dow})` +
+      (skipped > 0 ? `, skipped ${skipped} malformed template(s).` : '.')
+    );
   },
 );
 
@@ -182,24 +195,34 @@ export const onUserDeleted = auth.user().onDelete(async (user) => {
 
     // Delete user's rides as a driver
     const driverRides = await db.collection('rides').where('driver_id', '==', uid).get();
-    const driverRideDeletes = driverRides.docs.map((doc) => doc.ref.delete());
-
     // Delete user's bookings
     const bookings = await db.collection('bookings').where('rider_id', '==', uid).get();
-    const bookingDeletes = bookings.docs.map((doc) => doc.ref.delete());
 
     // Delete user's classifieds
     const classifieds = await db.collection('classifieds').where('author_id', '==', uid).get();
-    const classifiedDeletes = classifieds.docs.map((doc) => doc.ref.delete());
 
-    // Execute all Firestore deletes in parallel
-    await Promise.all([
-      userDocRef.delete(),
-      walletRef.delete(),
-      ...driverRideDeletes,
-      ...bookingDeletes,
-      ...classifiedDeletes,
-    ]);
+    // Batched rather than one promise per document.
+    //
+    // This previously fired every delete at once through Promise.all. For a
+    // user with a long history that is hundreds of concurrent requests, which
+    // exhausts sockets and trips Firestore's write rate limit — and a partial
+    // failure leaves the account half-deleted. Batches cap the concurrency and
+    // commit atomically in chunks.
+    const refs = [
+      userDocRef,
+      walletRef,
+      ...driverRides.docs.map((d) => d.ref),
+      ...bookings.docs.map((d) => d.ref),
+      ...classifieds.docs.map((d) => d.ref),
+    ];
+
+    // Firestore allows 500 writes per batch; 490 leaves headroom.
+    const BATCH_LIMIT = 490;
+    for (let i = 0; i < refs.length; i += BATCH_LIMIT) {
+      const batch = db.batch();
+      for (const ref of refs.slice(i, i + BATCH_LIMIT)) batch.delete(ref);
+      await batch.commit();
+    }
 
     logger.info(`onUserDeleted: Successfully cleaned up all data for user ${uid}`);
   } catch (err: any) {

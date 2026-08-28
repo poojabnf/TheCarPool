@@ -16,7 +16,15 @@ export function initSentry() {
 }
 
 export function captureError(err: unknown) {
-  if (enabled) Sentry.captureException(err);
+  if (enabled) {
+    Sentry.captureException(err);
+    return;
+  }
+  // Without SENTRY_DSN this used to discard the error entirely, so anything
+  // routed here vanished — including the onError hook that catches every
+  // unhandled route error. Fall back to the console so a failure is at least
+  // visible in the Cloud Run log.
+  console.error('[captureError]', err);
 }
 
 export const sentryEnabled = () => enabled;
