@@ -891,28 +891,33 @@ export async function rideRoutes(fastify: FastifyInstance) {
 
   // 2b. List the authenticated driver's own rides (Partner/Fleet dashboard)
   fastify.get('/mine', { preHandler: [requireAuth] }, async (request, reply) => {
-    const uid = request.user!.id;
+    const uid = String(request.user!.id);
     try {
-      // Find driver profiles owned by this user (id may be stored as the raw
-      // uid or prefixed forms), then collect their rides.
-      const driverSnap = await db.collection('drivers').where('user_id', '==', String(uid)).get();
+      const ridesMap = new Map<string, any>();
+
+      // 1. Direct query by driver_uid (covers all standard ride creation)
+      const directUidSnap = await db.collection('rides').where('driver_uid', '==', uid).get();
+      directUidSnap.forEach((doc) => ridesMap.set(doc.id, { id: doc.id, ...doc.data() }));
+
+      // 2. Direct query by driver_id == uid
+      const directDriverIdSnap = await db.collection('rides').where('driver_id', '==', uid).get();
+      directDriverIdSnap.forEach((doc) => ridesMap.set(doc.id, { id: doc.id, ...doc.data() }));
+
+      // 3. Find driver profiles owned by this user
+      const driverSnap = await db.collection('drivers').where('user_id', '==', uid).get();
       const driverIds = driverSnap.docs.map(d => d.id);
-      // Also match drivers stored with a user_ prefix variant.
       const altSnap = await db.collection('drivers').where('user_id', '==', `user_${uid}`).get();
       altSnap.docs.forEach(d => { if (!driverIds.includes(d.id)) driverIds.push(d.id); });
 
-      if (driverIds.length === 0) {
-        return reply.send([]);
-      }
-
-      const rides: any[] = [];
-      // Firestore 'in' supports up to 30 values; chunk to be safe.
-      for (let i = 0; i < driverIds.length; i += 30) {
-        const chunk = driverIds.slice(i, i + 30);
+      // 4. Query rides by associated driver profile IDs
+      const remainingDriverIds = driverIds.filter((id) => id !== uid);
+      for (let i = 0; i < remainingDriverIds.length; i += 30) {
+        const chunk = remainingDriverIds.slice(i, i + 30);
         const snap = await db.collection('rides').where('driver_id', 'in', chunk).get();
-        snap.forEach(doc => rides.push({ id: doc.id, ...doc.data() }));
+        snap.forEach((doc) => ridesMap.set(doc.id, { id: doc.id, ...doc.data() }));
       }
 
+      const rides = Array.from(ridesMap.values());
       rides.sort((a, b) => String(b.departure_time).localeCompare(String(a.departure_time)));
       return reply.send(rides);
     } catch (err: any) {

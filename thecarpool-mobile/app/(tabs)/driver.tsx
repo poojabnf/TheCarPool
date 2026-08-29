@@ -773,6 +773,8 @@ export default function DriverInterface() {
       haptics.success(); // route published
       setActiveRideId(String(ride.id || ride.ride_id));
       setShowPostModal(false);
+      await loadMyRides();
+      useAuthStore.getState().triggerActivityRefresh();
       Alert.alert(
         'Ride Posted! 🚗',
         `Your commute is live. Ride #${ride.id || ride.ride_id}. Go Online to start broadcasting your location.`,

@@ -145,7 +145,7 @@ export default function HomeScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const userId = auth().currentUser?.uid ?? null;
-  const { userProfile } = useAuthStore();
+  const { userProfile, activityRefreshEpoch } = useAuthStore();
   const name = userProfile?.name || 'there';
 
   const [origin, setOrigin] = useState('');
@@ -171,10 +171,8 @@ export default function HomeScreen() {
   /**
    * Rides you're driving and seats you've booked, newest first.
    *
-   * Refetched whenever the tab regains focus so a booking made elsewhere in
-   * the app shows up on return without a manual reload. Failures are silent:
-   * this is a shortcut list, and an empty one is better than an error where
-   * the search box should be.
+   * Refetched whenever the tab regains focus or an activity change is published
+   * so a booking or ride posted anywhere in the app shows up immediately.
    */
   const loadActivity = useCallback(async () => {
     try {
@@ -254,6 +252,19 @@ export default function HomeScreen() {
   }, []);
 
   useFocusEffect(useCallback(() => { loadActivity(); }, [loadActivity]));
+
+  // Auto-sync when a new ride or booking is triggered globally
+  useEffect(() => {
+    loadActivity();
+  }, [activityRefreshEpoch, loadActivity]);
+
+  // Periodic refresh so home screen stays up-to-date in real time
+  useEffect(() => {
+    const timer = setInterval(() => {
+      loadActivity();
+    }, 15000);
+    return () => clearInterval(timer);
+  }, [loadActivity]);
 
   useEffect(() => {
     // Wake the backend now rather than on the first keystroke — see warmUp().

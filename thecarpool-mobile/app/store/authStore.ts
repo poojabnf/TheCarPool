@@ -28,6 +28,9 @@ interface AuthState {
   // App-level profile (populated during onboarding)
   userProfile: UserProfile | null;
 
+  // Global activity sync signal
+  activityRefreshEpoch: number;
+
   // Actions
   setFirebaseUser: (user: FirebaseAuthTypes.User | null) => void;
   setAuthLoading: (loading: boolean) => void;
@@ -35,6 +38,7 @@ interface AuthState {
   setUserProfile: (updates: Partial<UserProfile>) => void;
   setOnboardingStep: (step: number) => void;
   completeOnboarding: () => void;
+  triggerActivityRefresh: () => void;
   reset: () => void;
 }
 
@@ -45,6 +49,7 @@ const initialState = {
   isProfileHydrated: false,
   onboardingStep: 0,
   userProfile: null,
+  activityRefreshEpoch: 0,
 };
 
 export const useAuthStore = create<AuthState>((set) => ({
@@ -61,7 +66,6 @@ export const useAuthStore = create<AuthState>((set) => ({
 
   setProfileHydrated: (hydrated) => set({ isProfileHydrated: hydrated }),
 
-
   setUserProfile: (updates) =>
     set((state) => ({
       userProfile: state.userProfile
@@ -72,6 +76,9 @@ export const useAuthStore = create<AuthState>((set) => ({
   setOnboardingStep: (step) => set({ onboardingStep: step }),
 
   completeOnboarding: () => set({ onboardingStep: 2 }),
+
+  triggerActivityRefresh: () =>
+    set((state) => ({ activityRefreshEpoch: state.activityRefreshEpoch + 1 })),
 
   reset: () => set({ ...initialState, isAuthLoading: false }),
 }));
