@@ -238,3 +238,74 @@ describe('proportionalStopFare', () => {
     expect(f!).toBeLessThanOrEqual(400);
   });
 });
+
+/**
+ * The product owner's worked example, in their numbers.
+ *
+ * "driver is offering 1000KM for 1000rs ... if his next stop is 400KM and he
+ *  leaves the fare blank then put 400Rs ... next stop 550KM then put 550Rs ...
+ *  if driver adds money then leave it for the driver."
+ *
+ * At ₹1000 for 1000 km the rate is ₹1/km, so the fare is simply the number of
+ * kilometres that rider actually travels.
+ */
+describe('worked example: ₹1000 over 1000 km, i.e. ₹1 per km', () => {
+  const KM = 1000;
+  const FULL_FARE = 1000;
+  // A meridian is convenient: 1 degree of latitude is ~111.32 km everywhere.
+  const DEG_PER_KM = 1 / 111.32;
+  const ORIGIN = { lat: 0, lng: 0 };
+  const DESTINATION = { lat: KM * DEG_PER_KM, lng: 0 };
+  const ROUTE = [ORIGIN, DESTINATION];
+
+  /** A point on the route with exactly `remainingKm` still to travel. */
+  const stopWithRemaining = (remainingKm: number) => ({
+    lat: DESTINATION.lat - remainingKm * DEG_PER_KM,
+    lng: 0,
+  });
+
+  const blankFareFor = (remainingKm: number) => {
+    const stop = stopWithRemaining(remainingKm);
+    return farePerSeatForPickup({
+      ridePrice: FULL_FARE,
+      stops: [{ label: `${remainingKm}km stop`, lat: stop.lat, lng: stop.lng }],
+      routeCoords: ROUTE,
+      pickupLat: stop.lat,
+      pickupLng: stop.lng,
+    });
+  };
+
+  it('a 400 km leg left blank costs about ₹400', () => {
+    const r = blankFareFor(400);
+    expect(r.farePerSeat).toBeGreaterThan(395);
+    expect(r.farePerSeat).toBeLessThan(405);
+    expect(r.isEstimated).toBe(true);
+  });
+
+  it('a 550 km leg left blank costs about ₹550', () => {
+    const r = blankFareFor(550);
+    expect(r.farePerSeat).toBeGreaterThan(545);
+    expect(r.farePerSeat).toBeLessThan(555);
+  });
+
+  it('the driver typing a figure overrides the calculation entirely', () => {
+    // "if driver add money then leave it for driver to put the money."
+    const stop = stopWithRemaining(400);
+    const r = farePerSeatForPickup({
+      ridePrice: FULL_FARE,
+      stops: [{ label: '400km stop', lat: stop.lat, lng: stop.lng, price: 250 }],
+      routeCoords: ROUTE,
+      pickupLat: stop.lat,
+      pickupLng: stop.lng,
+    });
+    expect(r.farePerSeat).toBe(250);
+    expect(r.isEstimated).toBeUndefined();
+  });
+
+  it('scales linearly, so the rate stays ₹1 per km across the route', () => {
+    for (const km of [100, 250, 700, 900]) {
+      const fare = blankFareFor(km).farePerSeat;
+      expect(Math.abs(fare - km)).toBeLessThan(6);
+    }
+  });
+});

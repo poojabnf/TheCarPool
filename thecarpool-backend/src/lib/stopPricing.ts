@@ -83,27 +83,56 @@ export function routeLengthMetres(routeCoords: unknown): number {
 /**
  * Distance still to travel from a point on the route to the destination.
  *
- * Finds the nearest route vertex and sums the remaining legs. Approximate by
- * design — it decides a fare, not a navigation instruction, and the driver can
- * always override the number it produces.
+ * Projects onto the nearest SEGMENT rather than snapping to the nearest
+ * vertex. That distinction is the whole feature: a real ride's route is posted
+ * as just two points, origin and destination, so vertex-snapping put every
+ * intermediate stop at one end or the other. A stop 400 km from the
+ * destination snapped to the destination, "remaining" came out as zero, and
+ * the rider was charged the full fare — the exact overcharge this is meant to
+ * prevent, still happening for every ride in practice.
+ *
+ * Planar approximation with longitude scaled by cos(latitude). Wrong by a
+ * fraction of a percent over an Indian-scale journey, which is far below the
+ * precision of a fare the driver can overwrite anyway.
  */
 export function remainingMetresFrom(routeCoords: unknown, lat: number, lng: number): number {
   if (!Array.isArray(routeCoords) || routeCoords.length < 2) return 0;
-  let nearest = -1;
-  let best = Infinity;
-  for (let i = 0; i < routeCoords.length; i++) {
-    const pt = routeCoords[i] as any;
-    if (typeof pt?.lat !== 'number' || typeof pt?.lng !== 'number') continue;
-    const d = metresBetween(lat, lng, pt.lat, pt.lng);
-    if (d < best) { best = d; nearest = i; }
+  const pts = (routeCoords as any[]).filter(
+    (p) => typeof p?.lat === 'number' && typeof p?.lng === 'number'
+  );
+  if (pts.length < 2) return 0;
+
+  const M_PER_DEG = 111320;
+  const meanLat = (pts[0].lat + pts[pts.length - 1].lat) / 2;
+  const kx = Math.cos((meanLat * Math.PI) / 180) * M_PER_DEG;
+  const X = (p: { lng: number }) => p.lng * kx;
+  const Y = (p: { lat: number }) => p.lat * M_PER_DEG;
+
+  const px = lng * kx;
+  const py = lat * M_PER_DEG;
+
+  let bestPerp = Infinity;
+  let bestSeg = -1;
+  let bestT = 0;
+
+  for (let i = 1; i < pts.length; i++) {
+    const ax = X(pts[i - 1]), ay = Y(pts[i - 1]);
+    const bx = X(pts[i]), by = Y(pts[i]);
+    const dx = bx - ax, dy = by - ay;
+    const len2 = dx * dx + dy * dy;
+    // Degenerate segment (repeated point): treat as its start.
+    const t = len2 === 0 ? 0 : Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / len2));
+    const cx = ax + t * dx, cy = ay + t * dy;
+    const perp = Math.hypot(px - cx, py - cy);
+    if (perp < bestPerp) { bestPerp = perp; bestSeg = i; bestT = t; }
   }
-  if (nearest === -1) return 0;
-  let remaining = 0;
-  for (let i = nearest + 1; i < routeCoords.length; i++) {
-    const a = routeCoords[i - 1] as any;
-    const b = routeCoords[i] as any;
-    if (typeof a?.lat !== 'number' || typeof b?.lat !== 'number') continue;
-    remaining += metresBetween(a.lat, a.lng, b.lat, b.lng);
+  if (bestSeg === -1) return 0;
+
+  // Remainder of the segment the stop sits on, plus every segment after it.
+  let remaining = metresBetween(pts[bestSeg - 1].lat, pts[bestSeg - 1].lng, pts[bestSeg].lat, pts[bestSeg].lng)
+    * (1 - bestT);
+  for (let i = bestSeg + 1; i < pts.length; i++) {
+    remaining += metresBetween(pts[i - 1].lat, pts[i - 1].lng, pts[i].lat, pts[i].lng);
   }
   return remaining;
 }
