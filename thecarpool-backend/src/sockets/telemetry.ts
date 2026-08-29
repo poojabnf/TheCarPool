@@ -19,6 +19,25 @@ interface TelemetryPayload {
   rideId?: number; // active ride
 }
 
+/**
+ * Short-lived per-ride cache for the two documents every tick used to refetch.
+ *
+ * A moving vehicle emits telemetry roughly every 5 seconds, and each tick was
+ * doing a ride read plus a whole-collection bookings query. That is two
+ * Firestore operations per driver per 5s for the entire duration of every
+ * trip, to re-read data that barely changes: route_coords are fixed once the
+ * ride is posted, and the booking set changes only when someone books or
+ * boards.
+ *
+ * The TTL is what keeps it honest — a rider who books mid-trip, or who has
+ * just been verified, is picked up within CACHE_TTL_MS. Entries are dropped
+ * when the socket disconnects, so this cannot grow without bound.
+ */
+const CACHE_TTL_MS = 30_000;
+
+interface RideCacheEntry { at: number; routeCoords: { lat: number; lng: number }[] | null }
+interface BookingsCacheEntry { at: number; docs: { id: string; data: FirebaseFirestore.DocumentData }[] }
+
 function haversineDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
   const R = 6371e3; // Earth radius in meters
   const phi1 = (lat1 * Math.PI) / 180;
@@ -57,6 +76,9 @@ export function setupTelemetrySocket(io: SocketIOServer, log: FastifyBaseLogger)
     // back-to-back rides doesn't carry a stale count across trips).
     const breachStreak = new Map<string, number>();
     const escalatedRides = new Set<string>();
+    // Per-connection, so they die with the socket rather than leaking.
+    const rideCache = new Map<string, RideCacheEntry>();
+    const bookingsCache = new Map<string, BookingsCacheEntry>();
     // One "driver is arriving" push per booking, per connection. Without this
     // it would repeat on every telemetry tick while the driver sits waiting.
     const arrivalNotified = new Set<string>();
@@ -99,11 +121,18 @@ export function setupTelemetrySocket(io: SocketIOServer, log: FastifyBaseLogger)
 
           // Perform automated geofence verification
           // Fetch ride
-          const rideRef = db.collection('rides').doc(String(rideId));
-          const rideDoc = await rideRef.get();
-          if (rideDoc.exists) {
-            const ride = rideDoc.data()!;
-            const route_coords = ride.route_coords || [];
+          const rideCacheKey = String(rideId);
+          let rideEntry = rideCache.get(rideCacheKey);
+          if (!rideEntry || Date.now() - rideEntry.at > CACHE_TTL_MS) {
+            const rideDoc = await db.collection('rides').doc(rideCacheKey).get();
+            rideEntry = {
+              at: Date.now(),
+              routeCoords: rideDoc.exists ? (rideDoc.data()!.route_coords || []) : null,
+            };
+            rideCache.set(rideCacheKey, rideEntry);
+          }
+          if (rideEntry.routeCoords !== null) {
+            const route_coords = rideEntry.routeCoords;
 
             // Check if any point along the route is within 100 meters
             let withinLimits = false;
@@ -124,12 +153,20 @@ export function setupTelemetrySocket(io: SocketIOServer, log: FastifyBaseLogger)
             // mean it fired only when something had gone wrong.
             // Once per booking, and only for riders who haven't boarded yet.
             try {
-              const pending = await db.collection('bookings')
-                .where('ride_id', '==', rideKey)
-                .where('escrow_status', '==', 'HELD')
-                .get();
-              for (const bk of pending.docs) {
-                const b = bk.data();
+              let bookingsEntry = bookingsCache.get(rideKey);
+              if (!bookingsEntry || Date.now() - bookingsEntry.at > CACHE_TTL_MS) {
+                const pending = await db.collection('bookings')
+                  .where('ride_id', '==', rideKey)
+                  .where('escrow_status', '==', 'HELD')
+                  .get();
+                bookingsEntry = {
+                  at: Date.now(),
+                  docs: pending.docs.map((d) => ({ id: d.id, data: d.data() })),
+                };
+                bookingsCache.set(rideKey, bookingsEntry);
+              }
+              for (const bk of bookingsEntry.docs) {
+                const b = bk.data;
                 if (b.boarding_verified === true) continue;
                 if (arrivalNotified.has(bk.id)) continue;
                 if (!isArrivingAtPickup({ lat, lng }, b.pickup_point)) continue;

@@ -22,13 +22,22 @@ export default function SafetyCenter() {
   const [phone, setPhone] = useState('');
   const [adding, setAdding] = useState(false);
 
+  // An empty list and a failed load are different facts, and this used to
+  // render both as "no contacts". Someone whose emergency contacts failed to
+  // fetch was shown an empty screen suggesting they had none saved — on the
+  // one screen where believing that could matter.
+  const [loadError, setLoadError] = useState(false);
+
   const loadContacts = async () => {
+    setLoadError(false);
     try {
       const res = await apiFetch('/api/safety/safety/contacts');
-      const d = res.ok ? await res.json() : null;
+      if (!res.ok) throw new Error(`Server error ${res.status}`);
+      const d = await res.json();
       setContacts(Array.isArray(d?.contacts) ? d.contacts : []);
     } catch {
-      setContacts([]);
+      setContacts(null);
+      setLoadError(true);
     }
   };
 
@@ -87,7 +96,17 @@ export default function SafetyCenter() {
         <Text style={styles.sectionTitle}>Emergency contacts</Text>
         <Text style={styles.sectionSub}>These people are alerted with your live location when you trigger SOS.</Text>
 
-        {contacts === null ? (
+        {loadError ? (
+          <View style={styles.loadErrorBox}>
+            <Text style={styles.loadErrorText}>
+              We couldn't load your emergency contacts. This does not mean they were
+              removed — check your connection and try again.
+            </Text>
+            <HapticPressable style={styles.retryBtn} onPress={loadContacts}>
+              <Text style={styles.retryText}>Retry</Text>
+            </HapticPressable>
+          </View>
+        ) : contacts === null ? (
           <ActivityIndicator color={c.goStrong} style={{ marginVertical: space.lg }} />
         ) : contacts.length === 0 ? (
           <Text style={styles.emptyText}>No contacts yet — add someone you trust below.</Text>
@@ -139,6 +158,13 @@ const styles = StyleSheet.create({
 
   sectionTitle: { fontFamily: font.sansBold, fontSize: 16, color: c.textPrimary, marginTop: space.lg },
   sectionSub: { fontFamily: font.sans, fontSize: 12.5, color: c.textTertiary, marginTop: 2, marginBottom: space.md },
+  loadErrorBox: {
+    backgroundColor: c.bgApp, borderWidth: 1, borderColor: c.borderSubtle,
+    borderRadius: radius.md, padding: space.md, marginVertical: space.sm,
+  },
+  loadErrorText: { fontFamily: font.sans, fontSize: 13, color: c.textSecondary, lineHeight: 19 },
+  retryBtn: { marginTop: space.sm, alignSelf: 'flex-start' },
+  retryText: { fontFamily: font.sansSemibold, fontSize: 13, color: c.goStrong },
   emptyText: { fontFamily: font.sans, fontSize: 13, color: c.textTertiary, marginBottom: space.sm },
 
   contactRow: { flexDirection: 'row', alignItems: 'center', gap: space.md, backgroundColor: c.surfaceCard, borderRadius: radius.md, padding: space.md, marginBottom: space.sm },

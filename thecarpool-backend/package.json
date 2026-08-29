@@ -19,7 +19,6 @@
     "firebase-admin": "^13.10.0",
     "jsonwebtoken": "^9.0.3",
     "nodemailer": "^9.0.5",
-    "pg": "^8.11.3",
     "razorpay": "^2.9.6",
     "redis": "^4.6.10",
     "socket.io": "^4.7.2",
@@ -27,14 +26,13 @@
   },
   "devDependencies": {
     "@types/jest": "^30.0.0",
+    "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^20.8.10",
-    "@types/pg": "^8.10.7",
+    "@types/nodemailer": "^8.0.1",
     "jest": "^30.4.2",
     "nodemon": "^3.0.1",
     "ts-jest": "^29.4.11",
     "ts-node": "^10.9.1",
-    "typescript": "^5.2.2",
-    "@types/jsonwebtoken": "^9.0.10",
-    "@types/nodemailer": "^8.0.1"
+    "typescript": "^5.2.2"
   }
 }

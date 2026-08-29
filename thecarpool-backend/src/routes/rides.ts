@@ -621,8 +621,14 @@ export async function rideRoutes(fastify: FastifyInstance) {
       return reply.code(400).send({ error: 'Invalid coordinates' });
     }
 
-    // Build Cache Key securely
-    const cacheKey = `search:${pickup_lng},${pickup_lat},${drop_lng},${drop_lat},${max_detour_meters},${gender_preference || 'ANY'},${company_domain || 'NONE'},${society_name || 'NONE'},${ev_only},${vehicle_type},${music_allowed ?? 'ANY'},${smoking_allowed ?? 'ANY'},${chattiness},${ac_available ?? 'ANY'},${women_only},${searcherGender || 'UNKNOWN'},${ride_type},${event_tag || 'NONE'}`;
+    // Build Cache Key securely.
+    //
+    // Every input that changes the RESULT must appear here. The departure
+    // window was missing while the query filtered on it, so a search for
+    // "tomorrow morning" served the cached answer to "next 2 hours" from the
+    // same pickup and drop — rides for the wrong day, presented as matches.
+    // Anything added to the filter above must be added here too.
+    const cacheKey = `search:${pickup_lng},${pickup_lat},${drop_lng},${drop_lat},${max_detour_meters},${gender_preference || 'ANY'},${company_domain || 'NONE'},${society_name || 'NONE'},${ev_only},${vehicle_type},${music_allowed ?? 'ANY'},${smoking_allowed ?? 'ANY'},${chattiness},${ac_available ?? 'ANY'},${women_only},${searcherGender || 'UNKNOWN'},${ride_type},${event_tag || 'NONE'},${departure_from || 'ANY'},${departure_to || 'ANY'}`;
     
     try {
       // 1. Check Redis Cache

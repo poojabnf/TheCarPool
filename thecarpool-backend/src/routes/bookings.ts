@@ -18,7 +18,7 @@ import {
 import { getUserEmail, buildRiderBookingEmail, buildDriverPassengerBookedEmail, sendEmail } from '../lib/email';
 import { claimPaymentInTransaction } from '../lib/wallet';
 import { getRazorpay, isRazorpayConfigured, refundPaymentToSource } from '../lib/razorpay';
-import { isRouteConfigured, createHeldTransfer } from '../lib/route';
+import { isRouteConfigured, createHeldTransfer, reverseTransfer } from '../lib/route';
 import {
   CONVENIENCE_FEE,
   bookingTotal,
@@ -571,6 +571,67 @@ export async function bookingRoutes(fastify: FastifyInstance) {
     // price a rider changing their mind, not a driver turning them away.
     const refund = round2((Number(booking.total_paid) || 0));
     const riderWalletRef = db.collection('wallets').doc(riderUid);
+
+    // A card/UPI payment goes back to the card/UPI, not to store credit.
+    //
+    // Wallet credit is the right answer when a rider cancels a seat they
+    // held — they chose to use the service and can use it again. It is the
+    // wrong answer here: the rider was turned away, never travelled, and had
+    // no say in it. Handing them a balance they can only spend with us keeps
+    // money they are owed outright.
+    //
+    // Done BEFORE the transaction: an outbound call inside one is retried
+    // with it, and a duplicate refund is much worse than a retryable failure.
+    // The idempotency key makes a repeat request safe at Razorpay's end.
+    const paidByRazorpay = booking.payment_method === 'RAZORPAY' && booking.razorpay_payment_id;
+    let sourceRefund: { refund_id: string; status: string } | null = null;
+    if (paidByRazorpay && refund > 0) {
+      try {
+        sourceRefund = await refundPaymentToSource({
+          paymentId: String(booking.razorpay_payment_id),
+          amountRupees: refund,
+          referenceId: `decline_${id}`,
+          notes: { reason: 'DRIVER_DECLINED', ride_id: String(booking.ride_id) },
+        });
+      } catch (refundErr) {
+        // Do not decline the booking if the money cannot follow. Leaving it
+        // REQUESTED is recoverable — the driver can try again, and support
+        // has a record. Declining anyway would strand a paid rider with no
+        // seat and no refund, which is the one outcome with no way back.
+        fastify.log.error(
+          { err: refundErr, booking: id, payment_id: booking.razorpay_payment_id },
+          'Decline aborted: refund to source failed'
+        );
+        await db.collection('failed_refunds').doc(String(booking.razorpay_payment_id)).set({
+          payment_id: booking.razorpay_payment_id,
+          rider_id: riderUid,
+          amount: refund,
+          reason: 'DRIVER_DECLINED',
+          created_at: new Date().toISOString(),
+        }, { merge: true }).catch(() => { /* best effort */ });
+        return reply.code(502).send({
+          error: 'REFUND_FAILED',
+          message: "We couldn't return the rider's payment, so the request is unchanged. Please try again.",
+        });
+      }
+    }
+
+    // Release the driver's held split, if one was created at booking time.
+    // Without this the transfer sits on hold at Razorpay forever: settlement
+    // skips the booking once escrow_status is CANCELLED, so nothing else ever
+    // looks at it, and the money is stranded between the two of them.
+    if (booking.route_transfer_id) {
+      try {
+        await reverseTransfer(String(booking.route_transfer_id));
+      } catch (revErr) {
+        // The rider has already been made whole above, so this is a
+        // reconciliation problem rather than a lost-money one. Record it.
+        fastify.log.error(
+          { err: revErr, booking: id, transfer: booking.route_transfer_id },
+          'Route transfer reversal failed on decline — needs manual reconciliation'
+        );
+      }
+    }
     try {
       await db.runTransaction(async (tx) => {
         const freshBooking = await tx.get(bookingRef);
@@ -590,15 +651,21 @@ export async function bookingRoutes(fastify: FastifyInstance) {
           cancelled_by: 'DRIVER',
           cancellation_fee: 0,
           refunded_amount: refund,
+          refund_destination: sourceRefund ? 'SOURCE' : 'WALLET',
+          refund_id: sourceRefund?.refund_id ?? null,
           decided_at: new Date().toISOString(),
         });
         tx.update(rideRef, {
           seats_available: (freshRide.data()?.seats_available || 0) + (Number(booking.seats_booked) || 0),
         });
-        tx.set(riderWalletRef, {
-          ...cur,
-          available_wallet_balance: round2((cur.available_wallet_balance || 0) + refund),
-        }, { merge: true });
+        // Only credit the wallet for money that did NOT go back to source.
+        // Doing both would refund the rider twice.
+        if (!sourceRefund) {
+          tx.set(riderWalletRef, {
+            ...cur,
+            available_wallet_balance: round2((cur.available_wallet_balance || 0) + refund),
+          }, { merge: true });
+        }
       });
     } catch (err: any) {
       if (String(err?.message) === 'ALREADY_DECIDED') {
@@ -613,7 +680,12 @@ export async function bookingRoutes(fastify: FastifyInstance) {
       { ...booking, id },
       fastify.log
     );
-    return reply.send({ id, booking_status: 'DECLINED', refunded_amount: refund });
+    return reply.send({
+      id,
+      booking_status: 'DECLINED',
+      refunded_amount: refund,
+      refund_destination: sourceRefund ? 'SOURCE' : 'WALLET',
+    });
   });
 
   // ── Rider confirms the ride is over ──────────────────────────────────────

@@ -19,7 +19,21 @@ const ISSUER = process.env.ASC_ISSUER_ID;
 const KEY = readFileSync(process.env.ASC_KEY_PATH, 'utf8');
 const APPLY = process.argv.includes('--apply');
 
-const VERSION_ID = process.env.ASC_VERSION_ID || '02678109-264b-4e5d-a254-644be328a4fe'; // 1.4.6
+// App Store version to act on. NO DEFAULT ON PURPOSE.
+//
+// This used to fall back to the id of version 1.4.6. A default that points at
+// a specific past version does not degrade — it silently edits the wrong
+// release, and you find out from the App Store rather than from this script.
+// Failing here costs one command; the alternative costs a submission.
+//
+// Find the current id in App Store Connect, or from the API:
+//   GET https://api.appstoreconnect.apple.com/v1/apps/<ASC_APP_ID>/appStoreVersions
+// and take the id of the version whose versionString matches app.json.
+const VERSION_ID = process.env.ASC_VERSION_ID;
+if (!VERSION_ID) {
+  console.error('ASC_VERSION_ID is required — set it to the App Store version you intend to change.');
+  process.exit(1);
+}
 const LOC_ID = process.env.ASC_LOC_ID || '29481071-0897-4e2b-b31c-f3f1416693ee';         // en-US
 const APP_ID = process.env.ASC_APP_ID || '6772426075';
 

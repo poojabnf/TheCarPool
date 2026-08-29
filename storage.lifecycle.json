@@ -1,25 +1,14 @@
 {
-  "_comment": [
-    "Object lifecycle for the Storage bucket. Applied with:",
-    "  gcloud storage buckets update gs://<bucket> --lifecycle-file=storage.lifecycle.json",
-    "",
-    "The prefix matches what the backend actually wrote: ID documents went to",
-    "kyc-documents/{uid}/{type}/... The users/{uid}/kyc/ path in storage.rules",
-    "was defence-in-depth for direct client access and was never used, so do",
-    "not 'correct' this prefix to match it - that would stop the rule matching",
-    "anything.",
-    "",
-    "KYC capture has since been removed from the product. This rule is what is",
-    "still ageing out the documents that were captured before that, 15 days",
-    "after upload. Firestore fields (id_document, kyc_status) are NOT covered",
-    "and still need a one-off purge."
-  ],
   "rule": [
     {
-      "action": { "type": "Delete" },
+      "action": {
+        "type": "Delete"
+      },
       "condition": {
         "age": 15,
-        "matchesPrefix": ["kyc-documents/"]
+        "matchesPrefix": [
+          "kyc-documents/"
+        ]
       }
     }
   ]

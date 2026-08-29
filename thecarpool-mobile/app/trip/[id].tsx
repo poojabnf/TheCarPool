@@ -16,6 +16,13 @@ import HapticPressable from '../components/HapticPressable';
 
 const SOCKET_URL = API_URL;
 
+/**
+ * How long SOS waits for a GPS fix before sending the best position it
+ * already has. Deliberately short: help arriving at a roughly right place
+ * beats help not being called.
+ */
+const SOS_FIX_TIMEOUT_MS = 5000;
+
 export default function TripScreen() {
   const { id } = useLocalSearchParams();
   const router = useRouter();
@@ -90,9 +97,21 @@ export default function TripScreen() {
       try {
         const perm = await Location.requestForegroundPermissionsAsync();
         if (perm.status === 'granted') {
-          const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
-          latitude = pos.coords.latitude;
-          longitude = pos.coords.longitude;
+          // Bounded wait. A high-accuracy fix indoors, in a tunnel or in a
+          // multi-storey car park can take tens of seconds or never arrive,
+          // and this is the SOS path — the one place where waiting for a
+          // better answer is worse than sending a rougher one now. After
+          // SOS_FIX_TIMEOUT_MS we fall through to the last known position,
+          // and failing that to the driver's last broadcast.
+          const fix = await Promise.race([
+            Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }),
+            new Promise<null>((resolve) => setTimeout(() => resolve(null), SOS_FIX_TIMEOUT_MS)),
+          ]);
+          const pos = fix ?? (await Location.getLastKnownPositionAsync());
+          if (pos) {
+            latitude = pos.coords.latitude;
+            longitude = pos.coords.longitude;
+          }
         }
       } catch { /* fall back below */ }
       if (latitude === undefined || longitude === undefined) {
