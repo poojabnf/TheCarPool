@@ -14,7 +14,7 @@ import { JetBrainsMono_500Medium, JetBrainsMono_700Bold } from '@expo-google-fon
 import { c } from '../theme/tokens';
 import { useAuthStore } from './store/authStore';
 import { auth } from './services/firebase';
-import { registerForPushNotifications } from './services/notifications';
+import { registerForPushNotifications, subscribeToTokenRefresh } from './services/notifications';
 import { apiFetch } from './services/api';
 import { warmUp } from './services/geo';
 
@@ -46,14 +46,20 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
 
   // Listen to Firebase auth state changes
   useEffect(() => {
+    // Held across auth changes so a sign-out/sign-in does not stack listeners.
+    let unsubscribeTokenRefresh: (() => void) | undefined;
     const unsubscribe = auth().onAuthStateChanged(async (user) => {
       setFirebaseUser(user);
       if (!user) {
         setProfileHydrated(true); // nothing to hydrate — routing may proceed
       }
       if (user) {
-        // Register this device for push notifications once signed in.
+        // Register this device for push notifications once signed in, and
+        // keep following the token — FCM rotates it, and a stale one means
+        // the user silently stops receiving anything.
         registerForPushNotifications().catch(() => { /* non-fatal */ });
+        unsubscribeTokenRefresh?.();
+        unsubscribeTokenRefresh = subscribeToTokenRefresh();
 
         // Rehydrate the profile from backend — fixes cold-start reset bug.
         try {
@@ -88,7 +94,10 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
         }
       }
     });
-    return unsubscribe;
+    return () => {
+      unsubscribe();
+      unsubscribeTokenRefresh?.();
+    };
   }, []);
 
   // Handle routing based on auth state

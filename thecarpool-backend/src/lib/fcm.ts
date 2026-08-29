@@ -78,7 +78,16 @@ export async function sendPushToUser(
     results.forEach((r, i) => {
       if (r.status !== 'rejected') return;
       const code = (r.reason as any)?.errorInfo?.code ?? (r.reason as any)?.code;
-      if (code === 'messaging/registration-token-not-registered') stale.push(tokens[i]);
+      // not-registered: the app was uninstalled or the token rotated.
+      // invalid-argument: the string is not an FCM token at all — iOS used to
+      // register its raw APNs device token here, which FCM will never accept.
+      // Neither can start working again, so keep neither.
+      if (
+        code === 'messaging/registration-token-not-registered' ||
+        code === 'messaging/invalid-argument'
+      ) {
+        stale.push(tokens[i]);
+      }
     });
     if (stale.length > 0) {
       const removal: Record<string, admin.firestore.FieldValue> = {};
