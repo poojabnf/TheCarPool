@@ -17,6 +17,7 @@ import {
   RideMessageContext, BuiltMessage,
   riderBookingConfirmed, riderRequestSubmitted, driverBookingRequested,
   driverBookingConfirmed, riderRequestDeclined, riderBoardingSoon, riderRideCompleted,
+  riderCancelledBooking, driverCancelledRide, rideStarted, rideOfferedSuccess,
 } from './rideMessages';
 
 type Log = { error: (...args: any[]) => void };
@@ -271,3 +272,101 @@ export async function notifyBookingDeclined(
     log?.error({ err, ...ids }, 'Booking-declined notification failed');
   }
 }
+
+/** Rider cancelled their booking: notify the driver that a seat has freed up. */
+export async function notifyRiderCancelledBooking(
+  ids: BookingContextIds,
+  booking: Record<string, any>,
+  log?: Log
+): Promise<void> {
+  try {
+    const r = await resolve(ids, booking);
+    await dispatch(
+      r.driverUid, r.driverPhone,
+      riderCancelledBooking(r.ctx),
+      { type: 'BOOKING_CANCELLED_BY_RIDER', booking_id: String(booking.id), ride_id: ids.rideId },
+      log
+    );
+  } catch (err) {
+    log?.error({ err, ...ids }, 'Rider-cancelled notification failed');
+  }
+}
+
+/** Driver cancelled the ride: notify all riders that the trip was cancelled and refunded. */
+export async function notifyDriverCancelledRide(
+  rideId: string,
+  log?: Log
+): Promise<void> {
+  try {
+    const snap = await db.collection('bookings')
+      .where('ride_id', '==', rideId)
+      .get();
+    await Promise.all(snap.docs.map(async (d) => {
+      const b = d.data();
+      const riderUid = String(b.rider_id ?? b.rider_uid ?? '');
+      if (!riderUid) return;
+      const r = await resolve({ rideId, riderUid }, b);
+      await dispatch(
+        riderUid, r.riderPhone,
+        driverCancelledRide(r.ctx),
+        { type: 'RIDE_CANCELLED_BY_DRIVER', booking_id: d.id, ride_id: rideId },
+        log
+      );
+    }));
+  } catch (err) {
+    log?.error({ err, rideId }, 'Driver-cancelled fan-out notification failed');
+  }
+}
+
+/** Driver started the ride: notify all confirmed passengers with live tracking hint. */
+export async function notifyRideStarted(
+  rideId: string,
+  log?: Log
+): Promise<void> {
+  try {
+    const snap = await db.collection('bookings')
+      .where('ride_id', '==', rideId)
+      .where('escrow_status', '==', 'HELD')
+      .get();
+    await Promise.all(snap.docs.map(async (d) => {
+      const b = d.data();
+      const riderUid = String(b.rider_id ?? b.rider_uid ?? '');
+      if (!riderUid) return;
+      const r = await resolve({ rideId, riderUid }, b);
+      await dispatch(
+        riderUid, r.riderPhone,
+        rideStarted(r.ctx),
+        { type: 'RIDE_STARTED', booking_id: d.id, ride_id: rideId },
+        log
+      );
+    }));
+  } catch (err) {
+    log?.error({ err, rideId }, 'Ride-started fan-out notification failed');
+  }
+}
+
+/** Driver successfully posted a ride: confirmation push to the driver. */
+export async function notifyRideOffered(
+  rideId: string,
+  driverUid: string,
+  ride: Record<string, any>,
+  log?: Log
+): Promise<void> {
+  try {
+    const r = await resolve({ rideId, riderUid: driverUid, driverUid }, null);
+    await dispatch(
+      driverUid, r.driverPhone,
+      rideOfferedSuccess({
+        origin: ride.source || null,
+        destination: ride.destination || null,
+        departure_time: ride.departure_time || null,
+        seats: ride.seats_total || undefined,
+      }),
+      { type: 'RIDE_OFFERED', ride_id: rideId },
+      log
+    );
+  } catch (err) {
+    log?.error({ err, rideId, driverUid }, 'Ride-offered notification failed');
+  }
+}
+

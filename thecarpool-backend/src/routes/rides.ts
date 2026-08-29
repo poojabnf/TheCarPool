@@ -9,7 +9,10 @@ import { planPayout, maskPayoutMethod } from '../lib/payouts';
 import { classifyVehicle, listMakes, listModels, VEHICLE_CLASSES } from '../lib/vehicles';
 import { needsDepartureReminder, minutesUntil } from '../lib/rideNotifications';
 import { needsBoardingReminder, minutesUntil as etaMinutesUntil, BOARDING_REMINDER_MINUTES } from '../lib/eta';
-import { notifyBoardingSoon, resolveStopEtasForRide, notifyRideCompleted } from '../lib/bookingNotifications';
+import {
+  notifyBoardingSoon, resolveStopEtasForRide, notifyRideCompleted,
+  notifyRideStarted, notifyDriverCancelledRide, notifyRideOffered,
+} from '../lib/bookingNotifications';
 import { settlementDueAt, DISPUTE_WINDOW_MINUTES } from '../lib/settlement';
 import { settleDueBookingsForRide } from '../lib/rideSettlement';
 import { sendPushToUser } from '../lib/fcm';
@@ -625,6 +628,9 @@ export async function rideRoutes(fastify: FastifyInstance) {
         } catch (emailErr) {
           fastify.log.error(emailErr, 'Failed to send ride offer confirmation email');
         }
+
+        // Push confirmation to driver
+        notifyRideOffered(rideId, uid, newRide, fastify.log).catch(() => { /* best-effort */ });
       })();
 
       return reply.code(201).send(newRide);
@@ -1381,20 +1387,10 @@ export async function rideRoutes(fastify: FastifyInstance) {
 
         // Tell the riders. Fire-and-forget: a push failure must never stop a
         // driver starting or cancelling their trip.
-        if (status === 'STARTED' || status === 'CANCELLED') {
-          activeRiderUids(id).then((riders) => {
-            for (const rider of riders) {
-              if (status === 'STARTED') {
-                sendPushToUser(rider, '🚗 Your trip has started',
-                  'Your driver has set off. Track the ride live in the app.',
-                  { type: 'RIDE_STARTED', ride_id: id });
-              } else {
-                sendPushToUser(rider, 'Ride cancelled',
-                  'Your driver cancelled this ride. Any amount paid is being refunded.',
-                  { type: 'RIDE_CANCELLED', ride_id: id });
-              }
-            }
-          }).catch(() => { /* notifications are best-effort */ });
+        if (status === 'STARTED') {
+          notifyRideStarted(id, fastify.log).catch(() => { /* notifications are best-effort */ });
+        } else if (status === 'CANCELLED') {
+          notifyDriverCancelledRide(id, fastify.log).catch(() => { /* notifications are best-effort */ });
         }
         return reply.send({ id, status, updated: true });
       }

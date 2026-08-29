@@ -235,3 +235,47 @@ export function riderBoardingSoon(ctx: RideMessageContext, minutes: number): Bui
   ]);
   return { title: 'Be ready to board', body: scrubContact(body) };
 }
+
+/** Sent to the DRIVER when a rider cancels their booking. */
+export function riderCancelledBooking(ctx: RideMessageContext): BuiltMessage {
+  const body = joinLines([
+    `${shortName(ctx.rider_name, 'A passenger')} cancelled their booking on your ride.`,
+    ctx.origin && ctx.destination ? `Route: ${ctx.origin} → ${ctx.destination}` : null,
+    'The seat has been freed for other co-travellers.',
+  ]);
+  return { title: 'Booking cancelled by rider', body: scrubContact(body) };
+}
+
+/** Sent to the RIDER when the driver cancels the ride. */
+export function driverCancelledRide(ctx: RideMessageContext): BuiltMessage {
+  const body = joinLines([
+    `${shortName(ctx.driver_name, 'Your driver')} cancelled the ride.`,
+    ctx.origin && ctx.destination ? `Route: ${ctx.origin} → ${ctx.destination}` : null,
+    'Any amount paid is refunded to your wallet. You can book another ride.',
+  ]);
+  return { title: 'Ride cancelled by driver', body: scrubContact(body) };
+}
+
+/** Sent to RIDERS when the driver starts the trip. */
+export function rideStarted(ctx: RideMessageContext): BuiltMessage {
+  const body = joinLines([
+    `${shortName(ctx.driver_name, 'Your driver')} has started the trip!`,
+    ctx.vehicle ? `Vehicle: ${ctx.vehicle}` : null,
+    'Track live location and route progress in the app.',
+  ]);
+  return { title: '🚗 Trip started', body: scrubContact(body) };
+}
+
+/** Sent to the DRIVER when their ride offer is published. */
+export function rideOfferedSuccess(ctx: RideMessageContext): BuiltMessage {
+  const when = formatWhen(ctx.departure_time);
+  const body = joinLines([
+    'Your ride is now live for co-travellers to find and book.',
+    ctx.origin && ctx.destination ? `Route: ${ctx.origin} → ${ctx.destination}` : null,
+    when ? `Departs: ${when}` : null,
+    ctx.seats ? `Seats: ${ctx.seats}` : null,
+  ]);
+  return { title: '🚗 Ride published', body: scrubContact(body) };
+}
+
+

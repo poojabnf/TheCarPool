@@ -8,7 +8,7 @@ import { parseOrReply } from '../lib/validate';
 import { sendPushToUser } from '../lib/fcm';
 import {
   notifyBookingRequested, notifyBookingConfirmed, notifyBookingDeclined,
-  notifyRideCompletedForBooking,
+  notifyRideCompletedForBooking, notifyRiderCancelledBooking,
 } from '../lib/bookingNotifications';
 import {
   isAtDestination, isDisputeWindowOpen, disputeMinutesRemaining,
@@ -1647,6 +1647,13 @@ export async function bookingRoutes(fastify: FastifyInstance) {
           }, { merge: true });
         }
       });
+
+      // Notify the driver that the rider cancelled their seat
+      notifyRiderCancelledBooking(
+        { rideId: String(b.ride_id), riderUid: uid, driverUid: String(ride.driver_uid ?? ride.driver_id) },
+        { ...b, id },
+        fastify.log
+      ).catch(() => { /* best-effort */ });
 
       return reply.send({
         status: 'BOOKING_CANCELLED',
