@@ -81,8 +81,8 @@ function memoSet(key: string, payload: any): void {
 
 export async function geoRoutes(fastify: FastifyInstance) {
 
-  // 1. Search for a postal code or place name in Firestore
-  fastify.get('/search', { preHandler: [requireAuth] }, async (request, reply) => {
+  // 1. Search for a postal code or place name in Firestore (public top-of-funnel discovery)
+  fastify.get('/search', async (request, reply) => {
     const { query = '' } = request.query as SearchQuery;
 
     if (query.trim().length < 2) {
