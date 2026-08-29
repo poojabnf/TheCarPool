@@ -470,18 +470,20 @@ export default function DriverInterface() {
   const updateRideStatus = (rideId: string, status: 'STARTED' | 'COMPLETED' | 'CANCELLED') => {
     if (status === 'STARTED') {
       const passengers: any[] = manifests[rideId]?.passengers || [];
-      if (passengers.length === 0) {
-        // Nobody booked — nothing to verify, just confirm.
-        Alert.alert('Start this trip?', 'No passengers have booked yet.', [
+      const hasPassengers = passengers.length > 0;
+      Alert.alert(
+        'Start this trip?',
+        hasPassengers
+          ? 'Live GPS will start broadcasting so your riders can track your car on the map as you drive to the pickup location.'
+          : 'Are you ready to begin this drive?',
+        [
           { text: 'Not yet', style: 'cancel' },
-          { text: 'Start trip', onPress: () => commitStart(rideId) },
-        ]);
-        return;
-      }
-      haptics.tap();
-      setOtpInput('');
-      setOtpTarget(null);
-      setBoardingRideId(rideId);
+          {
+            text: 'Start Trip & Navigate',
+            onPress: () => commitStart(rideId),
+          },
+        ]
+      );
       return;
     }
 
@@ -971,6 +973,42 @@ export default function DriverInterface() {
                                 )}
                               </View>
                               <View style={styles.passengerContactIcons}>
+                                {!p.boarding_verified && (r.status === 'SCHEDULED' || r.status === 'STARTED') && (
+                                  <HapticPressable
+                                    haptic="press"
+                                    style={{
+                                      backgroundColor: '#FEF3C7',
+                                      borderColor: '#F59E0B',
+                                      borderWidth: 1,
+                                      borderRadius: 8,
+                                      paddingHorizontal: 8,
+                                      paddingVertical: 5,
+                                      marginRight: 4,
+                                    }}
+                                    onPress={() => {
+                                      setOtpInput('');
+                                      setOtpTarget(p);
+                                      setBoardingRideId(r.id);
+                                    }}
+                                  >
+                                    <Text style={{ fontSize: 11.5, fontWeight: '700', color: '#B45309' }}>
+                                      🔑 Enter OTP
+                                    </Text>
+                                  </HapticPressable>
+                                )}
+                                {p.boarding_verified && (
+                                  <View style={{
+                                    backgroundColor: '#DCFCE7',
+                                    borderRadius: 8,
+                                    paddingHorizontal: 7,
+                                    paddingVertical: 4,
+                                    marginRight: 4,
+                                  }}>
+                                    <Text style={{ fontSize: 11, fontWeight: '700', color: '#15803D' }}>
+                                      ✓ Boarded
+                                    </Text>
+                                  </View>
+                                )}
                                 {p.rider_phone && (
                                   <HapticPressable
                                     haptic="tap"
@@ -1001,25 +1039,38 @@ export default function DriverInterface() {
                       <Text style={styles.seatText}>{seatsFilled}/{r.seats_total} Seats Filled</Text>
                     </View>
 
-                    {/* Boarding codes.
-                        This used to be reachable only by pressing "Start trip",
-                        which meant a driver who had already started had no way
-                        back to it — and one who hadn't found it never verified
-                        anyone. Every booking then settled as a no-show at 5%.
-                        Give it its own button whenever anyone has a seat. */}
+                    {/* Boarding codes verification */}
                     {m && m.passengers.length > 0 && (r.status === 'SCHEDULED' || r.status === 'STARTED') && (() => {
                       const pending = m.passengers.filter((p: any) => !p.boarding_verified).length;
+                      const isStarted = r.status === 'STARTED';
                       return (
                         <HapticPressable
                           haptic="press"
-                          style={styles.verifyBoardingBtn}
+                          style={[
+                            styles.verifyBoardingBtn,
+                            pending > 0 && isStarted && {
+                              backgroundColor: '#FFFBEB',
+                              borderColor: '#F59E0B',
+                              borderWidth: 1.5,
+                            },
+                            pending === 0 && {
+                              backgroundColor: '#F0FDF4',
+                              borderColor: '#86EFAC',
+                            }
+                          ]}
                           onPress={() => { setOtpInput(''); setOtpTarget(null); setBoardingRideId(r.id); }}
                           activeOpacity={0.9}
                         >
-                          <Text style={styles.verifyBoardingText}>
+                          <Text style={[
+                            styles.verifyBoardingText,
+                            pending > 0 && isStarted && { color: '#B45309', fontWeight: '700' },
+                            pending === 0 && { color: '#15803D' },
+                          ]}>
                             {pending === 0
-                              ? '✓ All riders verified'
-                              : `🔑 Enter boarding code · ${pending} to verify`}
+                              ? `✓ All ${m.passengers.length} riders verified & boarded`
+                              : isStarted
+                              ? `📍 Reached Pickup? Enter Rider OTP (${pending} pending)`
+                              : `🔑 Enter rider boarding code (${pending} pending)`}
                           </Text>
                         </HapticPressable>
                       );
