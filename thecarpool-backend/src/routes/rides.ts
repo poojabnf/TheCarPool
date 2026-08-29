@@ -16,6 +16,7 @@ import { sendPushToUser } from '../lib/fcm';
 import { getUserEmail, buildRideOfferedEmail, sendEmail } from '../lib/email';
 import { round2 } from '../lib/money';
 import { isInServiceBounds, outOfAreaMessage } from '../lib/serviceArea';
+import { findMetroByCoords, findMetroByText, coordInMetroBbox, type MetroRegion } from '../lib/metroRegions';
 
 /** Uids of riders with a live booking on a ride — who gets told about it. */
 async function activeRiderUids(rideId: string): Promise<string[]> {
@@ -212,6 +213,17 @@ function haversineDistance(lat1: number, lon1: number, lat2: number, lon2: numbe
 // Max candidate rides scanned per search — caps memory/CPU so a large
 // rides collection can't OOM the process during in-memory matching.
 const MAX_RIDE_SCAN = 500;
+
+/**
+ * How far a metro-area match may be from the rider.
+ *
+ * Deliberately large: the point of metro matching is to surface a ride from
+ * Noida for someone searching in Gurugram, roughly 30 km apart but a normal
+ * daily commute. It applies ONLY to rides that already passed the metro text
+ * or bbox test — an ordinary search keeps the strict max_detour_meters, so
+ * this cannot quietly loosen nearby matching.
+ */
+const METRO_DETOUR_METERS = 35000;
 const DEFAULT_RESULT_LIMIT = 50;
 
 /**
@@ -672,24 +684,53 @@ export async function rideRoutes(fastify: FastifyInstance) {
         .limit(MAX_RIDE_SCAN)
         .get();
 
+      // ── Metro-area resolution ─────────────────────────────────────────
+      // If the rider's pickup or drop is inside a known metro (e.g. Delhi
+      // NCR), rides from sibling cities (Noida, Gurugram, Ghaziabad) are
+      // also surfaced even when the strict 1.5 km coordinate match fails.
+      const pickupMetro = findMetroByCoords(pickup_lat, pickup_lng);
+      const dropMetro = findMetroByCoords(drop_lat, drop_lng);
+
       const rides: any[] = [];
+      const metroMatchedIds = new Set<string>();
+
       snap.forEach(doc => {
         const data = doc.data();
-        if (data.seats_available > 0) {
-          // Coarse bbox prefilter — skip rides clearly out of range before
-          // the expensive per-coordinate haversine pass below.
-          const nearRoute = routeBboxIntersects(
-            data.route_coords || [], pickup_lat, pickup_lng, drop_lat, drop_lng, max_detour_meters
+        if (data.seats_available <= 0) return;
+
+        // 1. Standard coordinate bbox prefilter
+        const nearRoute = routeBboxIntersects(
+          data.route_coords || [], pickup_lat, pickup_lng, drop_lat, drop_lng, max_detour_meters
+        );
+        const nearDeclaredStop = !nearRoute && (data.pickup_points || []).some((stop: any) =>
+          typeof stop?.lat === 'number' && typeof stop?.lng === 'number' &&
+          haversineDistance(pickup_lat, pickup_lng, stop.lat, stop.lng) <= PICKUP_POINT_RADIUS_METERS
+        );
+
+        if (nearRoute || nearDeclaredStop) {
+          rides.push({ id: doc.id, ...data });
+          return;
+        }
+
+        // 2. Metro-area text match: does the ride's source or destination
+        //    mention a city in the same metro as the searcher?
+        if (pickupMetro || dropMetro) {
+          const rideSourceMetro = findMetroByText(data.source);
+          const rideDestMetro = findMetroByText(data.destination);
+
+          const pickupSameMetro = pickupMetro && rideSourceMetro && pickupMetro.name === rideSourceMetro.name;
+          const dropSameMetro = dropMetro && rideDestMetro && dropMetro.name === rideDestMetro.name;
+          // Also match if the ride's route passes through the searcher's metro bbox
+          const routeInPickupMetro = pickupMetro && (data.route_coords || []).some(
+            (pt: any) => coordInMetroBbox(pt.lat, pt.lng, pickupMetro!)
           );
-          // A ride can also qualify purely on a declared stop, which may sit
-          // well outside the route's bounding box — check those too, or the
-          // prefilter would discard the ride before the stop is ever compared.
-          const nearDeclaredStop = !nearRoute && (data.pickup_points || []).some((stop: any) =>
-            typeof stop?.lat === 'number' && typeof stop?.lng === 'number' &&
-            haversineDistance(pickup_lat, pickup_lng, stop.lat, stop.lng) <= PICKUP_POINT_RADIUS_METERS
+          const routeInDropMetro = dropMetro && (data.route_coords || []).some(
+            (pt: any) => coordInMetroBbox(pt.lat, pt.lng, dropMetro!)
           );
-          if (nearRoute || nearDeclaredStop) {
-            rides.push({ id: doc.id, ...data });
+
+          if ((pickupSameMetro || routeInPickupMetro) && (dropSameMetro || routeInDropMetro)) {
+            rides.push({ id: doc.id, ...data, _metroMatch: true });
+            metroMatchedIds.add(doc.id);
           }
         }
       });
@@ -789,7 +830,14 @@ export async function rideRoutes(fastify: FastifyInstance) {
         // near one matches even when the polyline itself stays far away. Only
         // considered when it beats the route distance, so a rider standing on
         // the route is still reported against the route.
-        let pickupAllowance = max_detour_meters;
+        // Metro-matched rides are, by definition, further away than the strict
+        // radius — that is the whole point of surfacing them. Without widening
+        // the allowance here they were collected above and then dropped by this
+        // same gate, so the metro layer found candidates and discarded every
+        // one of them. Only rides already flagged _metroMatch get the wider
+        // tolerance; nearby matching stays at max_detour_meters.
+        let pickupAllowance = ride._metroMatch ? METRO_DETOUR_METERS : max_detour_meters;
+        const dropAllowance = ride._metroMatch ? METRO_DETOUR_METERS : max_detour_meters;
         let viaPickupPoint: string | null = null;
         for (const stop of (ride.pickup_points || [])) {
           if (typeof stop?.lat !== 'number' || typeof stop?.lng !== 'number') continue;
@@ -818,7 +866,7 @@ export async function rideRoutes(fastify: FastifyInstance) {
           dropIndex !== -1 &&
           pickupIndex < dropIndex &&
           minPickupDist <= pickupAllowance &&
-          minDropDist <= max_detour_meters
+          minDropDist <= dropAllowance
         ) {
           matchedResults.push({
             id: ride.id,
@@ -854,6 +902,10 @@ export async function rideRoutes(fastify: FastifyInstance) {
             driver_rating: user.rating_avg ? parseFloat(user.rating_avg.toFixed(2)) : null,
             driver_rating_count: user.rating_count || 0,
             driver_trust_level: trustLevel(user.rating_count || 0, user.rating_avg || 0),
+            // Lets the app badge a wide-area result rather than presenting a
+            // 20 km pickup as though it were around the corner.
+            metro_match: ride._metroMatch === true,
+            metro_region: ride._metroMatch ? (findMetroByCoords(pickup_lat, pickup_lng)?.name ?? null) : null,
             pickup_deviation: parseFloat(minPickupDist.toFixed(2)),
             // Names the driver stop that made this a match, so the rider can be
             // told where to go rather than just how far away it is.
@@ -871,7 +923,13 @@ export async function rideRoutes(fastify: FastifyInstance) {
       const matchScore = (r: any) =>
         r.pickup_deviation + r.drop_deviation
         - (TRUST_BONUS_METERS[r.driver_trust_level] || 0);
-      matchedResults.sort((a, b) => matchScore(a) - matchScore(b));
+      // Exact coordinate matches always rank above metro-area ones, however
+      // small the metro ride's detour looks — a rider wants the car passing
+      // their street before one across the city.
+      matchedResults.sort((a, b) => {
+        if (a.metro_match !== b.metro_match) return a.metro_match ? 1 : -1;
+        return matchScore(a) - matchScore(b);
+      });
       const resultLimit = Number((body as any).limit) > 0 ? Number((body as any).limit) : DEFAULT_RESULT_LIMIT;
       const limitedResults = matchedResults.slice(0, resultLimit);
 
