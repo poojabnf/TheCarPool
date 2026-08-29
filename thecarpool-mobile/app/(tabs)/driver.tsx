@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { StyleSheet, View, Text, ScrollView, Dimensions, TextInput, Switch, Alert, ActivityIndicator, Modal, Linking, FlatList } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { PlusCircle, Activity, MapPin, Calendar, Users, X, Check, Car, Bike, Shield, Phone, Mail, ChevronDown, Search } from 'lucide-react-native';
 import { colors } from '../../theme/colors';
 import { apiFetch } from '../services/api';
@@ -297,7 +297,22 @@ export default function DriverInterface() {
     } catch { setAllRides([]); myRidesRef.current = []; setMyRides([]); }
     finally { setRidesLoading(false); }
   };
+
   useEffect(() => { loadMyRides(); }, []);
+  useFocusEffect(useCallback(() => { loadMyRides(); }, []));
+
+  const activityRefreshEpoch = useAuthStore((s) => s.activityRefreshEpoch);
+  useEffect(() => {
+    loadMyRides();
+  }, [activityRefreshEpoch]);
+
+  // Periodic refresh so driver gets new booking requests without needing to restart the app
+  useEffect(() => {
+    const pollInterval = setInterval(() => {
+      loadMyRides();
+    }, 10000);
+    return () => clearInterval(pollInterval);
+  }, []);
 
   // Switching between Car Pool and Bike Pool invalidates whatever was picked
   // under the other mode — otherwise a driver who selects Maruti Swift and
@@ -880,6 +895,42 @@ export default function DriverInterface() {
       <View style={styles.content}>
         {activeTab === 'overview' && !showPostModal && (
           <ScrollView showsVerticalScrollIndicator={false}>
+            {/* 🔔 Prominent Pending Request Banner */}
+            {pendingRequests.length > 0 && (
+              <HapticPressable
+                haptic="warning"
+                style={{
+                  backgroundColor: '#FEF3C7',
+                  borderColor: '#F59E0B',
+                  borderWidth: 1.5,
+                  borderRadius: 12,
+                  padding: 14,
+                  marginBottom: 14,
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                }}
+                onPress={() => setActiveTab('requests')}
+              >
+                <View style={{ flex: 1, marginRight: 8 }}>
+                  <Text style={{ fontSize: 14, fontWeight: '700', color: '#92400E' }}>
+                    🔔 {pendingRequests.length} Pending Seat Request{pendingRequests.length > 1 ? 's' : ''}!
+                  </Text>
+                  <Text style={{ fontSize: 12, color: '#B45309', marginTop: 2 }}>
+                    Riders have paid & are waiting for your approval. Tap to accept or decline.
+                  </Text>
+                </View>
+                <View style={{
+                  backgroundColor: '#F59E0B',
+                  paddingHorizontal: 10,
+                  paddingVertical: 6,
+                  borderRadius: 8,
+                }}>
+                  <Text style={{ color: '#FFFFFF', fontWeight: '700', fontSize: 12 }}>Review →</Text>
+                </View>
+              </HapticPressable>
+            )}
+
             {/* Earnings. Real balance from the wallet — this used to show a
                 hardcoded ₹4,320 and "+12% from last week" to every driver. */}
             <View style={styles.earningsCard}>

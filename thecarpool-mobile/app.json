@@ -18,7 +18,7 @@
       "supportsTablet": false,
       "bundleIdentifier": "com.thecarpool.app",
       "googleServicesFile": "./GoogleService-Info.plist",
-      "buildNumber": "6",
+      "buildNumber": "7",
       "usesAppleSignIn": true,
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "TheCarPool requires location access to find nearby workplace carpools and match you with active co-workers on your route.",
@@ -39,7 +39,7 @@
         "backgroundColor": "#ffffff"
       },
       "package": "com.thecarpool.app",
-      "versionCode": 167,
+      "versionCode": 168,
       "googleServicesFile": "./google-services.json",
       "config": {
         "googleMaps": {
