@@ -44,9 +44,46 @@ export async function sendPushToUser(
       messages.map((msg) => admin.messaging().send(msg))
     );
 
-    const failed = results.filter((r) => r.status === 'rejected').length;
-    if (failed > 0) {
-      console.warn(`FCM: ${failed}/${messages.length} messages failed for uid=${uid}`);
+    const rejected = results.filter((r) => r.status === 'rejected') as PromiseRejectedResult[];
+    if (rejected.length > 0) {
+      // Log WHY, not just how many.
+      //
+      // This previously counted failures and threw the reasons away, so the
+      // log read "FCM: 7/7 messages failed" forever while every push in the
+      // system was being refused for one fixable reason — the runtime service
+      // account was missing roles/firebasemessaging.admin. A count tells you
+      // something is broken; only the reason tells you what to do about it.
+      const reasons = new Map<string, number>();
+      for (const r of rejected) {
+        const code = (r.reason as any)?.errorInfo?.code
+          ?? (r.reason as any)?.code
+          ?? 'unknown';
+        reasons.set(code, (reasons.get(code) ?? 0) + 1);
+      }
+      const summary = [...reasons.entries()].map(([code, n]) => `${code} x${n}`).join(', ');
+      console.warn(
+        `FCM: ${rejected.length}/${messages.length} messages failed for uid=${uid}: ${summary}`
+      );
+      // The first full error, once — enough to diagnose without repeating the
+      // same stack for every device the user owns.
+      console.warn('FCM: first failure detail:', (rejected[0].reason as any)?.message ?? rejected[0].reason);
+    }
+
+    // Prune tokens the device has thrown away. Without this a user who
+    // reinstalls accumulates dead tokens forever, and every later send does
+    // pointless work against them.
+    // Indexed off `results`, not `rejected` — the two arrays do not line up
+    // once any send succeeds, and tokens[] is parallel to results[].
+    const stale: string[] = [];
+    results.forEach((r, i) => {
+      if (r.status !== 'rejected') return;
+      const code = (r.reason as any)?.errorInfo?.code ?? (r.reason as any)?.code;
+      if (code === 'messaging/registration-token-not-registered') stale.push(tokens[i]);
+    });
+    if (stale.length > 0) {
+      const removal: Record<string, admin.firestore.FieldValue> = {};
+      for (const t of stale) removal[`push_tokens.${t}`] = admin.firestore.FieldValue.delete();
+      await db.collection('users').doc(uid).update(removal).catch(() => { /* best effort */ });
     }
   } catch (err) {
     // Non-fatal — don't break the calling request

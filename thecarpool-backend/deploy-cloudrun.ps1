@@ -14,10 +14,16 @@ gcloud config set project $PROJECT
 #    - datastore.user        → Firestore read/write
 #    - firebaseauth.admin    → deleteUser / setCustomUserClaims
 #    - storage.admin         → read/write the Storage bucket
+#    - firebasecloudmessaging.admin → send FCM push notifications
 #    - serviceAccountTokenCreator (on ITSELF) → sign KYC/classifieds upload URLs
 gcloud projects add-iam-policy-binding $PROJECT --member="serviceAccount:$RUNTIME_SA" --role="roles/datastore.user"
 gcloud projects add-iam-policy-binding $PROJECT --member="serviceAccount:$RUNTIME_SA" --role="roles/firebaseauth.admin"
 gcloud projects add-iam-policy-binding $PROJECT --member="serviceAccount:$RUNTIME_SA" --role="roles/storage.admin"
+# Without this every push silently fails with "Permission
+# 'cloudmessaging.messages.create' denied" — which firebase-admin surfaces as
+# the misleading code 'messaging/mismatched-credential', sending you off to
+# check project ids that were never wrong. 100% of notifications were lost.
+gcloud projects add-iam-policy-binding $PROJECT --member="serviceAccount:$RUNTIME_SA" --role="roles/firebasecloudmessaging.admin"
 gcloud iam service-accounts add-iam-policy-binding $RUNTIME_SA --member="serviceAccount:$RUNTIME_SA" --role="roles/iam.serviceAccountTokenCreator"
 
 # 2) Deploy from source (builds the Dockerfile via Cloud Build).
