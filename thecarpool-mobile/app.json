@@ -18,7 +18,7 @@
       "supportsTablet": false,
       "bundleIdentifier": "com.thecarpool.app",
       "googleServicesFile": "./GoogleService-Info.plist",
-      "buildNumber": "3",
+      "buildNumber": "1",
       "usesAppleSignIn": true,
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "TheCarPool requires location access to find nearby workplace carpools and match you with active co-workers on your route.",
@@ -39,7 +39,7 @@
         "backgroundColor": "#ffffff"
       },
       "package": "com.thecarpool.app",
-      "versionCode": 161,
+      "versionCode": 163,
       "googleServicesFile": "./google-services.json",
       "config": {
         "googleMaps": {
@@ -56,10 +56,10 @@
     },
     "extra": {
       "eas": {
-        "projectId": "c33bc874-1636-427f-9dbd-0a49765dda78"
+        "projectId": "3af997c5-ecfc-449e-9b8b-0a0ab1d9cdc4"
       }
     },
-    "owner": "aayanshy2k19",
+    "owner": "skyadav35",
     "plugins": [
       "@react-native-firebase/app",
       "@react-native-firebase/auth",
@@ -91,7 +91,7 @@
       "policy": "appVersion"
     },
     "updates": {
-      "url": "https://u.expo.dev/c33bc874-1636-427f-9dbd-0a49765dda78",
+      "url": "https://u.expo.dev/3af997c5-ecfc-449e-9b8b-0a0ab1d9cdc4",
       "fallbackToCacheTimeout": 8000
     }
   }
