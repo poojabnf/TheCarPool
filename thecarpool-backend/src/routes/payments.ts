@@ -649,8 +649,13 @@ export async function paymentRoutes(fastify: FastifyInstance) {
   fastify.get('/payouts/history', { preHandler: [requireAuth] }, async (request, reply) => {
     const uid = String(request.user!.id);
     try {
+      // Bounded. This fetched every payout the user had ever requested and
+      // sorted them in memory — fine at four rows, an unbounded read and an
+      // unbounded response for anyone who withdraws regularly. The list is a
+      // history panel, not an export.
       const snap = await db.collection('payouts')
         .where('requested_by', '==', uid)
+        .limit(100)
         .get();
 
       const list = snap.docs.map((doc) => {

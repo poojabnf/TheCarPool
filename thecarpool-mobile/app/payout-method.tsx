@@ -394,7 +394,10 @@ export default function PayoutMethodScreen() {
                 </HapticPressable>
               ) : (
                 <Text style={styles.payoutsOffNote}>
-                  Direct bank withdrawals are in maintenance. Your balance is safe in your wallet and spendable on rides.
+                  Withdrawing to a bank or UPI isn't available yet — we're still setting up
+                  the payout rails with our provider, and we don't have a date. Your balance
+                  is safe and spendable on rides. Once your PAN is on file, earnings from
+                  new rides go straight to your bank instead of the wallet.
                 </Text>
               )}
             </View>
