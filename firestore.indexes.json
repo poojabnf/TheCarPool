@@ -1,7 +1,7 @@
 {
   "indexes": [
     {
-      "_comment": "GET /api/bookings/mine — the rider's booking list, and the ONLY place a rider can read their boarding OTP. Without this index the query throws FAILED_PRECONDITION, the route 500s, and no driver can ever verify boarding (so every trip settles as a no-show at 5%).",
+      "_comment": "GET /api/bookings/mine \u2014 the rider's booking list, and the ONLY place a rider can read their boarding OTP. Without this index the query throws FAILED_PRECONDITION, the route 500s, and no driver can ever verify boarding (so every trip settles as a no-show at 5%).",
       "collectionGroup": "bookings",
       "queryScope": "COLLECTION",
       "fields": [
@@ -16,7 +16,7 @@
       ]
     },
     {
-      "_comment": "POST /api/rides/search — the candidate scan. Without this index no rider can find any ride at all.",
+      "_comment": "POST /api/rides/search \u2014 the candidate scan. Without this index no rider can find any ride at all.",
       "collectionGroup": "rides",
       "queryScope": "COLLECTION",
       "fields": [
@@ -54,6 +54,21 @@
         },
         {
           "fieldPath": "escrow_status",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "_comment": "POST /api/rides/cleanup-expired \u2014 status IN [SCHEDULED, CREATED] plus a created_at range. Without it the sweep throws FAILED_PRECONDITION and every run 500s, so stale rides are never expired and keep appearing in search.",
+      "collectionGroup": "rides",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "created_at",
           "order": "ASCENDING"
         }
       ]
