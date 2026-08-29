@@ -359,12 +359,41 @@ export async function paymentRoutes(fastify: FastifyInstance) {
     // both wrong and impossible for them to act on.
     let accountId: string | null = user.razorpay_account_id ?? null;
     let linkError: string | null = null;
+    // Machine-readable so the app can DO something about it rather than just
+    // print a sentence. The first real PAN submission failed here silently:
+    // the caller got 200, the message was ignored by the app, and the driver
+    // believed payouts were set up when no account had been created.
+    let linkBlocked: 'EMAIL_REQUIRED' | 'NAME_REQUIRED' | 'PROVIDER_ERROR' | null = null;
 
     if (!accountId && isRouteConfigured()) {
-      const email = user.email || user.corporate_email;
+      // An email supplied with this request is accepted and saved. Most Indian
+      // users sign in with phone OTP and therefore have no email on file, but
+      // Razorpay requires one for a linked account — it is where they send
+      // settlement notices. Asking for it here is the only honest option;
+      // inventing an address would send a driver's payout mail into a void.
+      const submittedEmail = typeof (request.body as any)?.email === 'string'
+        ? String((request.body as any).email).trim().toLowerCase()
+        : '';
+      const emailOk = /^[^@\s]+@[^@\s]+\.[^@\s]{2,}$/.test(submittedEmail);
+      if (submittedEmail && !emailOk) {
+        return reply.code(400).send({
+          error: 'INVALID_EMAIL',
+          message: "That email address doesn't look right.",
+        });
+      }
+      if (emailOk && !user.email) {
+        await userRef.set({ email: submittedEmail }, { merge: true });
+        user.email = submittedEmail;
+      }
+
+      const email = user.email || user.corporate_email || (emailOk ? submittedEmail : null);
       const name = user.full_name || user.name || user.displayName;
-      if (!email || !name) {
-        linkError = 'Add your name and email to your profile to finish payout setup.';
+      if (!email) {
+        linkBlocked = 'EMAIL_REQUIRED';
+        linkError = 'Add an email address so we can set up your bank payouts — Razorpay needs one to open your payout account.';
+      } else if (!name) {
+        linkBlocked = 'NAME_REQUIRED';
+        linkError = 'Add your name to your profile so we can set up your bank payouts.';
       } else {
         try {
           const account = await createLinkedAccount({
@@ -381,8 +410,12 @@ export async function paymentRoutes(fastify: FastifyInstance) {
           }, { merge: true });
           fastify.log.warn({ uid, account_id: account.id }, 'Route linked account created for driver');
         } catch (err: any) {
+          linkBlocked = 'PROVIDER_ERROR';
           linkError = 'We saved your PAN. Setting up your payout account is taking longer than usual.';
-          fastify.log.error({ err, uid }, 'Route linked account creation failed');
+          fastify.log.error(
+            { err, uid, reason: String(err?.message).slice(0, 300) },
+            'Route linked account creation failed'
+          );
         }
       }
     }
@@ -392,6 +425,10 @@ export async function paymentRoutes(fastify: FastifyInstance) {
       pan: maskPan(pan),
       kyc_status: panStatus({ pan_number: pan, razorpay_account_id: accountId }),
       payouts_via: accountId ? 'ROUTE' : 'WALLET',
+      // Whether the payout account actually got created. A saved PAN alone
+      // pays nobody, and the app must be able to tell the difference.
+      linked: Boolean(accountId),
+      link_blocked: linkBlocked,
       message: linkError,
     });
   });

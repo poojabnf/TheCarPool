@@ -59,6 +59,12 @@ export default function PayoutMethodScreen() {
   const [holderName, setHolderName] = useState('');
   const [pan, setPan] = useState('');
   const [panOnFile, setPanOnFile] = useState<string | null>(null);
+  // Razorpay needs an email to open a payout account. Most people here sign in
+  // with phone OTP and have none on file, which silently blocked the very
+  // first real PAN submission — the PAN saved, no account was created, and
+  // nothing said so.
+  const [payoutEmail, setPayoutEmail] = useState('');
+  const [needsEmail, setNeedsEmail] = useState(false);
   const [kycStatus, setKycStatus] = useState<'MISSING' | 'COLLECTED' | 'LINKED'>('MISSING');
   const [saving, setSaving] = useState(false);
   const [isEditingDetails, setIsEditingDetails] = useState(false);
@@ -215,8 +221,10 @@ export default function PayoutMethodScreen() {
   const nameOk = holderName.trim().length >= 2;
   const panValue = pan.replace(/[\s-]/g, '').toUpperCase();
   const panOk = /^[A-Z]{3}[PH][A-Z][0-9]{4}[A-Z]$/.test(panValue);
+  const emailOk = /^[^@\s]+@[^@\s]+\.[^@\s]{2,}$/.test(payoutEmail.trim());
+  const emailSatisfied = !needsEmail || kycStatus === 'LINKED' || emailOk;
   const panSatisfied = kycStatus === 'LINKED' || !!panOnFile || panOk;
-  const canSave = panSatisfied && (type === 'VPA' ? vpaOk : (accOk && accMatches && ifscOk && nameOk));
+  const canSave = panSatisfied && emailSatisfied && (type === 'VPA' ? vpaOk : (accOk && accMatches && ifscOk && nameOk));
 
   const saveDetails = async () => {
     setSaving(true);
@@ -224,7 +232,10 @@ export default function PayoutMethodScreen() {
       if (panOk && kycStatus !== 'LINKED') {
         const panRes = await apiFetch('/api/payments/kyc/pan', {
           method: 'POST',
-          body: JSON.stringify({ pan: panValue }),
+          body: JSON.stringify({
+            pan: panValue,
+            ...(payoutEmail.trim() ? { email: payoutEmail.trim() } : {}),
+          }),
         });
         const panData = await panRes.json().catch(() => ({} as any));
         if (!panRes.ok) {
@@ -236,6 +247,18 @@ export default function PayoutMethodScreen() {
         setPanOnFile(panData.pan ?? null);
         setKycStatus(panData.kyc_status ?? 'COLLECTED');
         setPan('');
+
+        // Saving the PAN is not the same as having somewhere to be paid. Say
+        // so plainly instead of reporting success and leaving the driver to
+        // find out when no money arrives.
+        if (panData.linked === false && panData.message) {
+          setNeedsEmail(panData.link_blocked === 'EMAIL_REQUIRED');
+          haptics.warning();
+          Alert.alert('One more thing', panData.message);
+          setSaving(false);
+          return;
+        }
+        setNeedsEmail(false);
       }
 
       const payout_method = type === 'VPA'
@@ -535,7 +558,32 @@ export default function PayoutMethodScreen() {
             )}
 
             {/* Type Selector: UPI or Bank Account */}
-            <View style={styles.typeRow}>
+            {/* Email, only when Razorpay still needs one. Phone-OTP accounts have
+            no email on file, and without it no payout account can be opened —
+            which is exactly how the first real PAN submission stalled without
+            anyone noticing. */}
+        {needsEmail && kycStatus !== 'LINKED' && (
+          <>
+            <Text style={styles.label}>Email address</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="you@example.com"
+              placeholderTextColor={c.textDisabled}
+              value={payoutEmail}
+              onChangeText={setPayoutEmail}
+              autoCapitalize="none"
+              autoCorrect={false}
+              keyboardType="email-address"
+              maxLength={120}
+            />
+            <Text style={styles.panNote}>
+              Razorpay needs this to open your payout account and send settlement
+              notices. We don't use it for marketing.
+            </Text>
+          </>
+        )}
+
+        <View style={styles.typeRow}>
               <HapticPressable
                 style={[styles.typeBtn, type === 'VPA' && styles.typeBtnOn]}
                 onPress={() => setType('VPA')}
