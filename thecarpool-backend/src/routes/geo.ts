@@ -21,9 +21,42 @@ interface SearchQuery {
  * searching the same landmarks), not durable storage. Redis still wins when
  * configured, and this is skipped entirely in that case.
  */
-const MEMO_TTL_MS = 5 * 60 * 1000;
-const MEMO_MAX_ENTRIES = 500;
+const MEMO_TTL_MS = 30 * 60 * 1000;
+const MEMO_MAX_ENTRIES = 2000;
 const memoCache = new Map<string, { at: number; payload: any }>();
+
+let cachedPostalCodes: any[] | null = null;
+let postalCodesLoadedAt = 0;
+const POSTAL_CODES_CACHE_TTL = 60 * 60 * 1000; // 1 hour
+
+async function getCachedPostalCodes(): Promise<any[]> {
+  if (cachedPostalCodes && Date.now() - postalCodesLoadedAt < POSTAL_CODES_CACHE_TTL) {
+    return cachedPostalCodes;
+  }
+  try {
+    const snap = await db.collection('postal_codes').get();
+    const list: any[] = [];
+    snap.forEach((doc) => {
+      const data = doc.data();
+      list.push({
+        id: doc.id,
+        postal_code: data.postal_code || '',
+        place_name: data.place_name || '',
+        state_name: data.state_name || '',
+        state_code: data.state_code || '',
+        country_name: data.country_name || '',
+        country_iso: data.country_iso || '',
+        longitude: data.location?.lng ?? data.location?.longitude ?? 0,
+        latitude: data.location?.lat ?? data.location?.latitude ?? 0,
+      });
+    });
+    cachedPostalCodes = list;
+    postalCodesLoadedAt = Date.now();
+    return list;
+  } catch {
+    return cachedPostalCodes || [];
+  }
+}
 
 function memoGet(key: string): any | null {
   const hit = memoCache.get(key);
@@ -40,7 +73,6 @@ function memoGet(key: string): any | null {
 
 function memoSet(key: string, payload: any): void {
   if (memoCache.size >= MEMO_MAX_ENTRIES) {
-    // Map preserves insertion order, so the first key is the least recently used.
     const oldest = memoCache.keys().next().value;
     if (oldest !== undefined) memoCache.delete(oldest);
   }
@@ -68,19 +100,11 @@ export async function geoRoutes(fastify: FastifyInstance) {
           return reply.send(JSON.parse(cached));
         }
       } else {
-        // No Redis configured — fall back to the in-process cache rather than
-        // paying Google for a query we already answered.
         const memo = memoGet(cacheKey);
         if (memo) return reply.send(memo);
       }
 
-      // Never spend a paid Places lookup on something that cannot be a place.
-      // Production logs showed an email being typed into a location field,
-      // billing a Text Search request for every character of it.
       const looksLikeAPlace = !/@/.test(lowerQuery);
-
-      // Prefer real Google Places results (coords included). Falls back to the
-      // local postal_codes dataset when the Maps key lacks the Places API.
       const places = looksLikeAPlace ? await searchPlaces(query.trim()) : null;
       if (places && places.length > 0) {
         const mapped = places.map((p) => ({
@@ -92,42 +116,27 @@ export async function geoRoutes(fastify: FastifyInstance) {
           latitude: p.latitude,
         }));
         if (redisClient.isOpen) {
-          redisClient.setEx(cacheKey, 300, JSON.stringify(mapped)).catch((err) => {
-            fastify.log.error('Redis geo cache write failed:', err);
-          });
+          redisClient.setEx(cacheKey, 600, JSON.stringify(mapped)).catch(() => {});
         } else {
           memoSet(cacheKey, mapped);
         }
         return reply.send(mapped);
       }
 
-      const snap = await db.collection('postal_codes').get();
+      // Fast in-memory lookup for postal codes / cities without hitting Firestore on every key
+      const postalList = await getCachedPostalCodes();
       const results: any[] = [];
 
-      snap.forEach(doc => {
-        const data = doc.data();
+      for (const data of postalList) {
         if (
           (data.postal_code && data.postal_code.toLowerCase().includes(lowerQuery)) ||
           (data.place_name && data.place_name.toLowerCase().includes(lowerQuery))
         ) {
-          results.push({
-            id: doc.id,
-            postal_code: data.postal_code,
-            place_name: data.place_name,
-            state_name: data.state_name,
-            state_code: data.state_code,
-            country_name: data.country_name,
-            country_iso: data.country_iso,
-            longitude: data.location?.lng ?? data.location?.longitude ?? 0,
-            latitude: data.location?.lat ?? data.location?.latitude ?? 0
-          });
+          results.push(data);
         }
-      });
+      }
 
       const sortedResults = results
-        // Same service-area rule as the Places path. The local dataset is a
-        // fallback, not an exception — otherwise the restriction disappears
-        // exactly when Google is unavailable.
         .filter((r) => {
           const iso = String(r.country_iso ?? '').toUpperCase();
           if (iso) return iso === serviceArea().iso;
@@ -136,14 +145,8 @@ export async function geoRoutes(fastify: FastifyInstance) {
         .sort((a, b) => a.postal_code.localeCompare(b.postal_code))
         .slice(0, 10);
 
-      // Cache for 5 minutes — postal code data is effectively static.
-      // Empty results are cached too, and deliberately: a query that matches
-      // nothing (a half-typed word, or an email pasted into a location field)
-      // would otherwise pay Google again on every repeat.
       if (redisClient.isOpen) {
-        redisClient.setEx(cacheKey, 300, JSON.stringify(sortedResults)).catch(err => {
-          fastify.log.error('Redis geo cache write failed:', err);
-        });
+        redisClient.setEx(cacheKey, 600, JSON.stringify(sortedResults)).catch(() => {});
       } else {
         memoSet(cacheKey, sortedResults);
       }

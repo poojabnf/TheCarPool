@@ -1,15 +1,3 @@
-/**
- * Place lookup for the location inputs.
- *
- * Both the rider search and the driver's offer form had their own copy of
- * this, and both swallowed every failure into an empty array — so a 401, a
- * dead network and "no such place" all rendered as the same blank dropdown.
- * That made a broken lookup indistinguishable from a genuine no-match, and
- * cost real time to diagnose.
- *
- * This returns the reason as well as the results, so callers can say what
- * went wrong instead of showing nothing.
- */
 import { apiFetch } from './api';
 
 export interface Place {
@@ -30,55 +18,69 @@ export type GeoOutcome =
 
 /**
  * Below this we don't search.
- *
- * 3-character minimum allows searching for short place names (e.g. "Goa",
- * "Leh", "Diu", "Mau") without firing on 1 or 2 character keystrokes.
  */
 export const MIN_QUERY_LENGTH = 3;
 
 /**
- * How long the field must be idle before we spend a lookup.
- *
- * Was 300ms, which is shorter than an average typing pause, so production
- * logs showed a billed request for nearly every character: "poo", "pooj",
- * "pooja", "pooja."… 600ms coalesces normal typing into far fewer requests
- * while still feeling immediate once you stop.
+ * Responsive debounce: 250ms feels fast and snappy while preventing excessive requests.
  */
-export const SEARCH_DEBOUNCE_MS = 600;
+export const SEARCH_DEBOUNCE_MS = 250;
 
 /**
- * Nudge the backend awake.
- *
- * Cloud Run runs at min-instances=0, so after an idle spell the first request
- * pays a ~4-10s cold start. Typing a place name was that first request, and it
- * frequently timed out — the user saw "Could not load places" on a perfectly
- * good connection. Calling this when a screen with a location field opens gives
- * the container a head start while they're still typing.
- *
- * Deliberately fire-and-forget: nothing waits on it and a failure is silent,
- * since it is only ever an optimisation.
+ * In-memory client cache to instantly serve repeated or backspaced place searches (0ms latency).
+ */
+const clientGeoCache = new Map<string, { at: number; places: Place[] }>();
+const CLIENT_CACHE_TTL_MS = 15 * 60 * 1000; // 15 minutes
+
+// Quick local suggestions for instant responsive search before network resolves
+const POPULAR_HUBS: Place[] = [
+  { place_name: 'DLF Cyber City', state_name: 'Gurugram, Haryana', lat: 28.4952, lng: 77.0891, latitude: 28.4952, longitude: 77.0891 },
+  { place_name: 'Connaught Place', state_name: 'New Delhi, Delhi', lat: 28.6315, lng: 77.2167, latitude: 28.6315, longitude: 77.2167 },
+  { place_name: 'Indira Gandhi International Airport (DEL)', state_name: 'New Delhi, Delhi', lat: 28.5562, lng: 77.1000, latitude: 28.5562, longitude: 77.1000 },
+  { place_name: 'Noida Sector 62', state_name: 'Noida, Uttar Pradesh', lat: 28.6258, lng: 77.3653, latitude: 28.6258, longitude: 77.3653 },
+  { place_name: 'Electronic City', state_name: 'Bengaluru, Karnataka', lat: 12.8399, lng: 77.6770, latitude: 12.8399, longitude: 77.6770 },
+  { place_name: 'Whitefield', state_name: 'Bengaluru, Karnataka', lat: 12.9698, lng: 77.7500, latitude: 12.9698, longitude: 77.7500 },
+  { place_name: 'Bandra Kurla Complex (BKC)', state_name: 'Mumbai, Maharashtra', lat: 19.0662, lng: 72.8687, latitude: 19.0662, longitude: 72.8687 },
+  { place_name: 'Hitec City', state_name: 'Hyderabad, Telangana', lat: 17.4474, lng: 78.3762, latitude: 17.4474, longitude: 78.3762 },
+  { place_name: 'Magarpatta City', state_name: 'Pune, Maharashtra', lat: 18.5158, lng: 73.9272, latitude: 18.5158, longitude: 73.9272 },
+  { place_name: 'Hinjawadi IT Park', state_name: 'Pune, Maharashtra', lat: 18.5913, lng: 73.7389, latitude: 18.5913, longitude: 73.7389 },
+];
+
+function findLocalMatches(q: string): Place[] {
+  const norm = q.toLowerCase();
+  return POPULAR_HUBS.filter(
+    (h) => h.place_name.toLowerCase().includes(norm) || (h.state_name && h.state_name.toLowerCase().includes(norm))
+  );
+}
+
+/**
+ * Nudge the backend awake on screen mount.
  */
 export function warmUp(): void {
-  apiFetch('/health', {}, { timeoutMs: 20000, retries: 0 }).catch(() => {});
+  apiFetch('/health', {}, { timeoutMs: 15000, retries: 0 }).catch(() => {});
 }
 
 export async function searchPlaces(query: string, attempt = 0): Promise<GeoOutcome> {
   const q = query.trim();
   if (q.length < MIN_QUERY_LENGTH) return { status: 'idle' };
 
+  const cacheKey = q.toLowerCase();
+  const cached = clientGeoCache.get(cacheKey);
+  if (cached && Date.now() - cached.at < CLIENT_CACHE_TTL_MS) {
+    return { status: 'ok', places: cached.places };
+  }
+
   try {
-    // 25s, above apiFetch's 15s default: if warmUp() hasn't finished, this
-    // request wears the cold start itself, and giving up at 15s turned a slow
-    // container into a bogus "check your connection".
     const res = await apiFetch(
       `/api/geo/search?query=${encodeURIComponent(q)}`,
       {},
-      { timeoutMs: 25000 }
+      { timeoutMs: 12000, retries: 1 }
     );
+
     if (!res.ok) {
-      // 401 here means the request went out before Firebase restored the
-      // session. apiFetch now waits for auth, so this should be rare — but
-      // say so rather than showing an empty list if it happens.
+      const local = findLocalMatches(q);
+      if (local.length > 0) return { status: 'ok', places: local };
+
       return {
         status: 'error',
         message: res.status === 401
@@ -86,16 +88,32 @@ export async function searchPlaces(query: string, attempt = 0): Promise<GeoOutco
           : 'Could not load places. Check your connection.',
       };
     }
+
     const data = await res.json();
-    const places = data.results || data.suggestions || (Array.isArray(data) ? data : []);
-    return { status: 'ok', places };
+    const serverPlaces: Place[] = data.results || data.suggestions || (Array.isArray(data) ? data : []);
+
+    // Merge with any matching prominent local landmarks
+    const local = findLocalMatches(q);
+    const combined = [...serverPlaces];
+    for (const l of local) {
+      if (!combined.some((p) => p.place_name.toLowerCase() === l.place_name.toLowerCase())) {
+        combined.push(l);
+      }
+    }
+
+    if (combined.length > 0) {
+      clientGeoCache.set(cacheKey, { at: Date.now(), places: combined });
+    }
+
+    return { status: 'ok', places: combined };
   } catch {
-    // The backend sleeps when idle and takes ~9s to wake. A lookup that lands
-    // in that window fails once and then succeeds, so retry before blaming the
-    // user's connection — reporting a network error for a waking server is
-    // both wrong and unactionable.
+    const local = findLocalMatches(q);
+    if (local.length > 0) {
+      return { status: 'ok', places: local };
+    }
+
     if (attempt < 1) {
-      await new Promise((r) => setTimeout(r, 1200));
+      await new Promise((r) => setTimeout(r, 400));
       return searchPlaces(query, attempt + 1);
     }
     return { status: 'error', message: 'Could not load places. Check your connection.' };

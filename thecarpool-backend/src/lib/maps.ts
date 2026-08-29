@@ -31,6 +31,9 @@ export interface PlaceResult {
 export async function searchPlaces(query: string): Promise<PlaceResult[] | null> {
   if (!isMapsConfigured()) return null;
   const area = serviceArea();
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 4000);
+
   try {
     const res = await fetch('https://places.googleapis.com/v1/places:searchText', {
       method: 'POST',
@@ -39,15 +42,14 @@ export async function searchPlaces(query: string): Promise<PlaceResult[] | null>
         'X-Goog-Api-Key': process.env.GOOGLE_MAPS_API_KEY as string,
         'X-Goog-FieldMask': 'places.id,places.displayName,places.formattedAddress,places.location',
       },
-      // regionCode only BIASES; locationRestriction actually confines the
-      // search to the box. Results are still country-checked below, because
-      // the box necessarily includes slices of neighbouring countries.
+      signal: controller.signal,
       body: JSON.stringify({
         textQuery: query,
         regionCode: area.iso,
         locationRestriction: { rectangle: area.bounds },
       }),
     });
+    clearTimeout(timer);
     if (!res.ok) return null; // 403 = API not enabled / key restricted -> fallback
     const data: any = await res.json();
     const places = data.places;
@@ -66,6 +68,7 @@ export async function searchPlaces(query: string): Promise<PlaceResult[] | null>
       .filter((p: PlaceResult) => isInServiceArea(p.address) && isInServiceBounds(p.latitude, p.longitude))
       .slice(0, 8);
   } catch {
+    clearTimeout(timer);
     return null;
   }
 }
