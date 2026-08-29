@@ -1265,6 +1265,10 @@ export async function bookingRoutes(fastify: FastifyInstance) {
           vehicle_plate: ride?.vehicle_plate ?? null,
           ride_status: ride?.status ?? null,
           price_split: ride?.price_split ?? null,
+          // Where the ride actually goes. The trips list showed a time, a
+          // seat count and a fare, but never the route.
+          source: ride?.source ?? null,
+          destination: ride?.destination ?? null,
         };
       }));
 

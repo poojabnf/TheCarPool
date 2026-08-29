@@ -15,6 +15,7 @@ import { settleDueBookingsForRide } from '../lib/rideSettlement';
 import { sendPushToUser } from '../lib/fcm';
 import { getUserEmail, buildRideOfferedEmail, sendEmail } from '../lib/email';
 import { round2 } from '../lib/money';
+import { isInServiceBounds, outOfAreaMessage } from '../lib/serviceArea';
 
 /** Uids of riders with a live booking on a ride — who gets told about it. */
 async function activeRiderUids(rideId: string): Promise<string[]> {
@@ -454,6 +455,23 @@ export async function rideRoutes(fastify: FastifyInstance) {
       return reply.code(400).send({ error: 'seats_total must be positive and price_split non-negative.' });
     }
 
+    // Both endpoints must be inside the service area. The app restricts what
+    // can be picked, but the app is not the authority: an older build, or a
+    // direct API call, could otherwise post a Jhansi-to-Manhattan ride that
+    // nothing downstream can price, insure or settle.
+    {
+      const pts = Array.isArray(route_geojson?.coordinates) ? route_geojson.coordinates : [];
+      const outside = pts.find(
+        (c: any) => Array.isArray(c) && !isInServiceBounds(Number(c[1]), Number(c[0]))
+      );
+      if (outside) {
+        return reply.code(400).send({
+          error: 'OUT_OF_SERVICE_AREA',
+          message: outOfAreaMessage(),
+        });
+      }
+    }
+
     try {
       const userDoc = await db.collection('users').doc(uid).get();
       const userData = userDoc.data();
@@ -625,7 +643,7 @@ export async function rideRoutes(fastify: FastifyInstance) {
     // "tomorrow morning" served the cached answer to "next 2 hours" from the
     // same pickup and drop — rides for the wrong day, presented as matches.
     // Anything added to the filter above must be added here too.
-    const cacheKey = `search:${pickup_lng},${pickup_lat},${drop_lng},${drop_lat},${max_detour_meters},${gender_preference || 'ANY'},${company_domain || 'NONE'},${society_name || 'NONE'},${ev_only},${vehicle_type},${music_allowed ?? 'ANY'},${smoking_allowed ?? 'ANY'},${chattiness},${ac_available ?? 'ANY'},${women_only},${searcherGender || 'UNKNOWN'},${ride_type},${event_tag || 'NONE'},${departure_from || 'ANY'},${departure_to || 'ANY'}`;
+    const cacheKey = `search:${pickup_lng},${pickup_lat},${drop_lng},${drop_lat},${max_detour_meters},${gender_preference || 'ANY'},${company_domain || 'NONE'},${society_name || 'NONE'},${ev_only},${vehicle_type},${music_allowed ?? 'ANY'},${smoking_allowed ?? 'ANY'},${chattiness},${ac_available ?? 'ANY'},${women_only},${searcherGender || 'UNKNOWN'},${ride_type},${event_tag || 'NONE'},${departure_from || 'ANY'},${departure_to || 'ANY'},${request.user!.id}`;
     
     try {
       // 1. Check Redis Cache
@@ -688,6 +706,14 @@ export async function rideRoutes(fastify: FastifyInstance) {
         const user = userDoc.data()!;
 
         // Apply filters:
+        // Never offer someone their own ride. It was bookable: the driver
+        // could pay themselves, hold their own seat and sit in their own
+        // approval queue. Checked against driver_uid, falling back to the
+        // driver profile's user_id for rides posted before that was stored.
+        const rideDriverUid = String(ride.driver_uid ?? driver.user_id ?? '');
+        if (rideDriverUid && rideDriverUid === String(request.user!.id)) {
+          continue;
+        }
         // Women-only rides are visible only to female searchers.
         if (ride.women_only && searcherGender !== 'FEMALE') {
           continue;

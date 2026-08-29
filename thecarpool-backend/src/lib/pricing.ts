@@ -45,7 +45,8 @@ export interface PricingResult {
 export function suggestPricing(
   routeLengthKm: number,
   vehicleType: 'CAR' | 'BIKE' = 'CAR',
-  acAvailable = true
+  acAvailable = true,
+  seatsOffered = 1
 ): PricingResult {
   const km = Math.max(0, Number(routeLengthKm) || 0);
   const baseRatePerKm = vehicleType === 'BIKE' ? 6.0 : 12.0;
@@ -53,13 +54,26 @@ export function suggestPricing(
   const finalRatePerKm = baseRatePerKm + acMultiplier;
   const suggestedTotal = km * finalRatePerKm;
 
+  // Split across everyone in the vehicle, driver included.
+  //
+  // suggested_passenger_split used to equal the whole total, so a 468 km
+  // Jhansi-Delhi run suggested ₹6,552 PER SEAT — the entire cost of the
+  // journey, charged to each rider. That is not cost-sharing, it is three
+  // people each funding the trip outright, and it made the suggestion
+  // useless enough that drivers typed over it with a number like ₹20.
+  //
+  // The driver counts as one occupant: they get where they are going too, so
+  // bearing a share is the point. It also keeps the suggestion on the right
+  // side of carpooling being cost recovery rather than a fare.
+  const occupants = Math.max(1, Math.floor(Number(seatsOffered) || 0)) + 1;
+
   return {
     route_length_km: km,
     vehicle_type: vehicleType,
     ac_available: acAvailable,
     rate_per_km: finalRatePerKm,
     suggested_total_compensation: round2(suggestedTotal),
-    suggested_passenger_split: round2(suggestedTotal),
+    suggested_passenger_split: round2(suggestedTotal / occupants),
   };
 }
 

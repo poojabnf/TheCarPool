@@ -85,6 +85,24 @@ export default function ConfirmPay() {
   const num = (n: number) => formatMoney(n, { decimals: 2 });
   const upiVpa = (userProfile?.email ? userProfile.email.split('@')[0] : 'you') + '@okhdfcbank';
 
+/**
+ * Describe how far a meeting point is, in terms that make sense at that range.
+ *
+ * Everything used to render as "N min walk · Nm", which produced "2502 min
+ * walk · 200123m" for a driver stop in Agra when the rider was in Jhansi.
+ * Nobody walks 200 km, and a number that absurd makes the whole screen look
+ * broken. Past a walkable distance we stop calling it a walk and just state
+ * the distance.
+ */
+const WALKABLE_METRES = 2000;
+
+function describeDistance(metres: number, minutes: number): string {
+  if (!Number.isFinite(metres) || metres < 0) return 'Distance unknown';
+  if (metres <= WALKABLE_METRES) return `${minutes} min walk · ${metres}m`;
+  const km = metres / 1000;
+  return `${km < 10 ? km.toFixed(1) : Math.round(km)} km away`;
+}
+
   /** Straight-line metres between two coords — enough for a "x min walk" hint. */
   const metresBetween = (aLat: number, aLng: number, bLat: number, bLng: number) => {
     const R = 6371e3;
@@ -267,7 +285,7 @@ export default function ConfirmPay() {
               >
                 <View style={{ flex: 1 }}>
                   <Text style={[styles.mpLabel, chosenMp === i && { color: c.goStrong }]}>{mp.label}</Text>
-                  <Text style={styles.mpWalk}>{mp.walk_minutes} min walk · {mp.walk_meters}m</Text>
+                  <Text style={styles.mpWalk}>{describeDistance(mp.walk_meters, mp.walk_minutes)}</Text>
                 </View>
                 {mp.driver_stop && <Text style={styles.mpBadge}>Driver stop</Text>}
               </HapticPressable>

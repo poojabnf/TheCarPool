@@ -34,6 +34,9 @@ interface Booking {
   /** Rider's own 4-digit boarding code — the driver asks for this to board. */
   boarding_otp?: string | null;
   boarding_verified?: boolean;
+  /** Where the ride goes, for the card. Null on rides posted before it was stored. */
+  source?: string | null;
+  destination?: string | null;
 }
 
 /**
@@ -51,15 +54,25 @@ function disputeMinutesLeft(completedAt: string | null | undefined): number {
   return Math.max(0, Math.ceil(DISPUTE_WINDOW_MINUTES - (Date.now() - t) / 60000));
 }
 
-function statusColor(escrow: string, ride: string | null) {
+function statusColor(escrow: string, ride: string | null, completedAt?: string | null) {
   if (escrow === 'SETTLED') return c.go;
+  if (completedAt) return c.go;
   if (ride === 'STARTED') return '#f59e0b';
   if (ride === 'CANCELLED') return c.danger;
   return c.textAccent;
 }
 
-function statusLabel(escrow: string, ride: string | null) {
+/**
+ * The booking's own state comes first, then the ride's.
+ *
+ * A finished booking on a ride still marked STARTED used to read "In Progress
+ * · LIVE" directly above the words "Ride marked complete" — the card arguing
+ * with itself. The rider's booking is over at completed_at regardless of what
+ * the driver has done with the ride.
+ */
+function statusLabel(escrow: string, ride: string | null, completedAt?: string | null) {
   if (escrow === 'SETTLED') return 'Completed';
+  if (completedAt) return 'Awaiting payment';
   if (ride === 'STARTED') return 'In Progress';
   if (ride === 'CANCELLED') return 'Cancelled';
   if (ride === 'SCHEDULED') return 'Upcoming';
@@ -128,7 +141,7 @@ export default function TripsScreen() {
 
     Alert.alert(
       q.headline || 'Cancel this booking?',
-      `${q.detail}\n\nRefunds reach your wallet immediately. You can withdraw to your bank 24 hours after the ride.`,
+      `${q.detail}\n\nRefunds reach your TheCarPool wallet immediately and can be spent on your next ride.`,
       [
         { text: 'Keep booking', style: 'cancel' },
         {
@@ -328,9 +341,10 @@ function BookingCard({ b, onPress, onCancel, onComplete, onDispute }: {
   b: Booking; onPress: () => void; onCancel?: () => void;
   onComplete?: () => void; onDispute?: () => void;
 }) {
-  const color = statusColor(b.escrow_status, b.ride_status);
-  const label = statusLabel(b.escrow_status, b.ride_status);
-  const isLive = b.ride_status === 'STARTED';
+  const color = statusColor(b.escrow_status, b.ride_status, b.completed_at);
+  const label = statusLabel(b.escrow_status, b.ride_status, b.completed_at);
+  // Not "live" once the rider has ended their own trip.
+  const isLive = b.ride_status === 'STARTED' && !b.completed_at;
 
   return (
     <HapticPressable style={styles.card} onPress={onPress} activeOpacity={0.85}>
@@ -341,6 +355,15 @@ function BookingCard({ b, onPress, onCancel, onComplete, onDispute }: {
         <View style={{ flex: 1 }} />
         <ChevronRight color={c.textTertiary} size={16} />
       </View>
+
+      {(b.source || b.destination) && (
+        <View style={styles.row}>
+          <MapPin color={c.textTertiary} size={13} strokeWidth={2} />
+          <Text style={styles.routeText} numberOfLines={2}>
+            {b.source || 'Pickup'} → {b.destination || 'Destination'}
+          </Text>
+        </View>
+      )}
 
       <View style={styles.row}>
         <Clock color={c.textTertiary} size={13} strokeWidth={2} />
@@ -452,6 +475,7 @@ const styles = StyleSheet.create({
   cancelBtn: { marginTop: space.sm, height: 38, borderRadius: radius.sm, borderWidth: 1, borderColor: c.dangerSoft, backgroundColor: c.dangerSoft, alignItems: 'center', justifyContent: 'center' },
   cancelText: { fontFamily: font.sansSemibold, fontSize: 12.5, color: c.danger },
   awaitingNote: { fontFamily: font.sans, fontSize: 12, color: c.textTertiary, marginTop: 10, lineHeight: 17 },
+  routeText: { flex: 1, fontFamily: font.sansSemibold, fontSize: 13, color: c.textPrimary, lineHeight: 18 },
   otpBox: {
     marginTop: 12, paddingVertical: 12, borderRadius: radius.md, alignItems: 'center',
     backgroundColor: c.bgApp, borderWidth: 1, borderColor: c.borderSubtle,

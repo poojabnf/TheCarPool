@@ -44,6 +44,9 @@ const PricingSchema = z.object({
   route_length_km: z.number().positive(),
   vehicle_type: z.enum(['CAR', 'BIKE']).optional().default('CAR'),
   ac_available: z.boolean().optional().default(true),
+  // Drives the per-seat split. Defaults to 1 so an older client that omits it
+  // gets a two-way split rather than the old whole-trip-per-rider figure.
+  seats_offered: z.number().int().positive().max(8).optional().default(1),
 });
 
 const PayoutSchema = z.object({
@@ -238,7 +241,7 @@ export async function paymentRoutes(fastify: FastifyInstance) {
   fastify.post('/split/suggest-pricing', { preHandler: [requireAuth] }, async (request, reply) => {
     const body = parseOrReply(PricingSchema, request.body, reply);
     if (!body) return;
-    return reply.send(suggestPricing(body.route_length_km, body.vehicle_type, body.ac_available));
+    return reply.send(suggestPricing(body.route_length_km, body.vehicle_type, body.ac_available, body.seats_offered));
   });
 
   // 3. Instant Payout Releases via UPI (Feature 32) — RazorpayX.

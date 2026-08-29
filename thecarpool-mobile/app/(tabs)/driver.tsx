@@ -186,8 +186,23 @@ export default function DriverInterface() {
   const [vehicleModel, setVehicleModel] = useState('');
   // "Other" lets a driver type anything — an unlisted car must never stop
   // someone offering a ride.
+  // Only makes and models that match the selected Car/Bike mode.
+  //
+  // The full catalogue was shown regardless, so choosing "Car Pool" and then
+  // "Hero" offered Splendor, HF Deluxe and Xtreme — motorcycles, under a
+  // heading that says "Car details". Riders then see a car pool advertising a
+  // bike. A make survives if it has at least one model of the right kind;
+  // "Other" always survives, because an unlisted vehicle must never block a
+  // driver from offering a ride.
+  const wantsBike = vehicleType === 'BIKE';
+  const modelMatchesType = (m: { class: string }) =>
+    wantsBike ? m.class === 'BIKE' : m.class !== 'BIKE';
+  const catalogueForType = catalogue.filter(
+    (m) => m.key === 'Other' || m.models.some(modelMatchesType)
+  );
   const makeIsOther = vehicleMake === 'Other' || (vehicleMake !== '' && !catalogue.some((m) => m.label === vehicleMake));
-  const modelsForMake = catalogue.find((m) => m.label === vehicleMake)?.models ?? [];
+  const modelsForMake = (catalogue.find((m) => m.label === vehicleMake)?.models ?? [])
+    .filter(modelMatchesType);
   const [vehicleColour, setVehicleColour] = useState('');
   const [vehiclePlate, setVehiclePlate] = useState('');
 
@@ -271,6 +286,14 @@ export default function DriverInterface() {
     finally { setRidesLoading(false); }
   };
   useEffect(() => { loadMyRides(); }, []);
+
+  // Switching between Car Pool and Bike Pool invalidates whatever was picked
+  // under the other mode — otherwise a driver who selects Maruti Swift and
+  // then switches to Bike Pool posts a bike ride in a Swift.
+  useEffect(() => {
+    setVehicleMake('');
+    setVehicleModel('');
+  }, [vehicleType]);
 
   useEffect(() => {
     apiFetch('/api/rides/vehicle-catalogue')
@@ -567,12 +590,18 @@ export default function DriverInterface() {
       const baseRate = vehicleType === 'BIKE' ? 6 : 12;
       const acAddon = (vehicleType === 'CAR' && acAvailable) ? 2 : 0;
       const rate = baseRate + acAddon;
-      const suggested = Math.round(dist * rate);
+      // Per SEAT, not per trip. This suggested the whole running cost to each
+      // rider — ₹6,552 on a Jhansi-Delhi run — which is not a share, it is
+      // the entire journey charged once per passenger. Split across everyone
+      // in the vehicle, the driver included, since they are travelling too.
+      // Mirrors suggestPricing() on the server.
+      const occupants = Math.max(1, seatsTotal) + 1;
+      const suggested = Math.round((dist * rate) / occupants);
       setSuggestedPrice(suggested);
     } else {
       setSuggestedPrice(null);
     }
-  }, [distanceKm, vehicleType, acAvailable]);
+  }, [distanceKm, vehicleType, acAvailable, seatsTotal]);
 
   // Broadcast the driver's REAL location once a trip is underway, so the rider's
   // map shows where the car actually is.
@@ -1701,7 +1730,7 @@ export default function DriverInterface() {
               />
             </View>
             <FlatList
-              data={catalogue.filter((m) =>
+              data={catalogueForType.filter((m) =>
                 m.label.toLowerCase().includes(makeSearch.toLowerCase().trim())
               )}
               keyExtractor={(item) => item.key}

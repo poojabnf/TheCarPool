@@ -2,6 +2,7 @@ import { FastifyInstance } from 'fastify';
 import { db, redisClient } from '../server';
 import { requireAuth } from '../middleware/auth';
 import { searchPlaces } from '../lib/maps';
+import { serviceArea, isInServiceBounds } from '../lib/serviceArea';
 
 interface SearchQuery {
   query?: string;
@@ -124,6 +125,14 @@ export async function geoRoutes(fastify: FastifyInstance) {
       });
 
       const sortedResults = results
+        // Same service-area rule as the Places path. The local dataset is a
+        // fallback, not an exception — otherwise the restriction disappears
+        // exactly when Google is unavailable.
+        .filter((r) => {
+          const iso = String(r.country_iso ?? '').toUpperCase();
+          if (iso) return iso === serviceArea().iso;
+          return isInServiceBounds(Number(r.latitude), Number(r.longitude));
+        })
         .sort((a, b) => a.postal_code.localeCompare(b.postal_code))
         .slice(0, 10);
 

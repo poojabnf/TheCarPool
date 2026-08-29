@@ -2,6 +2,8 @@
 // Falls back to a nearest-neighbour heuristic when no API key is configured,
 // so the endpoint always returns a sensible order.
 
+import { serviceArea, isInServiceArea, isInServiceBounds } from './serviceArea';
+
 type LatLng = { lat: number; lng: number };
 
 export function isMapsConfigured(): boolean {
@@ -28,6 +30,7 @@ export interface PlaceResult {
  */
 export async function searchPlaces(query: string): Promise<PlaceResult[] | null> {
   if (!isMapsConfigured()) return null;
+  const area = serviceArea();
   try {
     const res = await fetch('https://places.googleapis.com/v1/places:searchText', {
       method: 'POST',
@@ -36,19 +39,32 @@ export async function searchPlaces(query: string): Promise<PlaceResult[] | null>
         'X-Goog-Api-Key': process.env.GOOGLE_MAPS_API_KEY as string,
         'X-Goog-FieldMask': 'places.id,places.displayName,places.formattedAddress,places.location',
       },
-      body: JSON.stringify({ textQuery: query, regionCode: 'IN' }),
+      // regionCode only BIASES; locationRestriction actually confines the
+      // search to the box. Results are still country-checked below, because
+      // the box necessarily includes slices of neighbouring countries.
+      body: JSON.stringify({
+        textQuery: query,
+        regionCode: area.iso,
+        locationRestriction: { rectangle: area.bounds },
+      }),
     });
     if (!res.ok) return null; // 403 = API not enabled / key restricted -> fallback
     const data: any = await res.json();
     const places = data.places;
     if (!Array.isArray(places)) return null;
-    return places.slice(0, 8).map((p: any) => ({
-      place_name: p.displayName?.text || p.formattedAddress || 'Unknown place',
-      address: p.formattedAddress || '',
-      latitude: p.location?.latitude ?? 0,
-      longitude: p.location?.longitude ?? 0,
-      place_id: p.id,
-    }));
+    return places
+      .map((p: any) => ({
+        place_name: p.displayName?.text || p.formattedAddress || 'Unknown place',
+        address: p.formattedAddress || '',
+        latitude: p.location?.latitude ?? 0,
+        longitude: p.location?.longitude ?? 0,
+        place_id: p.id,
+      }))
+      // Second layer: drop anything the rectangle let through from a
+      // neighbouring country. Filtering AFTER the map keeps the shape checks
+      // in one place.
+      .filter((p: PlaceResult) => isInServiceArea(p.address) && isInServiceBounds(p.latitude, p.longitude))
+      .slice(0, 8);
   } catch {
     return null;
   }
