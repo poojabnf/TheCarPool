@@ -147,7 +147,7 @@ export default function DriverInterface() {
   // `timeText` is the driver's own "HH:MM" for this stop, held as typed and
   // resolved to a full timestamp against the departure date at submit.
   const [pickupPoints, setPickupPoints] = useState<
-    { label: string; lat: number; lng: number; timeText?: string }[]
+    { label: string; lat: number; lng: number; timeText?: string; priceText?: string }[]
   >([]);
   // Whether this ride needs the driver to approve each rider.
   // Defaults ON: the driver is asked to accept or decline each rider, and gets
@@ -777,6 +777,10 @@ export default function DriverInterface() {
             lat: p.lat,
             lng: p.lng,
             eta: stopTimeToIso(p.timeText, departureAt),
+            // Blank stays undefined, meaning "charge the full fare".
+            price: p.priceText && p.priceText.trim() !== ''
+              ? parseFloat(p.priceText)
+              : undefined,
           })),
           requires_approval: requiresApproval,
           // Derived from source/destination. The backend prices the optional
@@ -1243,6 +1247,38 @@ export default function DriverInterface() {
                       )}
                     />
                   </View>
+
+                  {/* Fare for boarding HERE rather than at the start.
+                      A 1000 km run at ₹500 shouldn't charge ₹500 to someone
+                      joining for the last 300 km — that is why they book
+                      someone else. Left blank, this stop charges the full
+                      fare, which is how every ride behaved before. */}
+                  <View style={styles.stopTimeRow}>
+                    <Text style={styles.stopTimeLabel}>Fare from here</Text>
+                    <TextInput
+                      style={styles.stopTimeInput}
+                      placeholder={customPrice ? `${customPrice} (full)` : 'Full fare'}
+                      placeholderTextColor={colors.inputPlaceholder}
+                      keyboardType="number-pad"
+                      maxLength={7}
+                      value={pt.priceText ?? ''}
+                      onChangeText={(t) => setPickupPoints((prev) =>
+                        prev.map((p, j) => (j === i ? { ...p, priceText: t.replace(/[^\d.]/g, '') } : p))
+                      )}
+                    />
+                  </View>
+                  {(() => {
+                    const full = parseFloat(customPrice);
+                    const here = parseFloat(pt.priceText ?? '');
+                    if (!isNaN(here) && !isNaN(full) && here > full) {
+                      return (
+                        <Text style={styles.stopPriceWarn}>
+                          Boarding here can't cost more than the whole journey ({formatMoney(full, { decimals: 0 })}).
+                        </Text>
+                      );
+                    }
+                    return null;
+                  })()}
                 </View>
               ))}
 
@@ -2281,6 +2317,7 @@ const styles = StyleSheet.create({
   pickupRow: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: colors.inputBackground, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 10, marginBottom: 8, borderWidth: 1, borderColor: colors.cardBorder },
   pickupLabel: { flex: 1, fontSize: 13, color: colors.text },
   stopTimeRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: -4, marginBottom: 10, paddingLeft: 24 },
+  stopPriceWarn: { color: '#ef4444', fontSize: 12, marginTop: 4, marginLeft: 2 },
   stopTimeLabel: { fontSize: 12, color: colors.textMuted },
   stopTimeInput: { flex: 1, backgroundColor: colors.inputBackground, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 8, fontSize: 13, color: colors.text, borderWidth: 1, borderColor: colors.cardBorder },
   depSummary: { fontSize: 12.5, color: colors.success, fontWeight: '600', marginTop: 4 },

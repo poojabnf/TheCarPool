@@ -65,6 +65,10 @@ export default function ConfirmPay() {
     pickup_points?: { label: string | null; lat: number; lng: number }[];
     /** Restricted-items rules, served by the API so both platforms and every
      *  app version show the same list the server records agreement against. */
+    /** Per-seat fare actually being charged, and the stop it came from. */
+    fare_per_seat?: number;
+    fare_via_stop?: string | null;
+    full_journey_fare_per_seat?: number;
     restricted_items?: {
       headline: string;
       items: { label: string; reason: string }[];
@@ -78,14 +82,6 @@ export default function ConfirmPay() {
   const [luggageNote, setLuggageNote] = useState('');
   const [restrictedAck, setRestrictedAck] = useState(false);
 
-  useEffect(() => {
-    (async () => {
-      try {
-        const res = await apiFetch(`/api/bookings/quote?ride_id=${encodeURIComponent(String(p.ride_id))}&seats=${seats}`);
-        if (res.ok) setQuote(await res.json());
-      } catch { /* fall back to the local fare */ }
-    })();
-  }, [p.ride_id, seats]);
 
   const seatFare = quote?.fare_amount ?? pricePerSeat * seats;
   // Zero convenience fee — riders pay the fare, the driver receives all of it.
@@ -141,6 +137,27 @@ function describeDistance(metres: number, minutes: number): string {
   });
   // Driver's stops first — they're committed, the suggestions are inferred.
   const allPickups: MeetingPoint[] = [...driverStops, ...meetingPoints];
+
+  // Refetched when the rider changes meeting point, because the fare depends
+  // on where they board: a driver can price a stop part way along for less
+  // than the full journey. Sending the pickup here is what keeps the quote and
+  // the charge identical — the booking endpoint resolves the fare the same way
+  // from the same coordinates.
+  const quotePickup = (chosenMp !== null && allPickups[chosenMp])
+    ? { lat: allPickups[chosenMp].latitude, lng: allPickups[chosenMp].longitude }
+    : { lat: Number(p.pickup_lat), lng: Number(p.pickup_lng) };
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await apiFetch(
+          `/api/bookings/quote?ride_id=${encodeURIComponent(String(p.ride_id))}&seats=${seats}`
+          + `&pickup_lat=${quotePickup.lat}&pickup_lng=${quotePickup.lng}`
+        );
+        if (res.ok) setQuote(await res.json());
+      } catch { /* fall back to the local fare */ }
+    })();
+  }, [p.ride_id, seats, quotePickup.lat, quotePickup.lng]);
 
   const pay = async () => {
     haptics.press();

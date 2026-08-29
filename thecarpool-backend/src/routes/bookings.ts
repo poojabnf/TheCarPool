@@ -27,6 +27,7 @@ import {
   noShowOutcome,
 } from '../lib/fees';
 import { round2, isShortOf } from '../lib/money';
+import { farePerSeatForPickup } from '../lib/stopPricing';
 import {
   RESTRICTED_ITEMS,
   RESTRICTED_ITEMS_HEADLINE,
@@ -190,7 +191,16 @@ export async function bookingRoutes(fastify: FastifyInstance) {
       return reply.code(404).send({ error: 'Commute ride pool not found.' });
     }
     const rideForQuote = rideSnapshot.data()!;
-    const fareAmount = round2(Number(rideForQuote.price_split || 0) * seats_booked);
+    // Boarding at a priced stop costs that stop's fare, not the full journey.
+    // Shared with GET /quote through farePerSeatForPickup so the figure the
+    // rider was shown is the figure they are charged.
+    const pickupFare = farePerSeatForPickup({
+      ridePrice: Number(rideForQuote.price_split || 0),
+      stops: rideForQuote.pickup_points,
+      pickupLat: pickup_lat,
+      pickupLng: pickup_lng,
+    });
+    const fareAmount = round2(pickupFare.farePerSeat * seats_booked);
     const insuranceAmount = insurance_opted
       ? insurancePremium(Number(rideForQuote.distance_km || 0))
       : 0;
@@ -317,6 +327,9 @@ export async function bookingRoutes(fastify: FastifyInstance) {
           // and no-show maths must never re-derive them from the ride, whose
           // price the driver can still edit.
           fare_amount: fareAmount,
+          // Which stop's fare was applied, if any. Frozen with the amount so a
+          // later edit to the ride cannot change what this rider agreed to.
+          fare_via_stop: pickupFare.isStopFare ? (pickupFare.viaStopLabel ?? 'stop') : null,
           insurance_opted: !!insurance_opted,
           // What the rider is carrying, and their acknowledgement of the
           // restricted-items rules. Stored on the booking so it survives
@@ -1432,7 +1445,18 @@ export async function bookingRoutes(fastify: FastifyInstance) {
       if (!rideDoc.exists) return reply.code(404).send({ error: 'Ride not found.' });
       const ride = rideDoc.data()!;
 
-      const fare = round2(Number(ride.price_split || 0) * seatCount);
+      // Same resolution as the booking endpoint. When the rider has picked a
+      // meeting point the app passes it here, so the breakdown reflects the
+      // leg they are actually buying rather than the whole route.
+      const qLat = Number((request.query as any).pickup_lat);
+      const qLng = Number((request.query as any).pickup_lng);
+      const quoteFare = farePerSeatForPickup({
+        ridePrice: Number(ride.price_split || 0),
+        stops: ride.pickup_points,
+        pickupLat: qLat,
+        pickupLng: qLng,
+      });
+      const fare = round2(quoteFare.farePerSeat * seatCount);
       const premium = insurancePremium(Number(ride.distance_km || 0));
 
       return reply.send({
@@ -1443,6 +1467,11 @@ export async function bookingRoutes(fastify: FastifyInstance) {
         // alongside the auto-suggested meeting points at checkout.
         pickup_points: Array.isArray(ride.pickup_points) ? ride.pickup_points : [],
         fare_amount: fare,
+        // So the app can say "₹200 boarding at Surat" instead of silently
+        // showing a smaller number than the ride advertised.
+        fare_per_seat: quoteFare.farePerSeat,
+        fare_via_stop: quoteFare.isStopFare ? (quoteFare.viaStopLabel ?? 'stop') : null,
+        full_journey_fare_per_seat: round2(Number(ride.price_split || 0)),
         convenience_fee: CONVENIENCE_FEE,
         // Optional — only added to the total if the rider opts in.
         insurance_premium: premium,

@@ -16,6 +16,7 @@ import { sendPushToUser } from '../lib/fcm';
 import { getUserEmail, buildRideOfferedEmail, sendEmail } from '../lib/email';
 import { round2 } from '../lib/money';
 import { isInServiceBounds, outOfAreaMessage } from '../lib/serviceArea';
+import { normaliseStopPrice, validateStopPrices } from '../lib/stopPricing';
 import { findMetroByCoords, findMetroByText, coordInMetroBbox, type MetroRegion } from '../lib/metroRegions';
 
 /** Uids of riders with a live booking on a ride — who gets told about it. */
@@ -44,9 +45,9 @@ const MAX_PICKUP_POINTS = 10;
  */
 function normalisePickupPoints(
   raw: unknown
-): { label: string | null; lat: number; lng: number; eta: string | null }[] {
+): { label: string | null; lat: number; lng: number; eta: string | null; price: number | null }[] {
   if (!Array.isArray(raw)) return [];
-  const out: { label: string | null; lat: number; lng: number; eta: string | null }[] = [];
+  const out: { label: string | null; lat: number; lng: number; eta: string | null; price: number | null }[] = [];
   for (const p of raw) {
     const lat = Number((p as any)?.lat);
     const lng = Number((p as any)?.lng);
@@ -59,7 +60,11 @@ function normalisePickupPoints(
     const rawEta = (p as any)?.eta ?? (p as any)?.driver_eta ?? null;
     const parsed = Date.parse(String(rawEta ?? ''));
     const eta = Number.isFinite(parsed) ? new Date(parsed).toISOString() : null;
-    out.push({ label: clean((p as any)?.label), lat, lng, eta });
+    // Optional per-seat fare for boarding HERE rather than at the origin. Null
+    // means no separate price, and the rider pays the full ride fare — which
+    // is what every ride did before stop pricing existed.
+    const price = normaliseStopPrice((p as any)?.price);
+    out.push({ label: clean((p as any)?.label), lat, lng, eta, price });
     if (out.length >= MAX_PICKUP_POINTS) break;
   }
   return out;
@@ -465,6 +470,17 @@ export async function rideRoutes(fastify: FastifyInstance) {
     }
     if (Number(seats_total) <= 0 || Number(price_split) < 0) {
       return reply.code(400).send({ error: 'seats_total must be positive and price_split non-negative.' });
+    }
+
+    // Stop fares are checked against the full-journey fare here rather than
+    // clamped, because the driver is present and can correct it. Quietly
+    // rewriting someone's price is how they end up carrying riders for a fare
+    // they never agreed to.
+    {
+      const check = validateStopPrices(pickup_points, Number(price_split));
+      if (!check.valid) {
+        return reply.code(400).send({ error: 'INVALID_STOP_FARE', message: check.reason });
+      }
     }
 
     // Both endpoints must be inside the service area. The app restricts what

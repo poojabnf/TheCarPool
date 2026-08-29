@@ -540,9 +540,22 @@ export default function HomeScreen() {
                 )}
                 {ride.ac_available && <View style={styles.badge}><Wind color={c.info} size={12} strokeWidth={2.4} /><Text style={styles.badgeText}>AC</Text></View>}
                 {(ride as any).women_only && <View style={styles.badge}><Venus color={c.textAccent} size={12} strokeWidth={2.4} /><Text style={styles.badgeText}>{t('women_only')}</Text></View>}
+                {(ride as any).metro_match && (
+                  <View style={[styles.badge, { backgroundColor: c.accentSoft }]}>
+                    <Text style={[styles.badgeText, { color: c.textAccent }]}>
+                      🏙️ {(ride as any).metro_region || 'Metro match'}
+                    </Text>
+                  </View>
+                )}
                 {(ride as any).ride_type === 'INTERCITY' && <View style={styles.badge}><Text style={styles.badgeText}>🛣️ Intercity</Text></View>}
                 {(ride as any).ride_type === 'EVENT' && <View style={styles.badge}><Text style={styles.badgeText}>🎪 {(ride as any).event_tag || 'Event'}</Text></View>}
-                {ride.pickup_deviation != null && <Text style={styles.detour}>{Math.round(ride.pickup_deviation)}m detour</Text>}
+                {ride.pickup_deviation != null && (
+                  <Text style={styles.detour}>
+                    {ride.pickup_deviation >= 1000
+                      ? `${(ride.pickup_deviation / 1000).toFixed(1)}km ${t('detour')}`
+                      : `${Math.round(ride.pickup_deviation)}m ${t('detour')}`}
+                  </Text>
+                )}
               </View>
               <HapticPressable haptic="press" style={styles.bookBtn} onPress={() => bookRide(ride)} activeOpacity={0.9}>
                 <Text style={styles.bookBtnText}>{t('book_ride')} · {formatMoney(Number(ride.price_split), { decimals: 0 })}</Text>
