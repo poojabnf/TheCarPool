@@ -166,6 +166,57 @@ try {
     qTwo.ok && qTwo.data.fare_amount === SURAT_FARE * 2,
     `got ${JSON.stringify(qTwo.data?.fare_amount)}`);
 
+  // ── A stop the driver left BLANK is priced by distance ──────────────────
+  // The reported case: ₹1000 over 1000 km, a 400 km leg should cost ~₹400.
+  // This failed in production while the unit tests were green, because the
+  // route a real ride posts has only two points and the old code snapped
+  // intermediate stops to an endpoint.
+  // Real Indian coordinates: Delhi due south ~1000 km into Maharashtra. A
+  // meridian keeps the arithmetic clean (1 degree of latitude ~ 111.32 km)
+  // while staying inside the service area — synthetic points near (0, 78) sit
+  // in the Indian Ocean and are correctly refused.
+  const DEG_PER_KM = 1 / 111.32;
+  const LNG = 77.2090;
+  const destM = { lat: 19.6300, lng: LNG };                          // Maharashtra
+  const originM = { lat: destM.lat + 1000 * DEG_PER_KM, lng: LNG };  // ~Delhi
+  const stop400 = { lat: destM.lat + 400 * DEG_PER_KM, lng: LNG };   // ~Madhya Pradesh
+
+  const blankRide = await callApi(driverToken, '/api/rides', {
+    method: 'POST',
+    body: {
+      driver_id: driverUid,
+      source: 'New Delhi, Delhi',
+      destination: 'Nashik, Maharashtra',
+      route_geojson: {
+        type: 'LineString',
+        coordinates: [[originM.lng, originM.lat], [destM.lng, destM.lat]],
+      },
+      seats_total: 3,
+      price_split: 1000,
+      departure_time: departure,
+      vehicle_type: 'CAR',
+      distance_km: 1000,
+      // Deliberately no price on the stop.
+      pickup_points: [{ label: 'Midway', lat: stop400.lat, lng: stop400.lng }],
+    },
+  });
+  check('ride with an unpriced stop created', blankRide.ok,
+    `status ${blankRide.status} ${JSON.stringify(blankRide.data).slice(0, 160)}`);
+
+  if (blankRide.ok) {
+    const blankId = blankRide.data.id;
+    const qBlank = await callApi(riderToken,
+      `/api/bookings/quote?ride_id=${blankId}&seats=1&pickup_lat=${stop400.lat}&pickup_lng=${stop400.lng}`);
+    const got = qBlank.data?.fare_amount;
+    check('a 400 km leg left blank costs about ₹400, not the full ₹1000',
+      qBlank.ok && got > 380 && got < 420,
+      `got ${JSON.stringify(got)}`);
+    check('the app is told the fare was estimated, not chosen by the driver',
+      qBlank.ok && qBlank.data.fare_estimated === true,
+      `got ${JSON.stringify(qBlank.data?.fare_estimated)}`);
+    await db.collection('rides').doc(blankId).delete().catch(() => {});
+  }
+
   // ── A stop dearer than the journey is refused at creation ───────────────
   const bad = await callApi(driverToken, '/api/rides', {
     method: 'POST',
