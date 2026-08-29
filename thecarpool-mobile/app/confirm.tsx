@@ -238,6 +238,15 @@ function describeDistance(metres: number, minutes: number): string {
       useAuthStore.getState().triggerActivityRefresh();
 
       const rideId = b.ride_id || b.id || p.ride_id;
+      if (b.booking_status === 'REQUESTED') {
+        Alert.alert(
+          'Seat Requested!',
+          'Your seat request and payment have been sent to the driver. You will be notified as soon as they accept or decline.',
+          [{ text: 'View Trip', onPress: () => router.replace(`/trip/${rideId}`) }]
+        );
+        return;
+      }
+
       if (!rideId) {
         Alert.alert('Booking confirmed!', `Your seat is locked & paid. Booking ref: ${b.id || 'N/A'}`);
         router.replace('/(tabs)');

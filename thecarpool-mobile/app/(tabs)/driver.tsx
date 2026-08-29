@@ -966,9 +966,16 @@ export default function DriverInterface() {
                   <View key={r.id} style={styles.upcomingCard}>
                     <View style={styles.routeBox}>
                       <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <Text style={styles.routeTime}>
-                          {dep.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })} · {dep.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
-                        </Text>
+                        <View>
+                          <Text style={styles.routeTime}>
+                            {dep.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })} · {dep.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
+                          </Text>
+                          {r.created_at && (
+                            <Text style={{ fontSize: 11, color: colors.textMuted, marginTop: 2 }}>
+                              Posted {new Date(r.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })} ({Math.max(1, Math.round((Date.now() - new Date(r.created_at).getTime()) / 60000))}m ago)
+                            </Text>
+                          )}
+                        </View>
                         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                           <Text style={styles.miniBadge}>{r.vehicle_type || 'CAR'}</Text>
                           {/* Color-Coded Status Badge */}

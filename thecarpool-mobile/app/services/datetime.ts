@@ -58,6 +58,30 @@ export function formatDeparture(value?: string | null, now: Date = new Date()): 
 export function isDepartingSoon(value?: string | null, now: Date = new Date()): boolean {
   const d = parse(value);
   if (!d) return false;
-  const diffMin = (d.getTime() - now.getTime()) / 60000;
-  return diffMin > 0 && diffMin < 60;
+  const diffMs = d.getTime() - now.getTime();
+  return diffMs > 0 && diffMs <= 60 * 60 * 1000;
+}
+
+/**
+ * Formats when the ride was posted: "10 mins ago", "1 hour ago", "Yesterday", etc.
+ */
+export function formatPostedAgo(value?: string | null, now: Date = new Date()): string | null {
+  const d = parse(value);
+  if (!d) return null;
+  const diffMs = now.getTime() - d.getTime();
+  if (diffMs < 0) return 'Just now';
+
+  const mins = Math.floor(diffMs / 60000);
+  if (mins < 1) return 'Just now';
+  if (mins === 1) return '1 min ago';
+  if (mins < 60) return `${mins} mins ago`;
+
+  const hours = Math.floor(mins / 60);
+  if (hours === 1) return '1 hour ago';
+  if (hours < 24) return `${hours} hours ago`;
+
+  const days = Math.floor(hours / 24);
+  if (days === 1) return '1 day ago';
+  if (days < 5) return `${days} days ago`;
+  return d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
 }

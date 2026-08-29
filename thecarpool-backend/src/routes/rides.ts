@@ -430,6 +430,44 @@ export async function rideRoutes(fastify: FastifyInstance) {
     return reply.send({ scanned: snap.size, rides_settled: ridesSettled, ...totals });
   });
 
+  /**
+   * ── POST /cleanup-expired ────────────────────────────────────────────────
+   * Automatically expires and cancels stale rides posted > 5 days ago or whose
+   * departure date has passed with no activity.
+   */
+  fastify.post('/cleanup-expired', { preHandler: [requireCronOrAdmin] }, async (_request, reply) => {
+    const fiveDaysAgo = new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString();
+    
+    // Find scheduled rides created more than 5 days ago
+    const staleSnap = await db.collection('rides')
+      .where('status', 'in', ['SCHEDULED', 'CREATED'])
+      .where('created_at', '<=', fiveDaysAgo)
+      .limit(100)
+      .get();
+
+    let cleaned = 0;
+    const batch = db.batch();
+
+    for (const doc of staleSnap.docs) {
+      batch.update(doc.ref, {
+        status: 'CANCELLED',
+        cancellation_reason: 'EXPIRED_AUTO_CLEANUP_5_DAYS',
+        updated_at: new Date().toISOString(),
+      });
+      cleaned += 1;
+    }
+
+    if (cleaned > 0) {
+      await batch.commit();
+    }
+
+    return reply.send({
+      scanned: staleSnap.size,
+      cleaned,
+      cutoff_date: fiveDaysAgo,
+    });
+  });
+
   // ── GET /vehicle-catalogue — makes, models and size classes ──────────────
   // One source of truth for the driver's pickers and the rider's icons, so the
   // two can't disagree about what a "Creta" is.
@@ -932,7 +970,8 @@ export async function rideRoutes(fastify: FastifyInstance) {
             // Names the driver stop that made this a match, so the rider can be
             // told where to go rather than just how far away it is.
             via_pickup_point: viaPickupPoint,
-            drop_deviation: parseFloat(minDropDist.toFixed(2))
+            drop_deviation: parseFloat(minDropDist.toFixed(2)),
+            created_at: ride.created_at || null,
           });
         }
       }

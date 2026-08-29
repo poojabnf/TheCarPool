@@ -55,6 +55,7 @@ export default function TripScreen() {
   const [ride, setRide] = useState<any | null>(null);
   const [boardingOtp, setBoardingOtp] = useState<string | null>(null);
   const [boardingVerified, setBoardingVerified] = useState<boolean>(false);
+  const [bookingStatus, setBookingStatus] = useState<string>('CONFIRMED');
   const [isSheetExpanded, setIsSheetExpanded] = useState<boolean>(false);
 
   const toggleSheet = () => {
@@ -82,9 +83,10 @@ export default function TripScreen() {
         const data = await bRes.json();
         const bookings: any[] = Array.isArray(data?.bookings) ? data.bookings : [];
         const myBooking = bookings.find(
-          (b) => String(b.ride_id) === String(id) && b.escrow_status === 'HELD'
+          (b) => String(b.ride_id) === String(id) && (b.escrow_status === 'HELD' || b.booking_status === 'REQUESTED')
         );
         if (myBooking) {
+          setBookingStatus(myBooking.booking_status || 'CONFIRMED');
           setBoardingOtp(myBooking.boarding_otp || null);
           setBoardingVerified(myBooking.boarding_verified ?? false);
         }
@@ -440,8 +442,17 @@ export default function TripScreen() {
               </View>
             )}
 
+            {/* ⏳ Waiting for Driver Approval Card */}
+            {bookingStatus === 'REQUESTED' && (
+              <View style={[styles.alertBox, { backgroundColor: '#FEF3C7', borderColor: '#FDE68A' }]}>
+                <Text style={[styles.alertText, { color: '#92400E' }]}>
+                  ⏳ Waiting for driver approval. Once the driver accepts your request, your 4-digit Boarding OTP and seat confirmation will appear here.
+                </Text>
+              </View>
+            )}
+
             {/* 🛡️ Boarding Verification OTP Card */}
-            {boardingOtp && (
+            {boardingOtp && bookingStatus !== 'REQUESTED' && (
               <View style={styles.otpCard}>
                 <View style={styles.otpCardHeader}>
                   <Text style={styles.otpCardTitle}>🛡️ Boarding Verification OTP</Text>

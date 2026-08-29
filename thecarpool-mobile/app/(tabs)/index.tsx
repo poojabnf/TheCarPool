@@ -14,7 +14,7 @@ import { c, font, radius, space, shadowSm, brass } from '../../theme/tokens';
 import HapticPressable from '../components/HapticPressable';
 import { formatMoney } from '../services/currency';
 import { searchPlaces, MIN_QUERY_LENGTH, SEARCH_DEBOUNCE_MS, warmUp } from '../services/geo';
-import { formatDeparture, isDepartingSoon } from '../services/datetime';
+import { formatDeparture, isDepartingSoon, formatPostedAgo } from '../services/datetime';
 import VehicleIcon from '../components/VehicleIcon';
 
 // Offline-cached search (roadmap Phase 1, session-scoped): module-level so it
@@ -32,6 +32,7 @@ interface Ride {
   seats_available: number;
   price_split: number;
   departure_time: string;
+  created_at?: string | null;
   vehicle_type?: string;
   vehicle_make?: string | null;
   vehicle_model?: string | null;
@@ -163,6 +164,7 @@ export default function HomeScreen() {
   const [geoError, setGeoError] = useState('');
   const [showingCached, setShowingCached] = useState(false);
   const [activity, setActivity] = useState<ActivityItem[]>([]);
+  const [bookedRideIds, setBookedRideIds] = useState<Record<string, string>>({});
   const { t } = useI18n();
 
   const originTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -182,6 +184,7 @@ export default function HomeScreen() {
       ]);
 
       const items: ActivityItem[] = [];
+      const bookedMap: Record<string, string> = {};
 
       if (bookingsRes.ok) {
         const d = await bookingsRes.json();
@@ -190,6 +193,10 @@ export default function HomeScreen() {
           const isOngoing = b.ride_status === 'STARTED' || b.ride_status === 'IN_PROGRESS';
           const isCompleted = b.ride_status === 'COMPLETED';
           const isRequested = b.booking_status === 'REQUESTED';
+
+          if (b.ride_id) {
+            bookedMap[String(b.ride_id)] = isCompleted ? 'Completed' : isRequested ? 'Requested' : 'Booked';
+          }
 
           items.push({
             kind: 'BOOKED',
@@ -208,6 +215,7 @@ export default function HomeScreen() {
           });
         }
       }
+      setBookedRideIds(bookedMap);
 
       if (ridesRes.ok) {
         const d = await ridesRes.json();
@@ -528,6 +536,11 @@ export default function HomeScreen() {
                     · {ride.seats_available} seat{ride.seats_available === 1 ? '' : 's'} left
                   </Text>
                 )}
+                {ride.created_at && (
+                  <Text style={{ fontFamily: font.sans, fontSize: 12, color: c.textTertiary, marginLeft: 'auto' }}>
+                    🕒 {formatPostedAgo(ride.created_at)}
+                  </Text>
+                )}
               </View>
 
               <View style={styles.badgeRow}>
@@ -557,9 +570,23 @@ export default function HomeScreen() {
                   </Text>
                 )}
               </View>
-              <HapticPressable haptic="press" style={styles.bookBtn} onPress={() => bookRide(ride)} activeOpacity={0.9}>
-                <Text style={styles.bookBtnText}>{t('book_ride')} · {formatMoney(Number(ride.price_split), { decimals: 0 })}</Text>
-              </HapticPressable>
+
+              {bookedRideIds[String(ride.id)] ? (
+                <HapticPressable
+                  haptic="tap"
+                  style={[styles.bookBtn, { backgroundColor: '#F0FDF4', borderColor: '#86EFAC', borderWidth: 1 }]}
+                  onPress={() => router.push(`/trip/${ride.id}`)}
+                  activeOpacity={0.9}
+                >
+                  <Text style={[styles.bookBtnText, { color: '#15803D' }]}>
+                    ✓ You booked this ride · View Trip →
+                  </Text>
+                </HapticPressable>
+              ) : (
+                <HapticPressable haptic="press" style={styles.bookBtn} onPress={() => bookRide(ride)} activeOpacity={0.9}>
+                  <Text style={styles.bookBtnText}>{t('book_ride')} · {formatMoney(Number(ride.price_split), { decimals: 0 })}</Text>
+                </HapticPressable>
+              )}
             </View>
           ))}
         </View>
