@@ -89,18 +89,33 @@ export default function TripsScreen() {
   const { activityRefreshEpoch } = useAuthStore();
   const { t } = useI18n();
   const [bookings, setBookings] = useState<Booking[]>([]);
+  // Read inside load() without making it a dependency, which would rebuild the
+  // callback on every fetch and retrigger useFocusEffect in a loop.
+  const bookingsRef = React.useRef<Booking[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Stale-while-revalidate.
+  //
+  // Every visit to this tab used to blank the list and show a full-screen
+  // spinner while it refetched — including when it already had the data from
+  // seconds earlier. Combined with a cold Cloud Run instance that is a second
+  // or two of empty screen on every single tab switch, which reads as the app
+  // being slow when it is really just discarding what it already had.
+  //
+  // The spinner now appears only when there is genuinely nothing to show.
   const load = useCallback(async (isRefresh = false) => {
-    if (isRefresh) setRefreshing(true); else setLoading(true);
+    if (isRefresh) setRefreshing(true);
+    else if (bookingsRef.current.length === 0) setLoading(true);
     setError(null);
     try {
       const res = await apiFetch('/api/bookings/mine');
       if (!res.ok) throw new Error(`Server error ${res.status}`);
       const data = await res.json();
-      setBookings(data.bookings ?? []);
+      const next = data.bookings ?? [];
+      bookingsRef.current = next;
+      setBookings(next);
     } catch (e: any) {
       setError('Could not load your trips. Pull down to retry.');
     } finally {

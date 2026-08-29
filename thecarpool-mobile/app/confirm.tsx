@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, Alert, ActivityIndicator, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, Alert, ActivityIndicator, ScrollView, TextInput} from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import auth from '@react-native-firebase/auth';
@@ -63,8 +63,20 @@ export default function ConfirmPay() {
     insurance_premium: number;
     insurance_available: boolean;
     pickup_points?: { label: string | null; lat: number; lng: number }[];
+    /** Restricted-items rules, served by the API so both platforms and every
+     *  app version show the same list the server records agreement against. */
+    restricted_items?: {
+      headline: string;
+      items: { label: string; reason: string }[];
+      ack_label: string;
+      footer: string;
+    };
   } | null>(null);
   const [insuranceOpted, setInsuranceOpted] = useState(false);
+  // What the rider is bringing beyond themselves, and their agreement to the
+  // restricted-items rules. The driver sees the note before accepting.
+  const [luggageNote, setLuggageNote] = useState('');
+  const [restrictedAck, setRestrictedAck] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -182,6 +194,8 @@ function describeDistance(metres: number, minutes: number): string {
           payment_method: 'RAZORPAY',
           razorpay_payment_id: paymentData.razorpay_payment_id,
           insurance_opted: insuranceOpted,
+          luggage_note: luggageNote.trim() || undefined,
+          restricted_items_ack: restrictedAck,
           // Book at the chosen meeting point (zero driver detour) when picked.
           pickup_lng: (chosenMp !== null && allPickups[chosenMp]) ? allPickups[chosenMp].longitude : Number(p.pickup_lng),
           pickup_lat: (chosenMp !== null && allPickups[chosenMp]) ? allPickups[chosenMp].latitude : Number(p.pickup_lat),
@@ -321,6 +335,64 @@ function describeDistance(metres: number, minutes: number): string {
           </HapticPressable>
         )}
 
+        {/* What you're bringing.
+            Boot space and a willingness to carry a dog are among the few real
+            reasons a driver declines, and both are far better settled here
+            than at the kerb. The note travels with the seat request, so the
+            driver reads it before accepting. */}
+        <View style={styles.card}>
+          <Text style={styles.luggageTitle}>Bringing anything with you?</Text>
+          <Text style={styles.luggageSub}>
+            Optional — a suitcase, a bicycle, a pet. Your driver sees this before they accept.
+          </Text>
+          <TextInput
+            style={styles.luggageInput}
+            placeholder="e.g. one large suitcase and a backpack"
+            placeholderTextColor={c.textDisabled}
+            value={luggageNote}
+            onChangeText={setLuggageNote}
+            multiline
+            maxLength={280}
+          />
+        </View>
+
+        {/* Restricted items.
+            Recorded, not merely displayed: if something prohibited turns up in
+            a vehicle, what matters afterwards is being able to show the rider
+            was told and agreed. The list comes from the server so it cannot
+            drift between app versions. */}
+        <View style={styles.restrictedCard}>
+          <Text style={styles.restrictedTitle}>
+            {quote?.restricted_items?.headline ?? 'What you can bring'}
+          </Text>
+          {(quote?.restricted_items?.items ?? []).map((item, i) => (
+            <View key={i} style={styles.restrictedRow}>
+              <Text style={styles.restrictedBullet}>✕</Text>
+              <Text style={styles.restrictedItemText}>
+                <Text style={styles.restrictedItemLabel}>{item.label}</Text>
+                <Text style={styles.restrictedItemReason}> — {item.reason}</Text>
+              </Text>
+            </View>
+          ))}
+          {quote?.restricted_items?.footer ? (
+            <Text style={styles.restrictedFooter}>{quote.restricted_items.footer}</Text>
+          ) : null}
+
+          <HapticPressable
+            style={styles.ackRow}
+            onPress={() => setRestrictedAck((v) => !v)}
+            accessibilityRole="checkbox"
+            accessibilityState={{ checked: restrictedAck }}
+          >
+            <View style={[styles.ackBox, restrictedAck && styles.ackBoxOn]}>
+              {restrictedAck && <Text style={styles.ackTick}>✓</Text>}
+            </View>
+            <Text style={styles.ackLabel}>
+              {quote?.restricted_items?.ack_label ?? 'I confirm I am not carrying any restricted item'}
+            </Text>
+          </HapticPressable>
+        </View>
+
         {/* Fare breakdown */}
         <View style={styles.card}>
           <Row label={`Seat fare · ${seats} seat${seats > 1 ? 's' : ''}`} value={num(seatFare)} />
@@ -355,7 +427,21 @@ function describeDistance(metres: number, minutes: number): string {
 
       {/* Pay button */}
       <View style={[styles.footer, { paddingBottom: insets.bottom + space.md }]}>
-        <HapticPressable haptic="press" style={styles.payBtn} onPress={pay} disabled={paying} activeOpacity={0.9}>
+        {/* The declaration has to be ticked before paying. A notice nobody is
+            required to acknowledge proves nothing afterwards, and this is the
+            record that matters if a prohibited item turns up in a vehicle. */}
+        {!restrictedAck && (
+          <Text style={styles.ackRequiredNote}>
+            Please confirm you're not carrying any restricted item to continue.
+          </Text>
+        )}
+        <HapticPressable
+          haptic="press"
+          style={[styles.payBtn, (paying || !restrictedAck) && styles.payBtnDisabled]}
+          onPress={pay}
+          disabled={paying || !restrictedAck}
+          activeOpacity={0.9}
+        >
           {paying ? <ActivityIndicator color="#fff" />
             : <><Lock color="#fff" size={16} strokeWidth={2.6} /><Text style={styles.payBtnText}>Pay {num(total)} · Lock seat</Text></>}
         </HapticPressable>
@@ -411,6 +497,37 @@ const styles = StyleSheet.create({
   row: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 6 },
   rowLabel: { fontFamily: font.sans, fontSize: 14, color: c.textSecondary },
   rowValue: { fontFamily: font.mono, fontSize: 14, color: c.textPrimary },
+  luggageTitle: { fontFamily: font.sansBold, fontSize: 14.5, color: c.textPrimary },
+  luggageSub: { fontFamily: font.sans, fontSize: 12.5, color: c.textTertiary, marginTop: 3, lineHeight: 17 },
+  luggageInput: {
+    marginTop: 10, minHeight: 62, borderRadius: radius.md, borderWidth: 1,
+    borderColor: c.borderSubtle, backgroundColor: c.bgApp, padding: 10,
+    fontFamily: font.sans, fontSize: 13.5, color: c.textPrimary, textAlignVertical: 'top',
+  },
+  restrictedCard: {
+    backgroundColor: c.surfaceCard, borderRadius: radius.lg, padding: space.md,
+    borderWidth: 1, borderColor: c.borderSubtle, marginBottom: space.md,
+  },
+  restrictedTitle: { fontFamily: font.sansBold, fontSize: 14.5, color: c.textPrimary, marginBottom: 8 },
+  restrictedRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 8, marginBottom: 6 },
+  restrictedBullet: { fontFamily: font.sansBold, fontSize: 12, color: c.danger, marginTop: 1 },
+  restrictedItemText: { flex: 1, fontFamily: font.sans, fontSize: 12.5, lineHeight: 17.5 },
+  restrictedItemLabel: { fontFamily: font.sansSemibold, color: c.textPrimary },
+  restrictedItemReason: { color: c.textTertiary },
+  restrictedFooter: { fontFamily: font.sans, fontSize: 12, color: c.textTertiary, marginTop: 6, lineHeight: 17 },
+  ackRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 12 },
+  ackBox: {
+    width: 22, height: 22, borderRadius: 6, borderWidth: 1.5,
+    borderColor: c.borderSubtle, alignItems: 'center', justifyContent: 'center',
+  },
+  ackBoxOn: { backgroundColor: c.go, borderColor: c.go },
+  ackTick: { color: '#fff', fontSize: 13, fontFamily: font.sansBold },
+  ackLabel: { flex: 1, fontFamily: font.sansSemibold, fontSize: 13, color: c.textPrimary },
+  payBtnDisabled: { opacity: 0.45 },
+  ackRequiredNote: {
+    fontFamily: font.sans, fontSize: 12.5, color: c.danger,
+    textAlign: 'center', marginBottom: 8, lineHeight: 17,
+  },
   totalDivider: { height: 1, backgroundColor: c.borderSubtle, marginVertical: 8 },
   totalLabel: { fontFamily: font.sansBold, fontSize: 16, color: c.textPrimary },
   totalValue: { fontFamily: font.monoBold, fontSize: 18, color: c.textPrimary, letterSpacing: -0.4 },

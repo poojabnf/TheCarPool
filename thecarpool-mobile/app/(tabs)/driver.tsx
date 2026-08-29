@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { StyleSheet, View, Text, ScrollView, Dimensions, TextInput, Switch, Alert, ActivityIndicator, Modal, Linking, FlatList } from 'react-native';
 import { useRouter } from 'expo-router';
-import { PlusCircle, Activity, Navigation, MapPin, Calendar, Users, X, Check, Car, Bike, Shield, Phone, Mail, ChevronDown, Search } from 'lucide-react-native';
+import { PlusCircle, Activity, MapPin, Calendar, Users, X, Check, Car, Bike, Shield, Phone, Mail, ChevronDown, Search } from 'lucide-react-native';
 import { colors } from '../../theme/colors';
 import { apiFetch } from '../services/api';
 import * as haptics from '../services/haptics';
@@ -112,7 +112,7 @@ export default function DriverInterface() {
   const userId = auth().currentUser?.uid ?? null;
   const [isOnline, setIsOnline] = useState(false);
   const [isPosting, setIsPosting] = useState(false);
-  const [activeTab, setActiveTab] = useState<'overview' | 'requests' | 'drive'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'requests'>('overview');
   const socketRef = useRef<ReturnType<typeof io> | null>(null);
   const telemetryIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const locationSubRef = useRef<Location.LocationSubscription | null>(null);
@@ -150,7 +150,12 @@ export default function DriverInterface() {
     { label: string; lat: number; lng: number; timeText?: string }[]
   >([]);
   // Whether this ride needs the driver to approve each rider.
-  const [requiresApproval, setRequiresApproval] = useState(false);
+  // Defaults ON: the driver is asked to accept or decline each rider, and gets
+  // a push the moment someone books. Off, a seat is taken instantly and the
+  // driver only learns who is in their car when they read the manifest — which
+  // is not what most people offering a seat in their own vehicle expect. They
+  // can still switch it off for instant booking.
+  const [requiresApproval, setRequiresApproval] = useState(true);
   // Booking id currently being accepted/declined, to disable its buttons.
   const [decidingBooking, setDecidingBooking] = useState<string | null>(null);
   const [pickupQuery, setPickupQuery] = useState('');
@@ -231,6 +236,8 @@ export default function DriverInterface() {
   const [allRides, setAllRides] = useState<any[]>([]);
   const [rideFilter, setRideFilter] = useState<'ALL' | 'ONGOING' | 'SCHEDULED' | 'COMPLETED'>('ALL');
   const [myRides, setMyRides] = useState<any[]>([]);
+  // Mirrors myRides so loadMyRides can check it without depending on it.
+  const myRidesRef = useRef<any[]>([]);
   const [manifests, setManifests] = useState<Record<string, any>>({});
   const [ridesLoading, setRidesLoading] = useState(false);
   const [earnings, setEarnings] = useState(0);
@@ -250,10 +257,13 @@ export default function DriverInterface() {
   }, [userId]);
 
   const loadMyRides = async () => {
-    setRidesLoading(true);
+    // Only spin when there is nothing on screen yet. Refetching over an
+    // existing list used to blank it and show "0 total" with a spinner
+    // underneath — a wrong number, briefly, on every visit to the tab.
+    if (myRidesRef.current.length === 0) setRidesLoading(true);
     try {
       const res = await apiFetch('/api/rides/mine');
-      if (!res.ok) { setAllRides([]); setMyRides([]); return; }
+      if (!res.ok) { setAllRides([]); myRidesRef.current = []; setMyRides([]); return; }
       const all = await res.json();
       const list = Array.isArray(all) ? all : [];
 
@@ -273,6 +283,7 @@ export default function DriverInterface() {
       setAllRides(nonCancelled);
 
       const toDisplay = nonCancelled.slice(0, 15);
+      myRidesRef.current = toDisplay;
       setMyRides(toDisplay);
 
       // Fetch passenger manifests for active / recent rides (best-effort).
@@ -283,7 +294,7 @@ export default function DriverInterface() {
         } catch { return [r.id, null]; }
       }));
       setManifests(Object.fromEntries(entries));
-    } catch { setAllRides([]); setMyRides([]); }
+    } catch { setAllRides([]); myRidesRef.current = []; setMyRides([]); }
     finally { setRidesLoading(false); }
   };
   useEffect(() => { loadMyRides(); }, []);
@@ -322,6 +333,24 @@ export default function DriverInterface() {
 
   const boardingPassengers: any[] =
     (boardingRideId && manifests[boardingRideId]?.passengers) || [];
+
+  /**
+   * Every seat request still awaiting this driver's decision, across all their
+   * rides, flattened out of the per-ride manifests already loaded for Overview.
+   * No extra fetch — the data was on screen already, just buried one ride card
+   * at a time.
+   */
+  const pendingRequests = myRides.flatMap((r: any) => {
+    const passengers: any[] = manifests[r.id]?.passengers ?? [];
+    return passengers
+      .filter((p) => p.booking_status === 'REQUESTED')
+      .map((p) => ({
+        ...p,
+        ride_id: r.id,
+        ride_source: r.source ?? null,
+        ride_destination: r.destination ?? null,
+      }));
+  });
 
   // The same sheet serves two jobs: verifying everyone before pulling away,
   // and verifying a rider who got in later. Only the first ends in "Start trip".
@@ -808,11 +837,12 @@ export default function DriverInterface() {
         <HapticPressable style={[styles.segmentBtn, activeTab === 'overview' && styles.segmentActive]} onPress={() => setActiveTab('overview')}>
           <Text style={[styles.segmentText, activeTab === 'overview' && styles.segmentTextActive]}>Overview</Text>
         </HapticPressable>
+        {/* The count was the literal string "(2)", so it read the same whether
+            a driver had zero requests or nine. It is now the real number. */}
         <HapticPressable style={[styles.segmentBtn, activeTab === 'requests' && styles.segmentActive]} onPress={() => setActiveTab('requests')}>
-          <Text style={[styles.segmentText, activeTab === 'requests' && styles.segmentTextActive]}>Requests (2)</Text>
-        </HapticPressable>
-        <HapticPressable style={[styles.segmentBtn, activeTab === 'drive' && styles.segmentActive]} onPress={() => setActiveTab('drive')}>
-          <Text style={[styles.segmentText, activeTab === 'drive' && styles.segmentTextActive]}>Drive</Text>
+          <Text style={[styles.segmentText, activeTab === 'requests' && styles.segmentTextActive]}>
+            Requests{pendingRequests.length > 0 ? ` (${pendingRequests.length})` : ''}
+          </Text>
         </HapticPressable>
       </View>
 
@@ -1666,67 +1696,74 @@ export default function DriverInterface() {
           </ScrollView>
         )}
 
-        {/* Requests Tab (sRide Social Trust display gap) */}
+        {/* Pending seat requests, across every ride this driver is offering.
+            This tab used to render two invented passengers — "Amit Sharma"
+            and "Priya Sen", complete with fabricated LinkedIn connection
+            counts — and its Accept button did nothing. The tab header even
+            hardcoded "(2)". Meanwhile the REAL accept/decline controls were
+            buried in each ride's card on Overview, so a driver who opened
+            "Requests (2)" looking for their pending riders found two
+            strangers who did not exist and never saw the genuine ones. */}
         {activeTab === 'requests' && (
-          <ScrollView showsVerticalScrollIndicator={false}>
-            {[
-              { name: 'Amit Sharma', rating: '4.8', linkedin: true, connections: 184, route: 'IFFCO Chowk → Ambience Mall' },
-              { name: 'Priya Sen', rating: '4.9', linkedin: true, connections: 250, route: 'Sector 56 → DLF Cyber City' }
-            ].map((req, i) => (
-              <View key={i} style={styles.requestCard}>
+          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 40 }}>
+            {pendingRequests.length === 0 ? (
+              <Text style={styles.noRidesText}>
+                No seat requests waiting. When someone books a ride you've set to
+                "Approve each rider", it appears here.
+              </Text>
+            ) : pendingRequests.map((p) => (
+              <View key={p.booking_id} style={styles.requestCard}>
                 <View style={styles.reqHeader}>
                   <View style={styles.reqAvatar} />
-                  <View style={{flex: 1}}>
-                    <Text style={styles.reqName}>{req.name}</Text>
-                    <Text style={styles.reqRating}>★ {req.rating}</Text>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.reqName}>{p.rider_name}</Text>
+                    {p.rider_rating ? <Text style={styles.reqRating}>★ {p.rider_rating}</Text> : null}
                   </View>
                 </View>
-
-                {req.linkedin && (
-                  <View style={styles.reqLinkedinBadge}>
-                    <Linkedin size={12} color="#0077b5" style={{marginRight: 4}} />
-                    <Text style={styles.reqLinkedinText}>LinkedIn: {req.connections}+ connections</Text>
-                  </View>
-                )}
 
                 <View style={styles.reqRoute}>
-                  <Text style={styles.reqRouteText}>{req.route}</Text>
+                  <Text style={styles.reqRouteText}>
+                    {p.ride_source && p.ride_destination
+                      ? `${p.ride_source} → ${p.ride_destination}`
+                      : `Ride #${String(p.ride_id).replace('ride_', '').slice(0, 8)}`}
+                  </Text>
+                  <Text style={styles.reqSeatsText}>
+                    {p.seats_booked} seat{p.seats_booked > 1 ? 's' : ''}
+                    {p.pickup_label ? ` · boarding at ${p.pickup_label}` : ''}
+                  </Text>
+                  {/* What they are bringing. Boot space is one of the few real
+                      reasons to decline, and it is far better answered here
+                      than at the kerb. */}
+                  {p.luggage_note ? (
+                    <Text style={styles.reqLuggageText}>🧳 Bringing: {p.luggage_note}</Text>
+                  ) : null}
                 </View>
+
                 <View style={styles.actionRow}>
-                  <HapticPressable style={styles.declineBtn}><X color="#ef4444" size={24} /></HapticPressable>
-                  <HapticPressable style={styles.acceptBtn}><Check color="#fff" size={24} /><Text style={styles.acceptText}>Accept Rider</Text></HapticPressable>
+                  <HapticPressable
+                    haptic="warning"
+                    style={styles.declineBtn}
+                    disabled={decidingBooking === p.booking_id}
+                    onPress={() => decideBooking(p.booking_id, 'DECLINE', p.ride_id)}
+                  >
+                    <X color="#ef4444" size={24} />
+                  </HapticPressable>
+                  <HapticPressable
+                    haptic="press"
+                    style={styles.acceptBtn}
+                    disabled={decidingBooking === p.booking_id}
+                    onPress={() => decideBooking(p.booking_id, 'ACCEPT', p.ride_id)}
+                  >
+                    {decidingBooking === p.booking_id
+                      ? <ActivityIndicator color="#fff" />
+                      : <><Check color="#fff" size={24} /><Text style={styles.acceptText}>Accept Rider</Text></>}
+                  </HapticPressable>
                 </View>
               </View>
             ))}
           </ScrollView>
         )}
 
-        {activeTab === 'drive' && (
-          <View style={styles.driveContainer}>
-            <View style={styles.driveHeader}>
-              <Navigation color={colors.success} size={28} />
-              <Text style={styles.driveTitle}>Navigating to Amit</Text>
-              <Text style={styles.driveEta}>4 mins away</Text>
-            </View>
-
-            <View style={styles.stopList}>
-              <View style={styles.stopItemActive}>
-                <Text style={styles.stopLabel}>NEXT STOP</Text>
-                <Text style={styles.stopLocation}>Pickup: Amit (IFFCO Chowk)</Text>
-              </View>
-              <View style={styles.stopItem}>
-                <Text style={styles.stopLocation}>Pickup: Priya (Phase 3)</Text>
-              </View>
-              <View style={styles.stopItem}>
-                <Text style={styles.stopLocation}>Drop: Amit (Ambience Mall)</Text>
-              </View>
-            </View>
-
-            <HapticPressable haptic="press" style={styles.hugeActionBtn}>
-              <Text style={styles.hugeActionText}>Passenger Picked Up</Text>
-            </HapticPressable>
-          </View>
-        )}
       </View>
 
       {/* Boarding verification — cross-platform (Alert.prompt is iOS-only) */}
@@ -2327,25 +2364,14 @@ const styles = StyleSheet.create({
   reqName: { fontSize: 16, fontWeight: 'bold', color: colors.text },
   reqRating: { color: '#f59e0b', fontSize: 12, fontWeight: 'bold', marginTop: 2 },
   
-  reqLinkedinBadge: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(0,119,181,0.1)', padding: 6, borderRadius: 6, marginBottom: 12, borderWidth: 1, borderColor: 'rgba(0,119,181,0.25)', alignSelf: 'flex-start' },
-  reqLinkedinText: { fontSize: 10, color: '#60a5fa', fontWeight: '500' },
   
   reqRoute: { backgroundColor: colors.card, padding: 10, borderRadius: 8, marginBottom: 14, borderWidth: 1, borderColor: colors.cardBorder },
+  reqSeatsText: { color: colors.textMuted, fontSize: 12.5, marginTop: 3 },
+  reqLuggageText: { color: colors.text, fontSize: 12.5, marginTop: 6, fontWeight: '600' },
   reqRouteText: { color: colors.textMuted, fontSize: 13 },
   actionRow: { flexDirection: 'row', gap: 12 },
   declineBtn: { width: 50, height: 44, borderRadius: 10, borderWidth: 1.5, borderColor: '#ef4444', alignItems: 'center', justifyContent: 'center' },
   acceptBtn: { flex: 1, height: 44, backgroundColor: colors.success, borderRadius: 10, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 },
   acceptText: { color: 'white', fontWeight: 'bold', fontSize: 15 },
 
-  driveContainer: { flex: 1, justifyContent: 'space-between', paddingBottom: 40 },
-  driveHeader: { alignItems: 'center', marginTop: 20, marginBottom: 40 },
-  driveTitle: { fontSize: 24, fontWeight: 'bold', color: colors.text, marginTop: 12 },
-  driveEta: { fontSize: 18, color: colors.success, fontWeight: 'bold', marginTop: 4 },
-  stopList: { flex: 1 },
-  stopItemActive: { backgroundColor: 'rgba(16,185,129,0.15)', padding: 20, borderRadius: 16, borderWidth: 2, borderColor: colors.success, marginBottom: 12 },
-  stopLabel: { color: colors.success, fontWeight: 'bold', fontSize: 12, marginBottom: 4 },
-  stopItem: { backgroundColor: colors.inputBackground, padding: 20, borderRadius: 16, borderWidth: 1, borderColor: colors.cardBorder, marginBottom: 12 },
-  stopLocation: { color: colors.text, fontSize: 16, fontWeight: '600' },
-  hugeActionBtn: { backgroundColor: colors.success, height: 68, borderRadius: 16, alignItems: 'center', justifyContent: 'center', shadowColor: colors.success, shadowOpacity: 0.3, shadowRadius: 10 },
-  hugeActionText: { color: 'white', fontSize: 20, fontWeight: 'bold' }
 });
