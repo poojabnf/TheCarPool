@@ -3,6 +3,7 @@ import { Platform, View, StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Home, Car, Route, Wallet, User } from 'lucide-react-native';
 import { c, font } from '../../theme/tokens';
+import * as haptics from '../services/haptics';
 import { useI18n } from '../services/i18n';
 
 export default function TabLayout() {
@@ -12,6 +13,13 @@ export default function TabLayout() {
 
   return (
     <Tabs
+      // The five tabs are the most-pressed controls in the app and were the
+      // only ones with no feedback at all — every other button goes through
+      // HapticPressable, but these are rendered by expo-router. A tab switch
+      // is a navigation event worth feeling, particularly one-handed.
+      screenListeners={{
+        tabPress: () => { haptics.tap(); },
+      }}
       screenOptions={{
         headerShown: false,
         tabBarStyle: {

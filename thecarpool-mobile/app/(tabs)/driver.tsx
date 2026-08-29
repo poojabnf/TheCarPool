@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { StyleSheet, View, Text, ScrollView, Dimensions, TextInput, Switch, Alert, ActivityIndicator, Modal, Linking, FlatList } from 'react-native';
+import { StyleSheet, View, Text, ScrollView, Dimensions, TextInput, Alert, ActivityIndicator, Modal, Linking, FlatList } from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { PlusCircle, Activity, MapPin, Calendar, Users, X, Check, Car, Bike, Shield, Phone, Mail, ChevronDown, Search } from 'lucide-react-native';
 import { colors } from '../../theme/colors';
@@ -14,6 +14,7 @@ import { API_URL } from '../services/api';
 import * as Location from 'expo-location';
 import { useAuthStore } from '../store/authStore';
 import { rideStatusColors } from '../../theme/tokens';
+import HapticSwitch from '../components/HapticSwitch';
 
 // Departure is picked as a real date AND time. Deliberately built from plain
 // chips rather than @react-native-community/datetimepicker: that is a native
@@ -1675,7 +1676,7 @@ export default function DriverInterface() {
                 <Text style={styles.formLabel}>Repeat this ride</Text>
                 <Text style={styles.formSubLabel}>Offer it automatically on the days you choose</Text>
               </View>
-              <Switch 
+              <HapticSwitch 
                 value={isRecurring}
                 onValueChange={setIsRecurring}
                 trackColor={{ false: colors.cardBorder, true: colors.primary }}
@@ -1706,7 +1707,7 @@ export default function DriverInterface() {
             {vehicleType === 'CAR' && (
               <View style={styles.prefSwitchRow}>
                 <Text style={styles.prefLabel}>AC Available</Text>
-                <Switch 
+                <HapticSwitch 
                   value={acAvailable} 
                   onValueChange={setAcAvailable}
                   trackColor={{ false: colors.cardBorder, true: colors.success }}
@@ -1716,7 +1717,7 @@ export default function DriverInterface() {
 
             <View style={styles.prefSwitchRow}>
               <Text style={styles.prefLabel}>Music Allowed</Text>
-              <Switch 
+              <HapticSwitch 
                 value={musicAllowed} 
                 onValueChange={setMusicAllowed}
                 trackColor={{ false: colors.cardBorder, true: colors.success }}
@@ -1725,7 +1726,7 @@ export default function DriverInterface() {
 
             <View style={styles.prefSwitchRow}>
               <Text style={styles.prefLabel}>Smoking Allowed</Text>
-              <Switch
+              <HapticSwitch
                 value={smokingAllowed}
                 onValueChange={setSmokingAllowed}
                 trackColor={{ false: colors.cardBorder, true: colors.success }}
@@ -1734,7 +1735,7 @@ export default function DriverInterface() {
 
             <View style={styles.prefSwitchRow}>
               <Text style={styles.prefLabel}>♀ Women-only ride</Text>
-              <Switch
+              <HapticSwitch
                 value={womenOnlyRide}
                 onValueChange={setWomenOnlyRide}
                 trackColor={{ false: colors.cardBorder, true: colors.success }}
@@ -1750,7 +1751,7 @@ export default function DriverInterface() {
                     : 'Seats are confirmed instantly when someone books.'}
                 </Text>
               </View>
-              <Switch
+              <HapticSwitch
                 value={requiresApproval}
                 onValueChange={setRequiresApproval}
                 trackColor={{ false: colors.cardBorder, true: colors.success }}

@@ -11,6 +11,7 @@ import * as AppleAuthentication from 'expo-apple-authentication';
 import { Leaf } from 'lucide-react-native';
 import HapticPressable from '../components/HapticPressable';
 import { c, font, radius, space, shadowSm } from '../../theme/tokens';
+import * as haptics from '../services/haptics';
 import {
   COUNTRIES, DEFAULT_COUNTRY, Country, maxDigits, isValidNsn, toE164,
 } from '../services/countries';
@@ -175,9 +176,9 @@ export default function LoginScreen() {
 
         <Text style={styles.legal}>
           By continuing, you agree to our{' '}
-          <Text style={styles.link} onPress={() => Linking.openURL(TERMS_URL)}>Terms</Text>
+          <Text style={styles.link} onPress={() => { haptics.tap(); Linking.openURL(TERMS_URL); }}>Terms</Text>
           {' '}and{' '}
-          <Text style={styles.link} onPress={() => Linking.openURL(PRIVACY_URL)}>Privacy Policy</Text>.
+          <Text style={styles.link} onPress={() => { haptics.tap(); Linking.openURL(PRIVACY_URL); }}>Privacy Policy</Text>.
         </Text>
         </Animated.View>
       </ScrollView>

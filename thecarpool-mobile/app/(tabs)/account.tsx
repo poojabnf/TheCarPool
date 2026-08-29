@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { StyleSheet, View, Text, ScrollView, Switch, Alert, Linking, ActivityIndicator, Image, TextInput } from 'react-native';
+import { StyleSheet, View, Text, ScrollView, Alert, Linking, ActivityIndicator, Image, TextInput } from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
@@ -16,6 +16,7 @@ import Constants from 'expo-constants';
 import * as haptics from '../services/haptics';
 import HapticPressable from '../components/HapticPressable';
 import { formatMoney } from '../services/currency';
+import HapticSwitch from '../components/HapticSwitch';
 
 const SUPPORT_EMAIL = 'support@thecarpool.in';
 const SUPPORT_PHONE = '+919999002281';
@@ -291,7 +292,7 @@ export default function AccountInterface() {
                   <Text style={styles.rowTitle}>Push notifications</Text>
                   <Text style={styles.rowSub}>Ride matches, updates & alerts</Text>
                 </View>
-                <Switch value={notifications} onValueChange={toggleNotifications} trackColor={{ true: c.go, false: c.borderStrong }} thumbColor="#fff" />
+                <HapticSwitch value={notifications} onValueChange={toggleNotifications} trackColor={{ true: c.go, false: c.borderStrong }} thumbColor="#fff" />
               </View>
               <View style={styles.row}>
                 <View style={{ flex: 1 }}>
