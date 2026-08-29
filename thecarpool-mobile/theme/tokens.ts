@@ -117,3 +117,30 @@ export const shadowLg = {
   shadowOffset: { width: 0, height: 10 },
   elevation: 8,
 } as const;
+
+/**
+ * Ride lifecycle colours.
+ *
+ * Yellow not-yet-started, orange ongoing, green completed. These were written
+ * as raw hex in three separate screens — home, the driver dashboard and trips
+ * — so "what colour is Ongoing" had three answers that only happened to
+ * agree. One definition, so a change lands everywhere at once.
+ */
+export const rideStatus = {
+  pending:   { fg: '#B45309', bg: '#FEF3C7', border: '#FDE68A' },
+  ongoing:   { fg: '#C2410C', bg: '#FFEDD5', border: '#FED7AA' },
+  completed: { fg: '#15803D', bg: '#DCFCE7', border: '#BBF7D0' },
+  cancelled: { fg: '#6B7280', bg: '#F3F4F6', border: '#E5E7EB' },
+} as const;
+
+export type RideStatusKey = keyof typeof rideStatus;
+
+/** Pick the palette for a ride/booking state. One rule, used by every screen. */
+export function rideStatusColors(opts: {
+  completed?: boolean; ongoing?: boolean; cancelled?: boolean;
+}): { fg: string; bg: string; border: string } {
+  if (opts.cancelled) return rideStatus.cancelled;
+  if (opts.completed) return rideStatus.completed;
+  if (opts.ongoing) return rideStatus.ongoing;
+  return rideStatus.pending;
+}

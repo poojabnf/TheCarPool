@@ -6,7 +6,7 @@ import {
 import { useRouter, useFocusEffect } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Route, MapPin, Clock, CheckCircle, Circle, ChevronRight } from 'lucide-react-native';
-import { c, font, radius, space, shadowSm } from '../../theme/tokens';
+import { c, font, radius, space, shadowSm, rideStatusColors } from '../../theme/tokens';
 import { apiFetch } from '../services/api';
 import * as haptics from '../services/haptics';
 import HapticPressable from '../components/HapticPressable';
@@ -57,10 +57,11 @@ function disputeMinutesLeft(completedAt: string | null | undefined): number {
 }
 
 function statusColor(escrow: string, ride: string | null, completedAt?: string | null) {
-  if (escrow === 'SETTLED' || ride === 'COMPLETED' || completedAt) return '#15803D'; // Green
-  if (ride === 'STARTED' || ride === 'IN_PROGRESS') return '#C2410C'; // Orange
-  if (ride === 'CANCELLED') return c.danger;
-  return '#B45309'; // Yellow
+  return rideStatusColors({
+    completed: escrow === 'SETTLED' || ride === 'COMPLETED' || !!completedAt,
+    ongoing: ride === 'STARTED' || ride === 'IN_PROGRESS',
+    cancelled: ride === 'CANCELLED',
+  }).fg;
 }
 
 /**

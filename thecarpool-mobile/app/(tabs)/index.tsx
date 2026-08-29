@@ -10,7 +10,7 @@ import { apiFetch } from '../services/api';
 import { useAuthStore } from '../store/authStore';
 import { useI18n } from '../services/i18n';
 import * as haptics from '../services/haptics';
-import { c, font, radius, space, shadowSm, brass } from '../../theme/tokens';
+import { c, font, radius, space, shadowSm, brass, rideStatusColors } from '../../theme/tokens';
 import HapticPressable from '../components/HapticPressable';
 import { formatMoney } from '../services/currency';
 import { searchPlaces, MIN_QUERY_LENGTH, SEARCH_DEBOUNCE_MS, warmUp } from '../services/geo';
@@ -209,9 +209,10 @@ export default function HomeScreen() {
             ].filter(Boolean).join(' · '),
             href: `/trip/${b.ride_id}`,
             statusLabel: isCompleted ? 'Completed' : isOngoing ? 'Ongoing' : isRequested ? 'Awaiting driver' : 'Confirmed',
-            statusColor: isCompleted ? '#15803D' : isOngoing ? '#C2410C' : '#B45309',
-            statusBg: isCompleted ? '#DCFCE7' : isOngoing ? '#FFEDD5' : '#FEF3C7',
-            statusBorder: isCompleted ? '#BBF7D0' : isOngoing ? '#FED7AA' : '#FDE68A',
+            ...(() => {
+              const p = rideStatusColors({ completed: isCompleted, ongoing: isOngoing });
+              return { statusColor: p.fg, statusBg: p.bg, statusBorder: p.border };
+            })(),
           });
         }
       }
@@ -246,9 +247,10 @@ export default function HomeScreen() {
             href: `/trip/${r.id}`,
             // Yellow: Not yet started | Orange: Started / Ongoing | Green: Completed
             statusLabel: isCompleted ? 'Completed' : isOngoing ? 'Started' : 'Not yet started',
-            statusColor: isCompleted ? '#15803D' : isOngoing ? '#C2410C' : '#B45309',
-            statusBg: isCompleted ? '#DCFCE7' : isOngoing ? '#FFEDD5' : '#FEF3C7',
-            statusBorder: isCompleted ? '#BBF7D0' : isOngoing ? '#FED7AA' : '#FDE68A',
+            ...(() => {
+              const p = rideStatusColors({ completed: isCompleted, ongoing: isOngoing });
+              return { statusColor: p.fg, statusBg: p.bg, statusBorder: p.border };
+            })(),
           });
         }
       }

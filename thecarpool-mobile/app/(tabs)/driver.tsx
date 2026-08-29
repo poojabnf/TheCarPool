@@ -13,6 +13,7 @@ import io from 'socket.io-client';
 import { API_URL } from '../services/api';
 import * as Location from 'expo-location';
 import { useAuthStore } from '../store/authStore';
+import { rideStatusColors } from '../../theme/tokens';
 
 // Departure is picked as a real date AND time. Deliberately built from plain
 // chips rather than @react-native-community/datetimepicker: that is a native
@@ -1009,8 +1010,9 @@ export default function DriverInterface() {
 
                 // Yellow: Not yet started | Orange: Started / Ongoing | Green: Completed
                 const statusLabel = isCompleted ? 'Completed' : isOngoing ? 'Ongoing' : 'Not yet started';
-                const statusColor = isCompleted ? '#15803D' : isOngoing ? '#C2410C' : '#B45309';
-                const statusBg = isCompleted ? '#DCFCE7' : isOngoing ? '#FFEDD5' : '#FEF3C7';
+                const pal = rideStatusColors({ completed: isCompleted, ongoing: isOngoing });
+                const statusColor = pal.fg;
+                const statusBg = pal.bg;
                 const statusBorder = isCompleted ? '#BBF7D0' : isOngoing ? '#FED7AA' : '#FDE68A';
 
                 return (

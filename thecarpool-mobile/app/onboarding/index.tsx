@@ -251,6 +251,20 @@ export default function OnboardingScreen() {
 
       {/* Header */}
       <View style={styles.header}>
+        {/* Back to the previous step.
+            The wizard only ever moved forward, so someone who picked "rider"
+            at step 1 and then wanted to offer rides had no way back — the
+            only exits were finishing as the wrong role or skipping setup
+            entirely. */}
+        {currentStep > 0 && (
+          <HapticPressable
+            style={styles.backBtn}
+            onPress={() => setCurrentStep((n) => Math.max(0, n - 1))}
+            accessibilityLabel="Go back a step"
+          >
+            <Text style={styles.backText}>← Back</Text>
+          </HapticPressable>
+        )}
         <HapticPressable onPress={() => {
           Alert.alert(
             'Skip Setup?',
@@ -308,6 +322,8 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '700',
   },
+  backBtn: { paddingVertical: 4, paddingRight: 12 },
+  backText: { fontSize: 14, fontWeight: '600', color: '#0E8A5F' },
   skipText: {
     color: '#6B7682',
     fontSize: 13,
