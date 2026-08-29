@@ -3,9 +3,11 @@ import { Platform, View, StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Home, Car, Route, Wallet, User } from 'lucide-react-native';
 import { c, font } from '../../theme/tokens';
+import { useI18n } from '../services/i18n';
 
 export default function TabLayout() {
   const insets = useSafeAreaInsets();
+  const { t } = useI18n();
   const BAR = 58;
 
   return (
@@ -27,24 +29,24 @@ export default function TabLayout() {
     >
       <Tabs.Screen
         name="index"
-        options={{ title: 'Home', tabBarIcon: ({ color }) => <Home color={color} size={21} strokeWidth={2.2} /> }}
+        options={{ title: t('tab_home'), tabBarIcon: ({ color }) => <Home color={color} size={21} strokeWidth={2.2} /> }}
       />
       <Tabs.Screen
         name="rides"
-        options={{ title: 'Rides', tabBarIcon: ({ color }) => <Car color={color} size={21} strokeWidth={2.2} /> }}
+        options={{ title: t('tab_rides'), tabBarIcon: ({ color }) => <Car color={color} size={21} strokeWidth={2.2} /> }}
       />
       <Tabs.Screen
         name="trips"
-        options={{ title: 'Trips', tabBarIcon: ({ color }) => <Route color={color} size={21} strokeWidth={2.2} /> }}
+        options={{ title: t('tab_trips'), tabBarIcon: ({ color }) => <Route color={color} size={21} strokeWidth={2.2} /> }}
       />
       <Tabs.Screen
         name="wallet"
-        options={{ title: 'Wallet', tabBarIcon: ({ color }) => <Wallet color={color} size={21} strokeWidth={2.2} /> }}
+        options={{ title: t('tab_wallet'), tabBarIcon: ({ color }) => <Wallet color={color} size={21} strokeWidth={2.2} /> }}
       />
       <Tabs.Screen
         name="account"
         options={{
-          title: 'You',
+          title: t('tab_account'),
           tabBarIcon: ({ color }) => <User color={color} size={21} strokeWidth={2.2} />,
         }}
       />

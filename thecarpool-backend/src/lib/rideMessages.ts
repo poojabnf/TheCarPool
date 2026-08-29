@@ -37,6 +37,12 @@ export interface RideMessageContext {
   otp?: string | null;
   /** Where this rider is being collected, when it is a declared stop. */
   pickup_point?: string | null;
+  /**
+   * What the rider is bringing. Shown to the DRIVER on a seat request, since
+   * boot space is one of the few genuine reasons to decline, and it is far
+   * better answered before accepting than at the kerb.
+   */
+  luggage_note?: string | null;
 }
 
 /** Patterns that must never survive into an outbound message. */
@@ -166,6 +172,7 @@ export function driverBookingRequested(ctx: RideMessageContext): BuiltMessage {
     ctx.origin && ctx.destination ? `Route: ${ctx.origin} → ${ctx.destination}` : null,
     ctx.pickup_point ? `Boarding at: ${ctx.pickup_point}` : null,
     when ? `Departs: ${when}` : null,
+    ctx.luggage_note ? `Bringing: ${ctx.luggage_note}` : null,
     'Open the app to accept or decline.',
   ]);
   return { title: 'New seat request', body: scrubContact(body) };

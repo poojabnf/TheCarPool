@@ -111,6 +111,7 @@ async function resolve(ids: BookingContextIds, booking?: Record<string, any> | n
       seats: booking?.seats_booked ?? undefined,
       otp: booking?.boarding_otp ?? null,
       pickup_point: booking?.pickup_label ?? null,
+      luggage_note: booking?.luggage_note ?? null,
     },
   };
 }

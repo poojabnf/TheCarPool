@@ -527,33 +527,33 @@ export default function AccountInterface() {
       </View>
 
       <View style={styles.group}>
-        <MenuRow icon={<CreditCard color={c.textSecondary} size={20} />} title="Wallet & payments" sub="Balance, UPI, cards" onPress={() => router.push('/(tabs)/wallet')} />
+        <MenuRow icon={<CreditCard color={c.textSecondary} size={20} />} title={t('wallet_and_payments')} sub={t('wallet_and_payments_sub')} onPress={() => router.push('/(tabs)/wallet')} />
         {/* Withdrawals were only reachable from inside the Wallet, which made
             them hard to find for anyone looking under their account. The
             subtitle doubles as status so it's obvious whether anything is on
             file without opening the screen. */}
         <MenuRow
           icon={<Landmark color={c.textSecondary} size={20} />}
-          title="Payout details"
+          title={t('payout_details')}
           sub={payoutDestination ? `Withdrawals go to ${payoutDestination}` : 'Add a UPI ID or bank account to withdraw'}
           onPress={() => router.push('/payout-method')}
         />
-        <MenuRow icon={<Receipt color={c.textSecondary} size={20} />} title="Booking history" sub="Your past rides & payments" onPress={() => setView('history')} />
+        <MenuRow icon={<Receipt color={c.textSecondary} size={20} />} title={t('booking_history')} sub={t('booking_history_sub')} onPress={() => setView('history')} />
         {/* Rides the user OFFERED, as opposed to booked. Previously only
             visible on the Driver tab, so someone looking for "my rides" under
             their account found only the ones they had taken. */}
-        <MenuRow icon={<Car color={c.textSecondary} size={20} />} title="Rides you offered" sub="Trips you're driving" onPress={() => setView('offered')} />
-        <MenuRow icon={<Leaf color={c.textSecondary} size={20} />} title="Green leaderboard" sub="Top CO₂ savers in the community" onPress={() => router.push('/leaderboard')} last />
+        <MenuRow icon={<Car color={c.textSecondary} size={20} />} title={t('rides_offered')} sub={t('rides_offered_sub')} onPress={() => setView('offered')} />
+        <MenuRow icon={<Leaf color={c.textSecondary} size={20} />} title={t('green_leaderboard')} sub={t('green_leaderboard_sub')} onPress={() => router.push('/leaderboard')} last />
       </View>
       <View style={styles.group}>
-        <MenuRow icon={<ShieldCheck color={c.textSecondary} size={20} />} title="Safety Centre" sub="SOS, trip sharing, emergency contacts" onPress={() => router.push('/safety-center')} />
-        <MenuRow icon={<Settings color={c.textSecondary} size={20} />} title="Settings" sub="Notifications, privacy, account" onPress={() => setView('settings')} />
-        <MenuRow icon={<HelpCircle color={c.textSecondary} size={20} />} title="Help & support" sub="FAQs, contact us" onPress={() => setView('help')} last />
+        <MenuRow icon={<ShieldCheck color={c.textSecondary} size={20} />} title={t('safety_centre')} sub={t('safety_centre_sub')} onPress={() => router.push('/safety-center')} />
+        <MenuRow icon={<Settings color={c.textSecondary} size={20} />} title={t('settings')} sub={t('settings_sub')} onPress={() => setView('settings')} />
+        <MenuRow icon={<HelpCircle color={c.textSecondary} size={20} />} title={t('help_support')} sub={t('help_support_sub')} onPress={() => setView('help')} last />
       </View>
 
       <HapticPressable style={styles.logout} onPress={logout}>
         <LogOut color={c.danger} size={18} />
-        <Text style={styles.logoutText}>Log out</Text>
+        <Text style={styles.logoutText}>{t('log_out')}</Text>
       </HapticPressable>
     </ScrollView>
   );

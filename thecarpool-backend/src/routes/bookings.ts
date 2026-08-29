@@ -27,6 +27,12 @@ import {
   noShowOutcome,
 } from '../lib/fees';
 import { round2, isShortOf } from '../lib/money';
+import {
+  RESTRICTED_ITEMS,
+  RESTRICTED_ITEMS_HEADLINE,
+  RESTRICTED_ITEMS_ACK_LABEL,
+  RESTRICTED_ITEMS_FOOTER,
+} from '../lib/restrictedItems';
 
 /**
  * Name the driver stop this rider is boarding at, when their pickup matches
@@ -72,6 +78,24 @@ const CreateBookingSchema = z.object({
   razorpay_payment_id: z.string().min(1).optional(),
   /** Rider opted into the optional journey insurance. */
   insurance_opted: z.boolean().optional().default(false),
+  /**
+   * What the rider is bringing beyond themselves — a suitcase, a bicycle, a
+   * pet. The driver needs this BEFORE accepting: boot space and a willingness
+   * to carry a dog are exactly the things worth declining over, and finding
+   * out at the kerb wastes both people's morning.
+   *
+   * Free text, capped. Optional: most trips are a person and a bag.
+   */
+  luggage_note: z.string().trim().max(280).optional(),
+  /**
+   * The rider ticked the restricted-items declaration.
+   *
+   * Recorded rather than merely displayed. If something prohibited turns up in
+   * a vehicle, what matters afterwards is being able to show the rider was
+   * told and agreed, with a timestamp — a notice nobody has to acknowledge
+   * proves nothing.
+   */
+  restricted_items_ack: z.boolean().optional().default(false),
 });
 
 // Avoided-emission factors per shared passenger-km, by the pooled vehicle's
@@ -148,6 +172,7 @@ export async function bookingRoutes(fastify: FastifyInstance) {
     const {
       ride_id, rider_id, seats_booked, pickup_lng, pickup_lat, drop_lng, drop_lat,
       payment_method, razorpay_payment_id, insurance_opted,
+      luggage_note, restricted_items_ack,
     } = parsed;
 
     if (String(request.user?.id) !== String(rider_id)) {
@@ -293,6 +318,12 @@ export async function bookingRoutes(fastify: FastifyInstance) {
           // price the driver can still edit.
           fare_amount: fareAmount,
           insurance_opted: !!insurance_opted,
+          // What the rider is carrying, and their acknowledgement of the
+          // restricted-items rules. Stored on the booking so it survives
+          // independently of the ride and is available at dispute time.
+          luggage_note: luggage_note?.trim() || null,
+          restricted_items_ack: restricted_items_ack === true,
+          restricted_items_ack_at: restricted_items_ack === true ? new Date().toISOString() : null,
           insurance_premium: insuranceAmount,
           convenience_fee: CONVENIENCE_FEE,
           total_paid: totalDue,
@@ -1338,6 +1369,9 @@ export async function bookingRoutes(fastify: FastifyInstance) {
               // Never the code itself — only whether this rider is verified, so
               // the driver UI can show who still needs to board.
               boarding_verified: b.boarding_verified ?? false,
+              // What they are bringing, so the driver can plan boot space and
+              // see it again after accepting, not only in the push.
+              luggage_note: b.luggage_note ?? null,
             };
           })
       );
@@ -1415,6 +1449,16 @@ export async function bookingRoutes(fastify: FastifyInstance) {
         insurance_available: premium > 0,
         total_without_insurance: bookingTotal(fare, 0),
         total_with_insurance: bookingTotal(fare, premium),
+        // Carried in the quote so the booking screen shows the rules the
+        // SERVER holds. Hardcoding them in the app would let two app versions
+        // show two different sets of rules while this endpoint recorded the
+        // same acknowledgement for both.
+        restricted_items: {
+          headline: RESTRICTED_ITEMS_HEADLINE,
+          items: RESTRICTED_ITEMS,
+          ack_label: RESTRICTED_ITEMS_ACK_LABEL,
+          footer: RESTRICTED_ITEMS_FOOTER,
+        },
       });
     } catch (err: any) {
       fastify.log.error(err, 'Failed to quote booking');

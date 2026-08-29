@@ -9,6 +9,7 @@ import { apiFetch } from '../services/api';
 import { c, font, radius, space, shadowSm } from '../../theme/tokens';
 import HapticPressable from '../components/HapticPressable';
 import { formatMoney, currencySymbol, useCurrency } from '../services/currency';
+import { useI18n } from '../services/i18n';
 
 interface Txn { id: string; type: string; label: string; amount: number; status: string; at: string | null; }
 
@@ -33,6 +34,7 @@ export default function WalletScreen() {
   const [paying, setPaying] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const { currency, setCurrency } = useCurrency();
+  const { t } = useI18n();
 
   const load = useCallback(async () => {
     if (!uid) { setLoading(false); return; }
@@ -78,13 +80,13 @@ export default function WalletScreen() {
         order_id: order.order_id,
         amount: order.amount,
         currency: order.currency || 'INR',
-        name: 'TheCarPool Wallet',
-        description: `Add ${formatMoney(amt)} to your CarPool Wallet`,
+        name: 'TheCarPool',
+        description: 'Wallet top-up',
         prefill: {
-          contact: auth().currentUser?.phoneNumber || '',
           email: auth().currentUser?.email || '',
+          contact: auth().currentUser?.phoneNumber || '',
         },
-        theme: { color: '#16A34A' },
+        theme: { color: c.go },
       };
 
       let paymentData: { razorpay_payment_id: string; razorpay_order_id: string; razorpay_signature: string };
@@ -129,18 +131,18 @@ export default function WalletScreen() {
       contentContainerStyle={{ padding: space.xl, paddingTop: insets.top + space.lg, paddingBottom: 40 }}
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load().finally(() => setRefreshing(false)); }} tintColor={c.textTertiary} />}
     >
-      <Text style={styles.h1}>Wallet</Text>
+      <Text style={styles.h1}>{t('wallet_title')}</Text>
 
       {/* Balance card */}
       <View style={styles.balanceCard}>
-        <Text style={styles.balanceLabel}>TheCarPool balance</Text>
+        <Text style={styles.balanceLabel}>{t('wallet_balance')}</Text>
         {loading
           ? <ActivityIndicator color={c.accent} style={{ alignSelf: 'flex-start', marginVertical: 8 }} />
           : <Text style={styles.balanceValue}>{formatMoney(balance ?? 0, { decimals: 2 })}</Text>}
         <View style={styles.actionRow}>
           <HapticPressable style={[styles.actionBtn, styles.actionPrimary]} activeOpacity={0.85} onPress={() => setShowAdd(true)}>
             <ArrowDownLeft color={c.actionPrimaryText} size={16} strokeWidth={2.4} />
-            <Text style={styles.actionPrimaryText}>Add money</Text>
+            <Text style={styles.actionPrimaryText}>{t('add_money')}</Text>
           </HapticPressable>
           {/* Routes to the real payout-details screen. It used to tell people
               to email support, which was the only option because nothing in the
@@ -152,12 +154,12 @@ export default function WalletScreen() {
             onPress={() => router.push('/payout-method')}
           >
             <ArrowUpRight color={c.textPrimary} size={16} strokeWidth={2.4} />
-            <Text style={styles.actionSecondaryText}>Withdraw</Text>
+            <Text style={styles.actionSecondaryText}>{t('payout_details')}</Text>
           </HapticPressable>
         </View>
       </View>
 
-      <Text style={styles.sectionTitle}>Recent activity</Text>
+      <Text style={styles.sectionTitle}>{t('transactions')}</Text>
       {txns.length === 0 && !loading && (
         <Text style={styles.empty}>No transactions yet.</Text>
       )}

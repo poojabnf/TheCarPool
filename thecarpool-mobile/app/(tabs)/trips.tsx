@@ -11,6 +11,7 @@ import { apiFetch } from '../services/api';
 import * as haptics from '../services/haptics';
 import HapticPressable from '../components/HapticPressable';
 import { useAuthStore } from '../store/authStore';
+import { useI18n } from '../services/i18n';
 import { formatMoney } from '../services/currency';
 import * as Location from 'expo-location';
 
@@ -65,13 +66,14 @@ function statusColor(escrow: string, ride: string | null, completedAt?: string |
 /**
  * The booking's own state comes first, then the ride's.
  */
-function statusLabel(escrow: string, ride: string | null, completedAt?: string | null) {
-  if (escrow === 'SETTLED' || ride === 'COMPLETED') return 'Completed';
-  if (completedAt) return 'Completed';
-  if (ride === 'STARTED' || ride === 'IN_PROGRESS') return 'Ongoing';
-  if (ride === 'CANCELLED') return 'Cancelled';
-  if (ride === 'SCHEDULED') return 'Not yet started';
-  return 'Not yet started';
+function statusLabel(escrow: string, ride: string | null, completedAt?: string | null, t?: any) {
+  const trans = t || ((k: string) => k);
+  if (escrow === 'SETTLED' || ride === 'COMPLETED') return trans('status_completed');
+  if (completedAt) return trans('status_completed');
+  if (ride === 'STARTED' || ride === 'IN_PROGRESS') return trans('status_ongoing');
+  if (ride === 'CANCELLED') return trans('status_cancelled');
+  if (ride === 'SCHEDULED') return trans('status_not_started');
+  return trans('status_not_started');
 }
 
 function formatDate(iso: string | null) {
@@ -85,6 +87,7 @@ export default function TripsScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { activityRefreshEpoch } = useAuthStore();
+  const { t } = useI18n();
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -138,7 +141,7 @@ export default function TripsScreen() {
 
     const confirmLabel = q.cancellation_fee > 0
       ? `Cancel (${formatMoney(Number(q.cancellation_fee))} charge)`
-      : 'Cancel booking';
+      : t('cancel_booking');
 
     Alert.alert(
       q.headline || 'Cancel this booking?',
@@ -280,7 +283,7 @@ export default function TripsScreen() {
 
   return (
     <View style={[styles.screen, { paddingTop: insets.top + space.lg }]}>
-      <Text style={styles.h1}>My Trips</Text>
+      <Text style={styles.h1}>{t('my_trips')}</Text>
 
       {loading ? (
         <View style={styles.centred}>
@@ -290,7 +293,7 @@ export default function TripsScreen() {
         <View style={styles.centred}>
           <Text style={styles.errorText}>{error}</Text>
           <HapticPressable style={styles.retryBtn} onPress={() => load()}>
-            <Text style={styles.retryText}>Retry</Text>
+            <Text style={styles.retryText}>{t('retry')}</Text>
           </HapticPressable>
         </View>
       ) : bookings.length === 0 ? (
@@ -298,12 +301,12 @@ export default function TripsScreen() {
           <View style={styles.iconWrap}>
             <Route color={c.textTertiary} size={28} strokeWidth={2} />
           </View>
-          <Text style={styles.emptyTitle}>No trips yet</Text>
+          <Text style={styles.emptyTitle}>{t('no_trips')}</Text>
           <Text style={styles.emptySub}>
-            Book a shared ride and it'll show up here — live tracking, ETA and trip history.
+            {t('no_trips_hint')}
           </Text>
           <HapticPressable style={styles.cta} activeOpacity={0.9} onPress={() => router.push('/(tabs)')}>
-            <Text style={styles.ctaText}>Find a ride</Text>
+            <Text style={styles.ctaText}>{t('find_a_ride')}</Text>
           </HapticPressable>
         </View>
       ) : (
@@ -314,7 +317,7 @@ export default function TripsScreen() {
         >
           {upcoming.length > 0 && (
             <>
-              <Text style={styles.sectionLabel}>Upcoming</Text>
+              <Text style={styles.sectionLabel}>{t('upcoming_trips')}</Text>
               {upcoming.map(b => (
                 <BookingCard
                   key={b.id} b={b}
@@ -330,7 +333,7 @@ export default function TripsScreen() {
           )}
           {past.length > 0 && (
             <>
-              <Text style={styles.sectionLabel}>Past</Text>
+              <Text style={styles.sectionLabel}>{t('past_trips')}</Text>
               {past.map(b => <BookingCard key={b.id} b={b} onPress={() => router.push(`/trip/${b.ride_id}`)} />)}
             </>
           )}
@@ -344,8 +347,9 @@ function BookingCard({ b, onPress, onCancel, onComplete, onDispute }: {
   b: Booking; onPress: () => void; onCancel?: () => void;
   onComplete?: () => void; onDispute?: () => void;
 }) {
+  const { t } = useI18n();
   const color = statusColor(b.escrow_status, b.ride_status, b.completed_at);
-  const label = statusLabel(b.escrow_status, b.ride_status, b.completed_at);
+  const label = statusLabel(b.escrow_status, b.ride_status, b.completed_at, t);
   // Not "live" once the rider has ended their own trip.
   const isLive = b.ride_status === 'STARTED' && !b.completed_at;
 

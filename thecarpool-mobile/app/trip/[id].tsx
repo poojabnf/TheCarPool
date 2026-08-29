@@ -17,6 +17,7 @@ import { API_URL, apiFetch } from '../services/api';
 import * as haptics from '../services/haptics';
 import { c, font, radius, space, shadowSm } from '../../theme/tokens';
 import HapticPressable from '../components/HapticPressable';
+import { useI18n } from '../services/i18n';
 
 const SOCKET_URL = API_URL;
 
@@ -43,6 +44,7 @@ export default function TripScreen() {
   const { id } = useLocalSearchParams();
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { t } = useI18n();
   const mapRef = useRef<MapView | null>(null);
 
   // Live driver state
@@ -513,22 +515,22 @@ export default function TripScreen() {
                 <View style={styles.actions}>
                   <HapticPressable style={styles.sos} onPress={triggerSOS} activeOpacity={0.9}>
                     <ShieldAlert color="#fff" size={18} strokeWidth={2.4} />
-                    <Text style={styles.sosText}>SOS</Text>
+                    <Text style={styles.sosText}>{t('sos')}</Text>
                   </HapticPressable>
                   <HapticPressable style={styles.share} onPress={shareTrip} activeOpacity={0.9}>
                     <Share2 color={c.textPrimary} size={17} strokeWidth={2.2} />
-                    <Text style={styles.shareText}>Share live trip</Text>
+                    <Text style={styles.shareText}>{t('share_live_trip')}</Text>
                   </HapticPressable>
                 </View>
                 <HapticPressable style={styles.chatBtn} onPress={() => router.push(`/chat/${id}`)} activeOpacity={0.9}>
                   <MessageCircle color={c.textPrimary} size={17} strokeWidth={2.2} />
-                  <Text style={styles.shareText}>Message co-travellers</Text>
+                  <Text style={styles.shareText}>{t('message_cotravellers')}</Text>
                 </HapticPressable>
                 <HapticPressable style={styles.endTrip} onPress={() => setShowRating(true)}>
                   <Text style={styles.endTripText}>End trip & rate</Text>
                 </HapticPressable>
                 <HapticPressable style={styles.collapseBottomBtn} onPress={toggleSheet} activeOpacity={0.8}>
-                  <Text style={styles.collapseBottomText}>▾ Hide Details · View Full Map</Text>
+                  <Text style={styles.collapseBottomText}>▾ {t('hide_sheet')} · View Full Map</Text>
                 </HapticPressable>
               </>
             ) : (

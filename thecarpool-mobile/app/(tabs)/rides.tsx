@@ -5,6 +5,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Search, PlusCircle, ChevronRight } from 'lucide-react-native';
 import { c, font, radius, space, shadowSm } from '../../theme/tokens';
 import HapticPressable from '../components/HapticPressable';
+import { useI18n } from '../services/i18n';
 
 /**
  * Rides — the Find + Offer hub. Riders search from Home; this hub routes to
@@ -13,19 +14,20 @@ import HapticPressable from '../components/HapticPressable';
 export default function RidesHub() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { t } = useI18n();
 
   return (
     <ScrollView style={styles.screen} contentContainerStyle={{ padding: space.xl, paddingTop: insets.top + space.lg }}>
-      <Text style={styles.h1}>Rides</Text>
-      <Text style={styles.sub}>Find a shared ride, or offer your seats.</Text>
+      <Text style={styles.h1}>{t('rides_title')}</Text>
+      <Text style={styles.sub}>{t('rides_sub')}</Text>
 
       <HapticPressable style={styles.card} activeOpacity={0.9} onPress={() => router.push('/(tabs)')}>
         <View style={[styles.iconWrap, { backgroundColor: c.goSoft }]}>
           <Search color={c.goStrong} size={22} strokeWidth={2.2} />
         </View>
         <View style={{ flex: 1 }}>
-          <Text style={styles.cardTitle}>Find a ride</Text>
-          <Text style={styles.cardSub}>Search verified drivers on your route</Text>
+          <Text style={styles.cardTitle}>{t('find_a_ride')}</Text>
+          <Text style={styles.cardSub}>{t('find_a_ride_sub')}</Text>
         </View>
         <ChevronRight color={c.textDisabled} size={20} />
       </HapticPressable>
@@ -35,8 +37,8 @@ export default function RidesHub() {
           <PlusCircle color={c.textAccent} size={22} strokeWidth={2.2} />
         </View>
         <View style={{ flex: 1 }}>
-          <Text style={styles.cardTitle}>Offer a ride</Text>
-          <Text style={styles.cardSub}>Share your commute and split the fare</Text>
+          <Text style={styles.cardTitle}>{t('offer_a_ride')}</Text>
+          <Text style={styles.cardSub}>{t('offer_a_ride_sub')}</Text>
         </View>
         <ChevronRight color={c.textDisabled} size={20} />
       </HapticPressable>
