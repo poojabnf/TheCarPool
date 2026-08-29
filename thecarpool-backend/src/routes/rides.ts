@@ -78,9 +78,33 @@ function clean(v: unknown, upper = false): string | null {
   return upper ? t.toUpperCase() : t;
 }
 
+/**
+ * Same normalisation as clean(), with room for a real address.
+ *
+ * clean()'s 40-character cap suits a vehicle make or colour but truncates a
+ * place name mid-word ("DLF Cyber City Building 10, Guru…"), so endpoints get
+ * their own limit.
+ */
+function cleanPlace(v: unknown): string | null {
+  if (typeof v !== 'string') return null;
+  const t = v.trim().replace(/\s+/g, ' ').slice(0, 120);
+  return t || null;
+}
+
 interface CreateRideBody {
   driver_id: string | number;
   route_geojson: any; // GeoJSON LineString representing route
+  /**
+   * Human-readable endpoints, exactly as the driver picked them.
+   *
+   * The route was previously stored only as coordinates, so nothing in the app
+   * could name where a ride actually went — the home screen fell back to the
+   * literal words "Pickup → Destination" and the driver's own card showed a
+   * truncated ride id. Coordinates stay authoritative for matching; these are
+   * for display.
+   */
+  source?: string;
+  destination?: string;
   seats_total: number;
   price_split: number;
   departure_time: string;
@@ -410,7 +434,7 @@ export async function rideRoutes(fastify: FastifyInstance) {
       chattiness = 'MEDIUM', ac_available = true, women_only = false,
       ride_type = 'COMMUTE', event_tag,
       vehicle_make, vehicle_model, vehicle_colour, vehicle_plate,
-      pickup_points, distance_km
+      pickup_points, distance_km, source, destination
     } = request.body as CreateRideBody;
 
     if (!['COMMUTE', 'INTERCITY', 'EVENT'].includes(ride_type)) {
@@ -491,6 +515,10 @@ export async function rideRoutes(fastify: FastifyInstance) {
         driver_id: String(resolvedDriverId),
         driver_uid: uid, // used by settlement/cancellation to credit the driver
         route_coords: routeCoords,
+        // Display names for the two endpoints. Trimmed and length-capped: they
+        // are rendered straight into rider-facing lists and notifications.
+        source: cleanPlace(source),
+        destination: cleanPlace(destination),
         seats_total: Number(seats_total),
         seats_available: Number(seats_total),
         price_split: Number(price_split),
@@ -765,6 +793,10 @@ export async function rideRoutes(fastify: FastifyInstance) {
         ) {
           matchedResults.push({
             id: ride.id,
+            // Where the ride actually starts and ends. Riders were choosing
+            // between results — and paying — with no route shown at all.
+            source: ride.source ?? null,
+            destination: ride.destination ?? null,
             seats_available: ride.seats_available,
             price_split: ride.price_split,
             departure_time: ride.departure_time,

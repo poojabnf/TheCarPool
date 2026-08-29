@@ -3,7 +3,7 @@ import { StyleSheet, View, Text, ScrollView, Switch, Alert, Linking, ActivityInd
 import { useRouter, useFocusEffect } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
-  CreditCard, Settings, HelpCircle, ChevronRight, LogOut, Newspaper, ShieldCheck, Leaf, Receipt, Camera,
+  CreditCard, Settings, HelpCircle, ChevronRight, LogOut, ShieldCheck, Leaf, Receipt, Camera,
   Landmark, Car,
 } from 'lucide-react-native';
 import { auth } from '../services/firebase';
@@ -534,7 +534,6 @@ export default function AccountInterface() {
             visible on the Driver tab, so someone looking for "my rides" under
             their account found only the ones they had taken. */}
         <MenuRow icon={<Car color={c.textSecondary} size={20} />} title="Rides you offered" sub="Trips you're driving" onPress={() => setView('offered')} />
-        <MenuRow icon={<Newspaper color={c.textSecondary} size={20} />} title="Classifieds" sub="Community marketplace" onPress={() => router.push('/(tabs)/classifieds')} />
         <MenuRow icon={<Leaf color={c.textSecondary} size={20} />} title="Green leaderboard" sub="Top CO₂ savers in the community" onPress={() => router.push('/leaderboard')} last />
       </View>
       <View style={styles.group}>

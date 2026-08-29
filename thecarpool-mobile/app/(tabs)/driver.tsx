@@ -299,6 +299,11 @@ export default function DriverInterface() {
   const boardingPassengers: any[] =
     (boardingRideId && manifests[boardingRideId]?.passengers) || [];
 
+  // The same sheet serves two jobs: verifying everyone before pulling away,
+  // and verifying a rider who got in later. Only the first ends in "Start trip".
+  const boardingIsStartFlow =
+    myRides.find((r) => r.id === boardingRideId)?.status === 'SCHEDULED';
+
   const commitStart = async (rideId: string) => {
     try {
       const res = await apiFetch(`/api/rides/${rideId}/status`, {
@@ -691,6 +696,11 @@ export default function DriverInterface() {
         body: JSON.stringify({
           driver_id: userId,
           route_geojson,
+          // The names the driver actually picked. Without these the ride is
+          // stored as bare coordinates and every list that shows it has to
+          // fall back to placeholder words.
+          source: source.trim(),
+          destination: destination.trim(),
           seats_total: seatsTotal,
           price_split: price,
           departure_time: departureAt.toISOString(),
@@ -818,7 +828,15 @@ export default function DriverInterface() {
                         {r.women_only && <Text style={styles.miniBadge}>♀ WOMEN</Text>}
                       </View>
                     </View>
-                    <Text style={styles.routeDest}>Ride #{String(r.id).replace('ride_', '').slice(0, 8)} · {formatMoney(Number(r.price_split), { decimals: 0 })}/seat</Text>
+                    {/* Rides created before endpoints were stored have no
+                        names, so fall back to the id rather than render an
+                        arrow between two blanks. */}
+                    <Text style={styles.routeDest} numberOfLines={2}>
+                      {r.source && r.destination
+                        ? `${r.source} → ${r.destination}`
+                        : `Ride #${String(r.id).replace('ride_', '').slice(0, 8)}`}
+                      {' · '}{formatMoney(Number(r.price_split), { decimals: 0 })}/seat
+                    </Text>
                   </View>
 
                   {/* Passenger manifest with contact options */}
@@ -889,6 +907,30 @@ export default function DriverInterface() {
                     <Text style={styles.seatText}>{seatsFilled}/{r.seats_total} Seats Filled</Text>
                   </View>
 
+                  {/* Boarding codes.
+                      This used to be reachable only by pressing "Start trip",
+                      which meant a driver who had already started had no way
+                      back to it — and one who hadn't found it never verified
+                      anyone. Every booking then settled as a no-show at 5%.
+                      Give it its own button whenever anyone has a seat. */}
+                  {m && m.passengers.length > 0 && (r.status === 'SCHEDULED' || r.status === 'STARTED') && (() => {
+                    const pending = m.passengers.filter((p: any) => !p.boarding_verified).length;
+                    return (
+                      <HapticPressable
+                        haptic="press"
+                        style={styles.verifyBoardingBtn}
+                        onPress={() => { setOtpInput(''); setOtpTarget(null); setBoardingRideId(r.id); }}
+                        activeOpacity={0.9}
+                      >
+                        <Text style={styles.verifyBoardingText}>
+                          {pending === 0
+                            ? '✓ All riders verified'
+                            : `🔑 Enter boarding code · ${pending} to verify`}
+                        </Text>
+                      </HapticPressable>
+                    );
+                  })()}
+
                   {/* Lifecycle controls */}
                   <View style={{ flexDirection: 'row', gap: 8, marginTop: 12 }}>
                     {r.status === 'SCHEDULED' && (
@@ -940,7 +982,7 @@ export default function DriverInterface() {
             <>
 
             <View style={styles.formGroup}>
-              <Text style={styles.formLabel}>Pickup (source)</Text>
+              <Text style={styles.formLabel}>Starting point</Text>
               <TextInput
                 style={styles.formInput}
                 placeholder="Where do you start from?"
@@ -1041,10 +1083,10 @@ export default function DriverInterface() {
             </View>
 
             <View style={styles.formGroup}>
-              <Text style={styles.formLabel}>Office Destination</Text>
+              <Text style={styles.formLabel}>Destination</Text>
               <TextInput
                 style={styles.formInput}
-                placeholder="e.g. DLF Cyber City Building 10"
+                placeholder="Where are you heading?"
                 placeholderTextColor={colors.inputPlaceholder}
                 value={destination}
                 onChangeText={(t) => { setDestination(t); setDestCoords(null); searchGeo(t, setDestSug, destTimeoutRef); }}
@@ -1288,8 +1330,8 @@ export default function DriverInterface() {
             {/* Recurring Schedules (Quick Ride "Repeat Ride" Gap) */}
             <View style={styles.formSwitchRow}>
               <View>
-                <Text style={styles.formLabel}>Recurring Office Commute</Text>
-                <Text style={styles.formSubLabel}>Automate booking for daily schedules</Text>
+                <Text style={styles.formLabel}>Repeat this ride</Text>
+                <Text style={styles.formSubLabel}>Offer it automatically on the days you choose</Text>
               </View>
               <Switch 
                 value={isRecurring}
@@ -1602,6 +1644,9 @@ export default function DriverInterface() {
                   haptic="press"
                   style={styles.otpPrimaryBtn}
                   onPress={() => {
+                    // Opened on a ride that is already running: this is a
+                    // late boarder being verified, not a trip being started.
+                    if (!boardingIsStartFlow) { closeBoarding(); return; }
                     const pending = boardingPassengers.filter((p) => !p.boarding_verified);
                     if (pending.length === 0) {
                       commitStart(boardingRideId!);
@@ -1617,7 +1662,9 @@ export default function DriverInterface() {
                     );
                   }}
                 >
-                  <Text style={styles.otpPrimaryText}>Start trip</Text>
+                  <Text style={styles.otpPrimaryText}>
+                    {boardingIsStartFlow ? 'Start trip' : 'Done'}
+                  </Text>
                 </HapticPressable>
               </>
             )}
@@ -1965,6 +2012,11 @@ const styles = StyleSheet.create({
   passengerContactBtn: { width: 32, height: 32, borderRadius: 16, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.cardBorder, alignItems: 'center', justifyContent: 'center' },
 
   // Boarding verification modal
+  verifyBoardingBtn: {
+    marginTop: 12, paddingVertical: 11, borderRadius: 12, alignItems: 'center',
+    borderWidth: 1, borderColor: colors.primary, backgroundColor: 'transparent',
+  },
+  verifyBoardingText: { color: colors.primary, fontSize: 14, fontWeight: '700' },
   otpBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'center', paddingHorizontal: 20 },
   otpSheet: { backgroundColor: colors.card, borderRadius: 16, padding: 18 },
   otpHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 },

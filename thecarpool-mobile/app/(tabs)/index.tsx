@@ -25,6 +25,10 @@ let lastSearch: { key: string; rides: Ride[] } | null = null;
 interface Ride {
   id: string | number;
   driver_name: string;
+  /** Route endpoints as the driver named them. Null on rides posted before
+   *  they were stored, which is why every render site guards for it. */
+  source?: string | null;
+  destination?: string | null;
   seats_available: number;
   price_split: number;
   departure_time: string;
@@ -461,6 +465,18 @@ export default function HomeScreen() {
                   <Text style={styles.perSeat}>per seat</Text>
                 </View>
               </View>
+              {/* The route itself. Older rides were stored as coordinates
+                  only and have no names, so this appears when there is
+                  something real to show rather than as an empty arrow. */}
+              {(ride.source || ride.destination) && (
+                <View style={styles.rideRouteRow}>
+                  <MapPin color={c.textSecondary} size={13} strokeWidth={2.4} />
+                  <Text style={styles.rideRouteText} numberOfLines={2}>
+                    {ride.source || 'Pickup'} → {ride.destination || 'Destination'}
+                  </Text>
+                </View>
+              )}
+
               {/* When it leaves and how many seats are left were both returned
                   by the API but never shown — riders were choosing between
                   rides, and paying, without either fact. */}
@@ -588,6 +604,8 @@ const styles = StyleSheet.create({
   whenChipOn: { backgroundColor: c.go, borderColor: c.go },
   whenChipText: { fontFamily: font.sansMedium, fontSize: 12.5, color: c.textSecondary },
   whenChipTextOn: { color: '#fff', fontFamily: font.sansSemibold },
+  rideRouteRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 6, marginTop: space.md },
+  rideRouteText: { flex: 1, fontFamily: font.sansSemibold, fontSize: 13, color: c.textPrimary, lineHeight: 18 },
   whenRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: space.md },
   whenText: { fontFamily: font.sansSemibold, fontSize: 13, color: c.textSecondary },
   whenSoon: { color: c.go },

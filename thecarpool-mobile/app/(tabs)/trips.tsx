@@ -31,6 +31,9 @@ interface Booking {
   completed_at?: string | null;
   disputed?: boolean;
   drop_point?: { lat: number; lng: number } | null;
+  /** Rider's own 4-digit boarding code — the driver asks for this to board. */
+  boarding_otp?: string | null;
+  boarding_verified?: boolean;
 }
 
 /**
@@ -361,6 +364,23 @@ function BookingCard({ b, onPress, onCancel, onComplete, onDispute }: {
         )}
       </View>
 
+      {/* Boarding code.
+          The driver's verification prompt tells them to ask for "the code on
+          their trip screen", but it only ever appeared on the trip detail page
+          — a tap deeper than anyone looked. Every ride so far settled as a
+          no-show because nobody found it. Put it on the card. */}
+      {b.boarding_otp && !b.boarding_verified && b.booking_status !== 'REQUESTED'
+        && b.ride_status !== 'CANCELLED' && !b.completed_at && (
+        <View style={styles.otpBox}>
+          <Text style={styles.otpLabel}>Show your driver this code to board</Text>
+          <Text style={styles.otpCode}>{b.boarding_otp}</Text>
+        </View>
+      )}
+
+      {b.boarding_verified && (
+        <Text style={styles.otpDoneNote}>✓ Boarding confirmed by your driver</Text>
+      )}
+
       {b.booking_status === 'REQUESTED' && (
         <Text style={styles.awaitingNote}>
           Waiting for the driver to accept. You'll be refunded in full if they can't take you.
@@ -432,6 +452,13 @@ const styles = StyleSheet.create({
   cancelBtn: { marginTop: space.sm, height: 38, borderRadius: radius.sm, borderWidth: 1, borderColor: c.dangerSoft, backgroundColor: c.dangerSoft, alignItems: 'center', justifyContent: 'center' },
   cancelText: { fontFamily: font.sansSemibold, fontSize: 12.5, color: c.danger },
   awaitingNote: { fontFamily: font.sans, fontSize: 12, color: c.textTertiary, marginTop: 10, lineHeight: 17 },
+  otpBox: {
+    marginTop: 12, paddingVertical: 12, borderRadius: radius.md, alignItems: 'center',
+    backgroundColor: c.bgApp, borderWidth: 1, borderColor: c.borderSubtle,
+  },
+  otpLabel: { fontFamily: font.sans, fontSize: 12, color: c.textTertiary },
+  otpCode: { fontFamily: font.sansBold, fontSize: 30, letterSpacing: 8, color: c.textPrimary, marginTop: 4 },
+  otpDoneNote: { fontFamily: font.sansSemibold, fontSize: 12, color: c.go, marginTop: 10 },
   completeBtn: { marginTop: 12, backgroundColor: c.go, borderRadius: radius.md, paddingVertical: 12, alignItems: 'center' },
   completeText: { fontFamily: font.sansSemibold, fontSize: 14, color: '#fff' },
   disputeBox: { marginTop: 12, padding: 12, borderRadius: radius.md, backgroundColor: c.surfaceSunken, borderWidth: 1, borderColor: c.borderSubtle },
