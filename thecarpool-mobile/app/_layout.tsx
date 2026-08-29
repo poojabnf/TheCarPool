@@ -77,19 +77,17 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
             // Only pass through fields the server actually returned.
             //
             // setUserProfile spreads its argument over the existing profile,
-            // so passing `name: undefined` OVERWRITES a good name with
-            // nothing. That is how a saved name could vanish: any response
-            // carrying an address or photo but no name wiped it.
+            const resolvedName = data.name || data.displayName || user.displayName || undefined;
             const fields: Record<string, any> = {
-              name: data.name,
-              email: data.email,
+              name: resolvedName,
+              email: data.email || user.email || undefined,
               address: data.address,
               company: data.company,
               role: data.role,
-              photoUrl: data.photo_url,
+              photoUrl: data.photo_url || data.photoUrl || user.photoURL || undefined,
             };
             for (const k of Object.keys(fields)) {
-              if (fields[k] === undefined || fields[k] === null) delete fields[k];
+              if (fields[k] === undefined || fields[k] === null || fields[k] === '') delete fields[k];
             }
             if (user.phoneNumber) fields.phone = user.phoneNumber;
             if (Object.keys(fields).length > 0) setUserProfile(fields);

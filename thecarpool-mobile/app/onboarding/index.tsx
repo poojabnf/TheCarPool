@@ -12,6 +12,7 @@ import {
   Platform,
 } from 'react-native';
 import { apiFetch } from '../services/api';
+import { auth } from '../services/firebase';
 import { useRouter } from 'expo-router';
 import { useAuthStore } from '../store/authStore';
 import HapticPressable from '../components/HapticPressable';
@@ -213,10 +214,17 @@ export default function OnboardingScreen() {
           method: 'POST',
           body: JSON.stringify({
             name: fullProfile.name,
+            displayName: fullProfile.name,
             address: fullProfile.address,
             role: fullProfile.role,
           }),
         });
+
+        // Keep local profile and Firebase auth displayName in sync
+        const user = auth().currentUser;
+        if (user && fullProfile.name) {
+          user.updateProfile({ displayName: fullProfile.name }).catch(() => {});
+        }
 
         completeOnboarding();
         router.replace('/(tabs)');

@@ -147,6 +147,12 @@ export async function userRoutes(fastify: FastifyInstance) {
       const adopted = { ...byPhone, ...byEmail };
       const data = { ...(stored ?? {}), ...adopted };
 
+      const resolvedName = data.name || data.displayName || null;
+      if (resolvedName) {
+        data.name = resolvedName;
+        data.displayName = resolvedName;
+      }
+
       if (!doc.exists && Object.keys(adopted).length === 0) {
         return reply.send({ id: uid, onboarded: false, profile: null });
       }
@@ -164,6 +170,8 @@ export async function userRoutes(fastify: FastifyInstance) {
         id: uid,
         onboarded: data.onboarded === true,
         ...data,
+        name: resolvedName,
+        displayName: resolvedName,
         photo_url,
       });
     } catch (err: any) {
@@ -215,12 +223,43 @@ export async function userRoutes(fastify: FastifyInstance) {
     for (const key of ALLOWED_FIELDS) {
       if (body[key] !== undefined) updates[key] = body[key];
     }
+
+    // Keep name and displayName synchronized
+    if (updates.name && !updates.displayName) updates.displayName = updates.name;
+    if (updates.displayName && !updates.name) updates.name = updates.displayName;
+
+    if (request.user?.phone && !updates.phone) updates.phone = request.user.phone;
+    if (request.user?.email && !updates.email) updates.email = request.user.email;
+
     updates.onboarded = true;
     updates.updated_at = new Date().toISOString();
 
     try {
       await db.collection('users').doc(uid).set(updates, { merge: true });
-      return reply.send({ status: 'PROFILE_SAVED', user_id: uid, onboarded: true });
+
+      // Keep phone and email identity indexes in sync so logins across Android/iOS link reliably
+      const phone = normalisePhone(request.user?.phone || updates.phone);
+      if (phone) {
+        await db.collection('phone_identities').doc(phoneKey(phone)).set({
+          uid, phone, linked_at: new Date().toISOString(),
+        }, { merge: true }).catch(() => {});
+      }
+
+      const email = normaliseEmail(request.user?.email || updates.email || updates.corporate_email);
+      if (email) {
+        await db.collection('email_identities').doc(emailKey(email)).set({
+          uid, email, linked_at: new Date().toISOString(),
+        }, { merge: true }).catch(() => {});
+      }
+
+      // Propagate updates to linked parent uid if this account was adopted from another
+      const userDoc = await db.collection('users').doc(uid).get();
+      const userData = userDoc.data();
+      if (userData?.linked_from_uid) {
+        await db.collection('users').doc(userData.linked_from_uid).set(updates, { merge: true }).catch(() => {});
+      }
+
+      return reply.send({ status: 'PROFILE_SAVED', user_id: uid, onboarded: true, profile: { ...userData, ...updates } });
     } catch (err: any) {
       fastify.log.error(err, 'Failed to save user profile');
       return reply.code(500).send({ error: 'Failed to save profile.' });

@@ -56,12 +56,13 @@ export async function apiFetch(
   const user = auth().currentUser ?? (await waitForAuth());
   if (user) {
     try {
-      // Force refresh token if needed so fresh logins don't fail with stale token
-      const token = await user.getIdToken(true);
+      const token = await user.getIdToken(false);
       headers.set('Authorization', `Bearer ${token}`);
     } catch {
-      const token = await user.getIdToken();
-      headers.set('Authorization', `Bearer ${token}`);
+      try {
+        const token = await user.getIdToken(true);
+        headers.set('Authorization', `Bearer ${token}`);
+      } catch {}
     }
   }
   if (init.body && !headers.has('Content-Type')) {
@@ -83,6 +84,15 @@ export async function apiFetch(
         signal: controller.signal,
       });
       clearTimeout(id);
+
+      // If token expired (401) on initial attempt, refresh token and retry
+      if (res.status === 401 && attempt === 1 && user) {
+        try {
+          const freshToken = await user.getIdToken(true);
+          headers.set('Authorization', `Bearer ${freshToken}`);
+          continue;
+        } catch {}
+      }
 
       // If it is a transient server error (502, 503, 504) and we have retries left
       if (res.status >= 502 && res.status <= 504 && attempt <= retries) {

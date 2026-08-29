@@ -79,17 +79,24 @@ export default function AccountInterface() {
   }, []);
 
   useFocusEffect(useCallback(() => {
-    if (!auth().currentUser) return;
+    const user = auth().currentUser;
+    if (!user) return;
     apiFetch('/api/users/me')
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => {
         if (!d) return;
+        const resolvedName = d.name || d.displayName || user.displayName || undefined;
         const fields: Record<string, any> = {
-          name: d.name, email: d.email, address: d.address,
-          company: d.company, role: d.role, photoUrl: d.photo_url,
+          name: resolvedName,
+          displayName: resolvedName,
+          email: d.email || user.email || undefined,
+          address: d.address,
+          company: d.company,
+          role: d.role,
+          photoUrl: d.photo_url || d.photoUrl || user.photoURL || undefined,
         };
         for (const k of Object.keys(fields)) {
-          if (fields[k] === undefined || fields[k] === null) delete fields[k];
+          if (fields[k] === undefined || fields[k] === null || fields[k] === '') delete fields[k];
         }
         if (Object.keys(fields).length > 0) setUserProfile(fields);
       })
@@ -131,7 +138,7 @@ export default function AccountInterface() {
   // abandoned edit.
   useEffect(() => {
     if (view !== 'profile') return;
-    const parts = (userProfile?.name || '').trim().split(/\s+/).filter(Boolean);
+    const parts = (userProfile?.name || auth().currentUser?.displayName || '').trim().split(/\s+/).filter(Boolean);
     setFirstName(parts[0] || '');
     setLastName(parts.slice(1).join(' '));
     setAddressInput(userProfile?.address || '');
@@ -150,9 +157,7 @@ export default function AccountInterface() {
     try {
       const res = await apiFetch('/api/users/profile', {
         method: 'POST',
-        // Address is optional: send an empty string to clear it rather than
-        // omitting the key, which the backend would read as "leave unchanged".
-        body: JSON.stringify({ name: fullName, address }),
+        body: JSON.stringify({ name: fullName, displayName: fullName, address }),
       }, { timeoutMs: 25000 });
       if (!res.ok) {
         const e = await res.json().catch(() => ({} as any));
@@ -160,6 +165,10 @@ export default function AccountInterface() {
         return;
       }
       setUserProfile({ name: fullName, address });
+      const user = auth().currentUser;
+      if (user) {
+        user.updateProfile({ displayName: fullName }).catch(() => {});
+      }
       setView('menu');
     } catch {
       Alert.alert('Could not save', 'Check your connection and try again.');
