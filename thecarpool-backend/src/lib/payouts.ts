@@ -148,6 +148,66 @@ export function isPayoutDue(dueAtIso: string, now = new Date()): boolean {
   return t <= now.getTime();
 }
 
+export type PayoutStageStatus = 'PENDING' | 'COMPLETED' | 'FAILED' | 'CURRENT';
+
+export interface PayoutStage {
+  id: string;
+  label: string;
+  description: string;
+  status: PayoutStageStatus;
+  timestamp: string | null;
+}
+
+export interface PayoutTracking {
+  id: string;
+  amount: number;
+  currency: string;
+  destination: string;
+  status: 'INITIATED' | 'PROCESSING' | 'COMPLETED' | 'FAILED';
+  estimated_arrival: string;
+  stages: PayoutStage[];
+  created_at: string;
+  updated_at: string;
+  reference_id?: string;
+  utr?: string;
+  failure_reason?: string;
+}
+
+/** Generate stage progression and human-friendly ETA descriptions for a payout. */
+export function buildPayoutStages(
+  status: 'INITIATED' | 'PROCESSING' | 'COMPLETED' | 'FAILED',
+  createdAt = new Date().toISOString(),
+  updatedAt = new Date().toISOString()
+): PayoutStage[] {
+  const isFailed = status === 'FAILED';
+  const isDone = status === 'COMPLETED';
+  const isProcessing = status === 'PROCESSING' || isDone;
+
+  return [
+    {
+      id: 'INITIATED',
+      label: 'Withdrawal Initiated',
+      description: 'Withdrawal request verified and fund reserved',
+      status: 'COMPLETED',
+      timestamp: createdAt,
+    },
+    {
+      id: 'PROCESSING',
+      label: 'Bank Processing',
+      description: 'Transmitting over IMPS / UPI banking rails',
+      status: isFailed ? 'FAILED' : isProcessing ? (isDone ? 'COMPLETED' : 'CURRENT') : 'PENDING',
+      timestamp: isProcessing ? updatedAt : null,
+    },
+    {
+      id: 'CREDITED',
+      label: 'Credited to Account',
+      description: isFailed ? 'Transfer failed and funds returned to wallet' : 'Funds successfully credited to your account',
+      status: isFailed ? 'FAILED' : isDone ? 'COMPLETED' : 'PENDING',
+      timestamp: isDone ? updatedAt : null,
+    },
+  ];
+}
+
 /** Mask a payout destination for display and logs — never echo it in full. */
 export function maskPayoutMethod(m: Partial<PayoutMethod> | null | undefined): string {
   if (!m || !m.type) return 'not set';
@@ -161,3 +221,4 @@ export function maskPayoutMethod(m: Partial<PayoutMethod> | null | undefined): s
   const acc = String(m.account_number || '').replace(/\s/g, '');
   return acc.length > 4 ? `A/C ****${acc.slice(-4)}` : 'bank account';
 }
+

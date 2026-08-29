@@ -4,7 +4,15 @@ import { z } from 'zod';
 import { db } from '../server';
 import { requireAuth, requireAdmin } from '../middleware/auth';
 import { parseOrReply } from '../lib/validate';
-import { validatePayoutMethod, hasPayoutMethod, maskPayoutMethod, isPayoutDue, PayoutMethod } from '../lib/payouts';
+import {
+  validatePayoutMethod,
+  hasPayoutMethod,
+  maskPayoutMethod,
+  isPayoutDue,
+  PayoutMethod,
+  buildPayoutStages,
+  PayoutTracking,
+} from '../lib/payouts';
 import { validatePan, normalisePan, maskPan, panStatus } from '../lib/kyc';
 import { isRouteConfigured, createLinkedAccount } from '../lib/route';
 import { creditWalletForPayment } from '../lib/wallet';
@@ -222,6 +230,46 @@ export async function paymentRoutes(fastify: FastifyInstance) {
             user_id: null, needs_reconciliation: true, updated_at: new Date().toISOString(),
           }, { merge: true });
         }
+      } else if (event.event === 'payout.processed') {
+        const payout = event.payload?.payout?.entity;
+        if (payout?.reference_id) {
+          const nowIso = new Date().toISOString();
+          const docRef = db.collection('payouts').doc(payout.reference_id);
+          const docSnap = await docRef.get();
+          const created = docSnap.data()?.created_at || nowIso;
+          await docRef.set({
+            status: 'COMPLETED',
+            utr: payout.utr || null,
+            updated_at: nowIso,
+            stages: buildPayoutStages('COMPLETED', created, nowIso),
+          }, { merge: true });
+        }
+      } else if (event.event === 'payout.reversed' || event.event === 'payout.failed') {
+        const payout = event.payload?.payout?.entity;
+        if (payout?.reference_id) {
+          const nowIso = new Date().toISOString();
+          const docRef = db.collection('payouts').doc(payout.reference_id);
+          const docSnap = await docRef.get();
+          const data = docSnap.data();
+          if (data && data.status !== 'FAILED') {
+            const created = data.created_at || nowIso;
+            const amount = Number(data.amount || 0);
+            const uid = data.requested_by;
+            // Refund to wallet
+            if (uid && amount > 0) {
+              const walletRef = db.collection('wallets').doc(uid);
+              const w = await walletRef.get();
+              const bal = Number(w.data()?.available_wallet_balance || 0);
+              await walletRef.set({ available_wallet_balance: round2(bal + amount) }, { merge: true });
+            }
+            await docRef.set({
+              status: 'FAILED',
+              failure_reason: payout.failure_reason || 'Payout transfer failed or reversed by bank',
+              updated_at: nowIso,
+              stages: buildPayoutStages('FAILED', created, nowIso),
+            }, { merge: true });
+          }
+        }
       }
       return reply.send({ received: true });
     } catch (err: any) {
@@ -363,11 +411,19 @@ export async function paymentRoutes(fastify: FastifyInstance) {
   fastify.get('/payout-method', { preHandler: [requireAuth] }, async (request, reply) => {
     const uid = String(request.user!.id);
     const doc = await db.collection('users').doc(uid).get();
-    const method = doc.data()?.payout_method ?? null;
+    const userData = doc.data() ?? {};
+    const method = userData.payout_method ?? null;
     return reply.send({
       configured: hasPayoutMethod(method),
       type: method?.type ?? null,
       destination: maskPayoutMethod(method),
+      saved_details: method ? {
+        type: method.type,
+        vpa: method.type === 'VPA' ? (method.vpa || '') : undefined,
+        name: method.name || '',
+        ifsc: method.ifsc || '',
+        account_number_masked: method.account_number ? `••••${String(method.account_number).slice(-4)}` : undefined,
+      } : null,
       // Whether this deployment can actually send money out at all, as opposed
       // to whether THIS user has given us somewhere to send it. Without it the
       // app offered a Withdraw button that could only ever fail: RazorpayX is
@@ -381,8 +437,9 @@ export async function paymentRoutes(fastify: FastifyInstance) {
       // goes: with a linked account it is split to the driver at Razorpay and
       // never lands in the wallet at all. A driver can have one and not the
       // other, which is exactly the current state of this deployment.
-      earnings_via: doc.data()?.razorpay_account_id ? 'BANK' : 'WALLET',
-      kyc_status: panStatus(doc.data() as any),
+      earnings_via: userData.razorpay_account_id ? 'BANK' : 'WALLET',
+      kyc_status: panStatus(userData as any),
+      pan: maskPan(userData.pan_number),
     });
   });
 
@@ -496,6 +553,10 @@ export async function paymentRoutes(fastify: FastifyInstance) {
     }
 
     const payoutRef = 'PO_' + Math.random().toString(36).substring(2, 10).toUpperCase();
+    const nowIso = new Date().toISOString();
+    const estArrival = '15 mins – 2 hours (IMPS / UPI)';
+    const maskedDest = maskPayoutMethod(destination);
+    const initialStages = buildPayoutStages('INITIATED', nowIso, nowIso);
 
     // Atomically reserve the funds from the caller's own wallet.
     try {
@@ -511,9 +572,15 @@ export async function paymentRoutes(fastify: FastifyInstance) {
           booking_id: booking_id != null ? String(booking_id) : null,
           upi_payout_id,
           amount,
-          status: 'RESERVED',
+          currency: defaultCurrency(),
+          destination: maskedDest,
+          status: 'INITIATED',
           requested_by: uid,
-          created_at: new Date().toISOString(),
+          created_at: nowIso,
+          updated_at: nowIso,
+          estimated_arrival: estArrival,
+          stages: initialStages,
+          transaction_ref: payoutRef,
         });
       });
     } catch (err: any) {
@@ -541,24 +608,76 @@ export async function paymentRoutes(fastify: FastifyInstance) {
         referenceId: payoutRef,
         fallbackName: userData?.name,
       });
+      const processingIso = new Date().toISOString();
+      const processingStages = buildPayoutStages('PROCESSING', nowIso, processingIso);
+
       await db.collection('payouts').doc(payoutRef).update({
         status: 'PROCESSING',
         razorpayx_payout_id: result.payout_id,
+        updated_at: processingIso,
+        stages: processingStages,
       });
+
       return reply.send({
         status: 'PAYOUT_PROCESSING',
         booking_id,
         // Masked — the full destination never travels back to a client.
-        destination: maskPayoutMethod(destination),
+        destination: maskedDest,
         transaction_ref: payoutRef,
         razorpayx_payout_id: result.payout_id,
         amount_settled: amount,
+        estimated_arrival: estArrival,
+        stages: processingStages,
+        created_at: nowIso,
       });
     } catch (err: any) {
       fastify.log.error(err, 'RazorpayX API call failed');
       await refundReservation();
-      await db.collection('payouts').doc(payoutRef).update({ status: 'FAILED' });
+      const failIso = new Date().toISOString();
+      const failedStages = buildPayoutStages('FAILED', nowIso, failIso);
+      await db.collection('payouts').doc(payoutRef).update({
+        status: 'FAILED',
+        updated_at: failIso,
+        stages: failedStages,
+        failure_reason: err?.message || 'Payout transfer failed',
+      });
       return reply.code(502).send({ error: 'Payout API call failed.' });
+    }
+  });
+
+  // 3a. Historical Payouts list (retained 6+ months in Firestore)
+  fastify.get('/payouts/history', { preHandler: [requireAuth] }, async (request, reply) => {
+    const uid = String(request.user!.id);
+    try {
+      const snap = await db.collection('payouts')
+        .where('requested_by', '==', uid)
+        .get();
+
+      const list = snap.docs.map((doc) => {
+        const data = doc.data();
+        const status = (data.status || 'INITIATED') as 'INITIATED' | 'PROCESSING' | 'COMPLETED' | 'FAILED';
+        return {
+          id: doc.id,
+          amount: Number(data.amount || 0),
+          currency: data.currency || defaultCurrency(),
+          destination: data.destination || (data.payout_method ? maskPayoutMethod(data.payout_method) : 'Bank / UPI'),
+          status,
+          estimated_arrival: data.estimated_arrival || '15 mins – 2 hours',
+          stages: data.stages || buildPayoutStages(status, data.created_at, data.updated_at || data.created_at),
+          created_at: data.created_at || null,
+          updated_at: data.updated_at || data.created_at || null,
+          transaction_ref: data.transaction_ref || doc.id,
+          razorpayx_payout_id: data.razorpayx_payout_id || null,
+          failure_reason: data.failure_reason || (status === 'FAILED' ? 'Bank transfer could not be completed' : undefined),
+        };
+      });
+
+      // Sort by newest first
+      list.sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
+      return reply.send({ payouts: list });
+    } catch (err: any) {
+      fastify.log.error(err, 'Failed to fetch payout history');
+      return reply.code(500).send({ error: 'Failed to fetch payout history.' });
     }
   });
 

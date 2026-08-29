@@ -6,6 +6,7 @@ import {
   isPayoutDue,
   maskPayoutMethod,
   PAYOUT_DELAY_MS,
+  buildPayoutStages,
 } from '../payouts';
 
 const VPA = { type: 'VPA' as const, vpa: 'ravi.kumar@okhdfcbank' };
@@ -144,5 +145,34 @@ describe('maskPayoutMethod', () => {
 
   it('says so when nothing is set', () => {
     expect(maskPayoutMethod(null)).toBe('not set');
+  });
+});
+
+describe('buildPayoutStages', () => {
+  it('generates 3 stages for INITIATED status', () => {
+    const stages = buildPayoutStages('INITIATED');
+    expect(stages).toHaveLength(3);
+    expect(stages[0].status).toBe('COMPLETED');
+    expect(stages[1].status).toBe('PENDING');
+    expect(stages[2].status).toBe('PENDING');
+  });
+
+  it('marks intermediate stage as CURRENT during PROCESSING', () => {
+    const stages = buildPayoutStages('PROCESSING');
+    expect(stages[0].status).toBe('COMPLETED');
+    expect(stages[1].status).toBe('CURRENT');
+    expect(stages[2].status).toBe('PENDING');
+  });
+
+  it('marks all stages as COMPLETED on success', () => {
+    const stages = buildPayoutStages('COMPLETED');
+    expect(stages.every((s) => s.status === 'COMPLETED')).toBe(true);
+  });
+
+  it('marks failed status appropriately', () => {
+    const stages = buildPayoutStages('FAILED');
+    expect(stages[0].status).toBe('COMPLETED');
+    expect(stages[1].status).toBe('FAILED');
+    expect(stages[2].status).toBe('FAILED');
   });
 });
