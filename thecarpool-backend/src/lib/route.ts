@@ -43,6 +43,71 @@ export interface RouteTransfer {
 }
 
 /**
+ * Create a Route linked account for a driver.
+ *
+ * This is the step that was previously done by hand in the Razorpay dashboard
+ * and pasted back through an admin endpoint — which meant, in practice, that
+ * no driver ever had one and the whole Route path was dead code.
+ *
+ * Razorpay models a linked account as a sub-merchant, so the payload is
+ * business-shaped even for one person driving their own car: `business_type:
+ * 'individual'` with the driver as the legal entity. The PAN goes in as the
+ * legal identifier.
+ *
+ * IMPORTANT — what "created" does and does not mean: a successful call returns
+ * an `acc_…` id and lets us create transfers against it. It does NOT mean
+ * Razorpay has finished KYC or that settlements to the driver's bank are
+ * switched on. Razorpay may hold settlement pending its own checks, and a
+ * transfer to an unactivated account stays with Razorpay rather than failing
+ * loudly. Callers must treat this as "submitted", not "verified".
+ */
+export interface LinkedAccount {
+  id: string;
+  status?: string;
+}
+
+export async function createLinkedAccount(opts: {
+  /** Distinguishes one driver's account from another in the Razorpay dashboard. */
+  referenceId: string;
+  email: string;
+  phone?: string | null;
+  name: string;
+  pan: string;
+}): Promise<LinkedAccount> {
+  const res = await fetch(`${API}/accounts`, {
+    method: 'POST',
+    headers: { Authorization: authHeader(), 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      email: opts.email,
+      phone: opts.phone || undefined,
+      type: 'route',
+      reference_id: opts.referenceId,
+      legal_business_name: opts.name,
+      business_type: 'individual',
+      contact_name: opts.name,
+      profile: {
+        // Ride-hailing / passenger transport. Razorpay requires a category on
+        // every linked account; an unrecognised one is rejected outright.
+        category: 'transport',
+        subcategory: 'cabs',
+      },
+      legal_info: {
+        pan: opts.pan,
+      },
+    }),
+  });
+
+  const data: any = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(
+      `Linked account creation failed (${res.status}): ${data?.error?.description || 'unknown'}`
+    );
+  }
+  if (!data?.id) throw new Error('Linked account creation returned no account id');
+  return { id: String(data.id), status: data.status ? String(data.status) : undefined };
+}
+
+/**
  * Split a captured payment to the driver's linked account, held.
  *
  * Deliberately created WITHOUT `on_hold_until`: at booking time we do not know

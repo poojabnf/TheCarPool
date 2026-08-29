@@ -5,6 +5,8 @@ import { db } from '../server';
 import { requireAuth, requireAdmin } from '../middleware/auth';
 import { parseOrReply } from '../lib/validate';
 import { validatePayoutMethod, hasPayoutMethod, maskPayoutMethod, isPayoutDue, PayoutMethod } from '../lib/payouts';
+import { validatePan, normalisePan, maskPan, panStatus } from '../lib/kyc';
+import { isRouteConfigured, createLinkedAccount } from '../lib/route';
 import { creditWalletForPayment } from '../lib/wallet';
 import { calculateSplit, suggestPricing, fuelSavings } from '../lib/pricing';
 import {
@@ -267,6 +269,97 @@ export async function paymentRoutes(fastify: FastifyInstance) {
     return reply.send({ status: 'PAYOUT_METHOD_SAVED', destination: maskPayoutMethod(method) });
   });
 
+  // ── Driver KYC: PAN ──────────────────────────────────────────────────────
+  // The only identity field the app collects. Submitting it also attempts to
+  // create the driver's Razorpay Route linked account, because a PAN on its
+  // own pays nobody — the linked account is what fares can actually be split
+  // to. Both steps are idempotent: an existing account is returned unchanged.
+  fastify.post('/kyc/pan', { preHandler: [requireAuth] }, async (request, reply) => {
+    const uid = String(request.user!.id);
+    const raw = (request.body as any)?.pan;
+
+    const check = validatePan(raw);
+    if (!check.valid) {
+      return reply.code(400).send({ error: 'INVALID_PAN', message: check.reason });
+    }
+    const pan = normalisePan(raw);
+
+    const userRef = db.collection('users').doc(uid);
+    const snap = await userRef.get();
+    if (!snap.exists) return reply.code(404).send({ error: 'User not found.' });
+    const user = snap.data()!;
+
+    // A PAN already tied to a live linked account is not editable here: the
+    // identity Razorpay holds and the one we hold would diverge, and money is
+    // already routing against theirs. Support has to unpick that deliberately.
+    if (user.razorpay_account_id && normalisePan(user.pan_number) !== pan) {
+      return reply.code(409).send({
+        error: 'PAN_ALREADY_LINKED',
+        message: 'Your payout account is already set up with a different PAN. Contact support to change it.',
+      });
+    }
+
+    await userRef.set({
+      pan_number: pan,
+      pan_submitted_at: new Date().toISOString(),
+    }, { merge: true });
+
+    // Now try to give them somewhere for the money to land. A failure here is
+    // not a failure of the request — the PAN is saved, earnings keep accruing
+    // in the wallet, and the next submission or sweep can retry. Telling the
+    // driver their PAN was rejected because Razorpay was briefly down would be
+    // both wrong and impossible for them to act on.
+    let accountId: string | null = user.razorpay_account_id ?? null;
+    let linkError: string | null = null;
+
+    if (!accountId && isRouteConfigured()) {
+      const email = user.email || user.corporate_email;
+      const name = user.full_name || user.name || user.displayName;
+      if (!email || !name) {
+        linkError = 'Add your name and email to your profile to finish payout setup.';
+      } else {
+        try {
+          const account = await createLinkedAccount({
+            referenceId: uid,
+            email: String(email),
+            phone: user.phone_number || user.phone || null,
+            name: String(name),
+            pan,
+          });
+          accountId = account.id;
+          await userRef.set({
+            razorpay_account_id: account.id,
+            razorpay_account_linked_at: new Date().toISOString(),
+          }, { merge: true });
+          fastify.log.warn({ uid, account_id: account.id }, 'Route linked account created for driver');
+        } catch (err: any) {
+          linkError = 'We saved your PAN. Setting up your payout account is taking longer than usual.';
+          fastify.log.error({ err, uid }, 'Route linked account creation failed');
+        }
+      }
+    }
+
+    return reply.send({
+      status: 'PAN_SAVED',
+      pan: maskPan(pan),
+      kyc_status: panStatus({ pan_number: pan, razorpay_account_id: accountId }),
+      payouts_via: accountId ? 'ROUTE' : 'WALLET',
+      message: linkError,
+    });
+  });
+
+  fastify.get('/kyc/pan', { preHandler: [requireAuth] }, async (request, reply) => {
+    const uid = String(request.user!.id);
+    const user = (await db.collection('users').doc(uid).get()).data() ?? {};
+    return reply.send({
+      pan: maskPan(user.pan_number),
+      kyc_status: panStatus(user as any),
+      // Route needs no separate credentials — it rides the ordinary Razorpay
+      // keys — so this is really "can this deployment take payments at all".
+      route_available: isRouteConfigured(),
+    });
+  });
+
   fastify.get('/payout-method', { preHandler: [requireAuth] }, async (request, reply) => {
     const uid = String(request.user!.id);
     const doc = await db.collection('users').doc(uid).get();
@@ -282,6 +375,14 @@ export async function paymentRoutes(fastify: FastifyInstance) {
       // RAZORPAYX_ACCOUNT_NUMBER is set. Earnings still accrue in the wallet
       // meanwhile — they simply cannot be moved to a bank or UPI yet.
       payouts_available: isRazorpayXConfigured(),
+      // Distinct from the above, and easy to conflate. `payouts_available`
+      // is about pushing an existing WALLET BALANCE out, which needs
+      // RazorpayX. `earnings_via` is about where the fare from a NEW ride
+      // goes: with a linked account it is split to the driver at Razorpay and
+      // never lands in the wallet at all. A driver can have one and not the
+      // other, which is exactly the current state of this deployment.
+      earnings_via: doc.data()?.razorpay_account_id ? 'BANK' : 'WALLET',
+      kyc_status: panStatus(doc.data() as any),
     });
   });
 

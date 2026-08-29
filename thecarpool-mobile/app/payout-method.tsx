@@ -28,11 +28,18 @@ export default function PayoutMethodScreen() {
   const [confirmAccount, setConfirmAccount] = useState('');
   const [ifsc, setIfsc] = useState('');
   const [holderName, setHolderName] = useState('');
+  // The only identity field the app asks for. It is what lets earnings be
+  // routed to a bank at all — without it, fares stay in the wallet.
+  const [pan, setPan] = useState('');
+  const [panOnFile, setPanOnFile] = useState<string | null>(null);
+  const [kycStatus, setKycStatus] = useState<'MISSING' | 'COLLECTED' | 'LINKED'>('MISSING');
   const [saving, setSaving] = useState(false);
   const [current, setCurrent] = useState<{
     configured: boolean; destination: string;
     /** Whether the server can send payouts at all (RazorpayX configured). */
     payouts_available?: boolean;
+    /** Where a NEW ride's fare lands — distinct from withdrawing the wallet. */
+    earnings_via?: 'BANK' | 'WALLET';
   } | null>(null);
   const [balance, setBalance] = useState(0);
   const [withdrawing, setWithdrawing] = useState(false);
@@ -41,6 +48,15 @@ export default function PayoutMethodScreen() {
     apiFetch('/api/payments/payout-method')
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => { if (d) setCurrent(d); })
+      .catch(() => { /* first-time setup */ });
+
+    apiFetch('/api/payments/kyc/pan')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (!d) return;
+        setPanOnFile(d.pan ?? null);
+        setKycStatus(d.kyc_status ?? 'MISSING');
+      })
       .catch(() => { /* first-time setup */ });
 
     apiFetch('/api/users/me')
@@ -98,11 +114,39 @@ export default function PayoutMethodScreen() {
   const accMatches = accountNumber.replace(/\s/g, '') === confirmAccount.replace(/\s/g, '');
   const ifscOk = /^[A-Z]{4}0[A-Z0-9]{6}$/.test(ifsc.toUpperCase().trim());
   const nameOk = holderName.trim().length >= 2;
-  const canSave = type === 'VPA' ? vpaOk : (accOk && accMatches && ifscOk && nameOk);
+  // Mirrors validatePan() on the server: 5 letters, 4 digits, 1 letter, with
+  // the 4th character marking an individual. The server revalidates.
+  const panValue = pan.replace(/[\s-]/g, '').toUpperCase();
+  const panOk = /^[A-Z]{3}[PH][A-Z][0-9]{4}[A-Z]$/.test(panValue);
+  // A destination is only useful with an identity attached, so a driver with
+  // no PAN on file has to supply one here. Someone already linked has nothing
+  // left to prove and can edit their bank details freely.
+  const panSatisfied = kycStatus === 'LINKED' || !!panOnFile || panOk;
+  const canSave = panSatisfied && (type === 'VPA' ? vpaOk : (accOk && accMatches && ifscOk && nameOk));
 
   const save = async () => {
     setSaving(true);
     try {
+      // PAN first. It is what creates the Razorpay linked account, and saving
+      // bank details without it produces a destination nothing can pay into.
+      // Skipped once a linked account exists — the server rejects a change.
+      if (panOk && kycStatus !== 'LINKED') {
+        const panRes = await apiFetch('/api/payments/kyc/pan', {
+          method: 'POST',
+          body: JSON.stringify({ pan: panValue }),
+        });
+        const panData = await panRes.json().catch(() => ({} as any));
+        if (!panRes.ok) {
+          haptics.error();
+          Alert.alert('Could not save your PAN', panData.message || panData.error || 'Please check it and try again.');
+          setSaving(false);
+          return;
+        }
+        setPanOnFile(panData.pan ?? null);
+        setKycStatus(panData.kyc_status ?? 'COLLECTED');
+        setPan('');
+      }
+
       const payout_method = type === 'VPA'
         ? { type, vpa: vpa.trim() }
         : {
@@ -125,7 +169,9 @@ export default function PayoutMethodScreen() {
       haptics.success();
       Alert.alert(
         'Payout details saved',
-        `Earnings will reach ${data.destination} about two hours after each ride.`,
+        kycStatus === 'LINKED' || panOk
+          ? `Earnings will reach ${data.destination} about a day after each ride.`
+          : `Saved. Add your PAN to have earnings sent to ${data.destination} — until then they stay in your wallet.`,
         [{ text: 'Done', onPress: () => (router.canGoBack() ? router.back() : router.replace('/(tabs)/wallet')) }]
       );
     } catch {
@@ -150,8 +196,8 @@ export default function PayoutMethodScreen() {
 
         <Text style={styles.h1}>Where should we pay you?</Text>
         <Text style={styles.sub}>
-          Add your details and earnings reach your account about two hours after each ride.
-          Without them, earnings stay in your TheCarPool wallet.
+          Add your PAN and account details, and earnings reach your account about a day
+          after each ride. Without them, earnings stay in your TheCarPool wallet.
         </Text>
 
         {current?.configured && (
@@ -181,6 +227,39 @@ export default function PayoutMethodScreen() {
               </Text>
             )}
           </View>
+        )}
+
+        {/* PAN.
+            The whole of driver KYC: one number, no uploads, no review queue.
+            It exists because a Razorpay linked account — the thing fares are
+            actually split to — cannot be created without identifying who is
+            receiving the money. */}
+        <Text style={styles.label}>PAN number</Text>
+        {kycStatus === 'LINKED' ? (
+          <View style={styles.panDone}>
+            <Text style={styles.panDoneText}>✓ {panOnFile} — payouts to your bank are set up</Text>
+          </View>
+        ) : (
+          <>
+            <TextInput
+              style={styles.input}
+              placeholder={panOnFile ? `On file: ${panOnFile}` : 'ABCDE1234F'}
+              placeholderTextColor={c.textDisabled}
+              value={pan}
+              onChangeText={(t) => setPan(t.toUpperCase())}
+              autoCapitalize="characters"
+              autoCorrect={false}
+              maxLength={10}
+            />
+            {pan.length > 0 && !panOk && (
+              <Text style={styles.err}>A PAN is 10 characters in the form ABCDE1234F.</Text>
+            )}
+            <Text style={styles.panNote}>
+              {panOnFile
+                ? 'Your PAN is saved. We only ever show these few characters back to you.'
+                : 'Required to send money to your bank. We never ask for documents or photos.'}
+            </Text>
+          </>
         )}
 
         <View style={styles.typeRow}>
@@ -314,6 +393,12 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: c.borderDefault, marginBottom: space.md,
   },
   err: { fontFamily: font.sans, fontSize: 12, color: c.danger, marginTop: -8, marginBottom: space.md },
+  panNote: { fontFamily: font.sans, fontSize: 12, color: c.textTertiary, marginTop: -6, marginBottom: space.lg, lineHeight: 17 },
+  panDone: {
+    borderRadius: radius.md, paddingVertical: 12, paddingHorizontal: 14, marginBottom: space.lg,
+    backgroundColor: c.bgApp, borderWidth: 1, borderColor: c.borderSubtle,
+  },
+  panDoneText: { fontFamily: font.sansSemibold, fontSize: 13, color: c.goStrong },
   primaryBtn: { backgroundColor: c.actionPrimary, height: 54, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center', marginTop: space.sm },
   primaryBtnText: { fontFamily: font.sansBold, fontSize: 15.5, color: c.actionPrimaryText },
   disabled: { opacity: 0.5 },

@@ -59,7 +59,7 @@ describe('hasPayoutMethod', () => {
 describe('planPayout', () => {
   const completedAt = new Date('2026-08-09T10:00:00Z');
 
-  it('sends a driver with bank details to their account ~2h later', () => {
+  it('sends a driver with bank details to their account a day later', () => {
     const p = planPayout({ method: BANK, completedAt });
     expect(p.destination).toBe('BANK');
     expect(p.available_immediately).toBe(false);
@@ -68,6 +68,30 @@ describe('planPayout', () => {
 
   it('treats a UPI id the same as a bank account', () => {
     expect(planPayout({ method: VPA, completedAt }).destination).toBe('BANK');
+  });
+
+  it('keeps earnings in the wallet when no rail can send them', () => {
+    // Details on file, but nothing able to push money out. Promising a bank
+    // transfer here queues one that the processor refuses forever.
+    const p = planPayout({ method: BANK, completedAt, railAvailable: false });
+    expect(p.destination).toBe('WALLET');
+    expect(p.available_immediately).toBe(true);
+    expect(p.due_at).toBe(completedAt.toISOString());
+  });
+
+  it('says why, rather than telling a driver to add details they already gave', () => {
+    const p = planPayout({ method: VPA, completedAt, railAvailable: false });
+    expect(p.message).toMatch(/not switched on/i);
+    expect(p.message).not.toMatch(/add your bank details/i);
+  });
+
+  it('still asks an unconfigured driver for details when no rail exists', () => {
+    const p = planPayout({ method: null, completedAt, railAvailable: false });
+    expect(p.message).toMatch(/add your bank details/i);
+  });
+
+  it('defaults to assuming a rail, so existing callers are unchanged', () => {
+    expect(planPayout({ method: BANK, completedAt }).destination).toBe('BANK');
   });
 
   it('credits the wallet immediately when no method is set', () => {

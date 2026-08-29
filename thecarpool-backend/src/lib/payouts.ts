@@ -3,8 +3,8 @@
  * unit-testable.
  *
  * Product rule:
- *   - Driver HAS payout details  → paid straight to their account, ~2 hours
- *     after the ride completes.
+ *   - Driver HAS payout details  → paid straight to their account, about a
+ *     day after the ride completes.
  *   - Driver has NO payout details → credited to their wallet immediately on
  *     completion, with nothing held back.
  *
@@ -17,15 +17,23 @@
  * earnings, which follow the 2-hour window below. Two different flows.
  */
 
-/** How long after completion a driver's earnings are released to their bank. */
-export const PAYOUT_DELAY_MS = 2 * 60 * 60 * 1000;
+/**
+ * How long after completion a driver's earnings are released to their bank.
+ *
+ * One day, not the two hours this used to promise. Money leaves through
+ * Razorpay Route, which settles a released transfer to the linked account on
+ * its own banking cycle — a two-hour promise was one the payment rail could
+ * not keep, and a driver told "2 hours" who is paid the next morning has been
+ * misled by us, not by Razorpay.
+ */
+export const PAYOUT_DELAY_MS = 24 * 60 * 60 * 1000;
 
 /**
  * Grace period before a due payout is considered late. Only used for
- * reporting — a sweep that runs every 15 minutes will comfortably beat the
- * "2-3 hours" the driver is promised.
+ * reporting — a sweep running every 15 minutes comfortably beats the one-day
+ * promise, so anything flagged here means the sweep itself has stopped.
  */
-export const PAYOUT_LATE_AFTER_MS = 3 * 60 * 60 * 1000;
+export const PAYOUT_LATE_AFTER_MS = 30 * 60 * 60 * 1000;
 
 export type PayoutMethodType = 'VPA' | 'BANK_ACCOUNT';
 
@@ -97,16 +105,29 @@ export function planPayout(opts: {
   method?: Partial<PayoutMethod> | null;
   completedAt?: Date;
   amount?: number;
+  /**
+   * Whether this deployment can actually push a wallet balance to a bank.
+   *
+   * Having somewhere to send money is not the same as having a way to send
+   * it. Without this, a driver with UPI details on file was promised "your
+   * account, about a day" and queued a scheduled payout that the processor
+   * then refused with a 503 forever — the balance was safe in the wallet, but
+   * the promise was false and the queue grew rows nobody would ever clear.
+   *
+   * Defaults true so the routing rule stays the caller's decision to make.
+   */
+  railAvailable?: boolean;
 }): PayoutPlan {
   const completedAt = opts.completedAt ?? new Date();
+  const railAvailable = opts.railAvailable !== false;
 
-  if (hasPayoutMethod(opts.method)) {
+  if (railAvailable && hasPayoutMethod(opts.method)) {
     const due = new Date(completedAt.getTime() + PAYOUT_DELAY_MS);
     return {
       destination: 'BANK',
       due_at: due.toISOString(),
       available_immediately: false,
-      message: 'Your earnings will reach your account within about 2 hours.',
+      message: 'Your earnings will reach your account within about a day.',
     };
   }
 
@@ -114,7 +135,9 @@ export function planPayout(opts: {
     destination: 'WALLET',
     due_at: completedAt.toISOString(),
     available_immediately: true,
-    message: 'Added to your wallet. Add your bank details to get paid directly next time.',
+    message: hasPayoutMethod(opts.method)
+      ? 'Added to your wallet and spendable now. Sending earnings straight to your bank is not switched on yet.'
+      : 'Added to your wallet. Add your bank details to get paid directly next time.',
   };
 }
 

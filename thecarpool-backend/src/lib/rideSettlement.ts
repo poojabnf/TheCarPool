@@ -20,6 +20,7 @@ import { noShowOutcome } from './fees';
 import { planPayout, maskPayoutMethod } from './payouts';
 import { isSettlementDue } from './settlement';
 import { releaseTransfer } from './route';
+import { isRazorpayXConfigured } from './razorpay';
 
 function round2(n: number): number {
   return Math.round((n + Number.EPSILON) * 100) / 100;
@@ -153,7 +154,13 @@ export async function settleDueBookingsForRide(
       // Earnings land in the wallet first — it is the single source of truth
       // for what the driver is owed. With payout details on file a transfer is
       // queued; without them the balance simply stays spendable.
-      const plan = planPayout({ method: driverPayoutMethod, completedAt: new Date(settledAt) });
+      const plan = planPayout({
+        method: driverPayoutMethod,
+        completedAt: new Date(settledAt),
+        // Only queue a bank transfer if something can actually send one.
+        // Route pays its own bookings at Razorpay and never reaches here.
+        railAvailable: isRazorpayXConfigured(),
+      });
 
       tx.set(driverWalletRef, {
         ...cur,

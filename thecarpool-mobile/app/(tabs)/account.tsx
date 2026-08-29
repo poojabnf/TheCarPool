@@ -24,7 +24,7 @@ const PRIVACY_URL = 'https://thecarpool.in/privacy';
 const FAQS = [
   { q: 'How is the fare split calculated?', a: 'The trip cost is shared equally among co-passengers, with group discounts applied automatically for multiple seats.' },
   { q: 'How does the SOS button work?', a: 'One tap alerts your emergency contacts with your live location during an active trip.' },
-  { q: 'How do payouts reach drivers?', a: 'Fares are held in escrow and released to the driver’s UPI once the ride completes.' },
+  { q: 'How do payouts reach drivers?', a: 'Fares are held in escrow while the ride runs. Once it completes and the dispute window closes, the fare is released and reaches the driver’s account about a day later. Drivers add a PAN and their bank or UPI details to receive it — without them, earnings stay in the wallet.' },
 ];
 
 // Read the real shipped version rather than a hardcoded string - the old
