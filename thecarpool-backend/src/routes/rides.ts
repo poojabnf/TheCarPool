@@ -952,6 +952,23 @@ export async function rideRoutes(fastify: FastifyInstance) {
             ride.vehicle_plate = ride.vehicle_plate || d.vehicle_plate;
           }
         }
+
+        // Enrich with driver's live GPS telemetry if active
+        try {
+          const coordDoc = await db.collection('device_coordinates').doc(String(driverUid)).get();
+          if (coordDoc.exists) {
+            const cData = coordDoc.data()!;
+            if (cData.current_location?.lat && cData.current_location?.lng) {
+              ride.live_telemetry = {
+                lat: cData.current_location.lat,
+                lng: cData.current_location.lng,
+                speed: cData.speed ?? 0,
+                bearing: cData.bearing ?? 0,
+                last_updated: cData.last_updated ?? null,
+              };
+            }
+          }
+        } catch { /* non-critical enrichment */ }
       }
       return reply.send(ride);
     } catch (err: any) {

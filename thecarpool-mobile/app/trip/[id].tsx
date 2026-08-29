@@ -1,11 +1,11 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { View, Text, StyleSheet, Alert, Platform, Share, Linking } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import io from 'socket.io-client';
 import * as Location from 'expo-location';
-import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
-import { ShieldAlert, Share2, MapPin, MessageCircle, Phone, Mail } from 'lucide-react-native';
+import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
+import { ShieldAlert, Share2, MapPin, MessageCircle, Phone, Mail, Navigation } from 'lucide-react-native';
 
 const MAP_PROVIDER = Platform.OS === 'android' ? PROVIDER_GOOGLE : undefined;
 import { auth } from '../services/firebase';
@@ -23,45 +23,67 @@ const SOCKET_URL = API_URL;
  */
 const SOS_FIX_TIMEOUT_MS = 5000;
 
+function haversineDistanceKm(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const R = 6371; // km
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLon = ((lon2 - lon1) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) *
+    Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+}
+
 export default function TripScreen() {
   const { id } = useLocalSearchParams();
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  // null until the driver's device actually reports a position. It previously
-  // defaulted to a hardcoded point in Gurugram, so a rider saw a confident
-  // marker for a car that had never sent a location — worse than showing
-  // nothing, because it looks like real tracking.
+  const mapRef = useRef<MapView | null>(null);
+
+  // Live driver state
   const [driverLocation, setDriverLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [speed, setSpeed] = useState(0);
+  const [bearing, setBearing] = useState(0);
   const [geofenceAlert, setGeofenceAlert] = useState<string | null>(null);
   const [ride, setRide] = useState<any | null>(null);
   const [boardingOtp, setBoardingOtp] = useState<string | null>(null);
   const [boardingVerified, setBoardingVerified] = useState<boolean>(false);
 
-  useEffect(() => {
-    (async () => {
-      try {
-        // `/api/bookings/for-ride/:id` is the DRIVER's passenger manifest and
-        // 403s for riders (and never carries the boarding code). The rider's own
-        // booking — the only place the code is exposed — comes from /mine.
-        const [rRes, bRes] = await Promise.all([
-          apiFetch(`/api/rides/${id}`),
-          apiFetch('/api/bookings/mine'),
-        ]);
-        if (rRes.ok) setRide(await rRes.json());
-        if (bRes.ok) {
-          const data = await bRes.json();
-          const bookings: any[] = Array.isArray(data?.bookings) ? data.bookings : [];
-          const myBooking = bookings.find(
-            (b) => String(b.ride_id) === String(id) && b.escrow_status === 'HELD'
-          );
-          if (myBooking) {
-            setBoardingOtp(myBooking.boarding_otp || null);
-            setBoardingVerified(myBooking.boarding_verified ?? false);
-          }
+  const fetchRideData = async () => {
+    try {
+      const [rRes, bRes] = await Promise.all([
+        apiFetch(`/api/rides/${id}`),
+        apiFetch('/api/bookings/mine'),
+      ]);
+      if (rRes.ok) {
+        const rData = await rRes.json();
+        setRide(rData);
+        if (rData.live_telemetry?.lat && rData.live_telemetry?.lng) {
+          setDriverLocation({ lat: rData.live_telemetry.lat, lng: rData.live_telemetry.lng });
+          setSpeed(rData.live_telemetry.speed ?? 0);
+          setBearing(rData.live_telemetry.bearing ?? 0);
         }
-      } catch { /* neutral placeholder */ }
-    })();
+      }
+      if (bRes.ok) {
+        const data = await bRes.json();
+        const bookings: any[] = Array.isArray(data?.bookings) ? data.bookings : [];
+        const myBooking = bookings.find(
+          (b) => String(b.ride_id) === String(id) && b.escrow_status === 'HELD'
+        );
+        if (myBooking) {
+          setBoardingOtp(myBooking.boarding_otp || null);
+          setBoardingVerified(myBooking.boarding_verified ?? false);
+        }
+      }
+    } catch { /* neutral placeholder */ }
+  };
+
+  useEffect(() => {
+    fetchRideData();
+    // Fallback polling every 8s in case WebSocket is interrupted
+    const pollTimer = setInterval(fetchRideData, 8000);
+    return () => clearInterval(pollTimer);
   }, [id]);
 
   useEffect(() => {
@@ -73,8 +95,11 @@ export default function TripScreen() {
       socket = io(SOCKET_URL, { auth: { token } });
       socket.on('connect', () => socket?.emit('ride:join', id));
       socket.on('telemetry:broadcast', (data) => {
-        setDriverLocation({ lat: data.lat, lng: data.lng });
-        setSpeed(typeof data.speed === 'number' ? data.speed : 0);
+        if (typeof data.lat === 'number' && typeof data.lng === 'number') {
+          setDriverLocation({ lat: data.lat, lng: data.lng });
+          setSpeed(typeof data.speed === 'number' ? data.speed : 0);
+          setBearing(typeof data.bearing === 'number' ? data.bearing : 0);
+        }
       });
       socket.on('safety:alert', (a) => {
         if (a.type === 'GEOFENCE_BREACH') {
@@ -85,6 +110,44 @@ export default function TripScreen() {
     })();
     return () => { cancelled = true; socket?.disconnect(); };
   }, [id]);
+
+  // Derived route coordinates for rendering polyline
+  const routePoints = useMemo(() => {
+    if (!ride) return [];
+    if (Array.isArray(ride.route_coords) && ride.route_coords.length > 0) {
+      return ride.route_coords
+        .filter((p: any) => typeof p?.lat === 'number' && typeof p?.lng === 'number')
+        .map((p: any) => ({ latitude: p.lat, longitude: p.lng }));
+    }
+    if (ride.route_geojson?.coordinates && Array.isArray(ride.route_geojson.coordinates)) {
+      return ride.route_geojson.coordinates.map((c: any) => ({ latitude: c[1], longitude: c[0] }));
+    }
+    return [];
+  }, [ride]);
+
+  const pickupPoint = useMemo(() => {
+    const lat = Number(ride?.pickup_lat) || routePoints[0]?.latitude;
+    const lng = Number(ride?.pickup_lng) || routePoints[0]?.longitude;
+    return lat && lng ? { latitude: lat, longitude: lng } : null;
+  }, [ride, routePoints]);
+
+  const dropPoint = useMemo(() => {
+    const lat = Number(ride?.drop_lat) || routePoints[routePoints.length - 1]?.latitude;
+    const lng = Number(ride?.drop_lng) || routePoints[routePoints.length - 1]?.longitude;
+    return lat && lng ? { latitude: lat, longitude: lng } : null;
+  }, [ride, routePoints]);
+
+  // Live distance and ETA
+  const liveDistanceKm = useMemo(() => {
+    if (!driverLocation || !pickupPoint) return null;
+    return haversineDistanceKm(driverLocation.lat, driverLocation.lng, pickupPoint.latitude, pickupPoint.longitude);
+  }, [driverLocation, pickupPoint]);
+
+  const liveEtaMins = useMemo(() => {
+    if (liveDistanceKm === null) return null;
+    const effectiveSpeed = Math.max(speed, 25); // assume 25 km/h if idle in traffic
+    return Math.max(1, Math.round((liveDistanceKm / effectiveSpeed) * 60));
+  }, [liveDistanceKm, speed]);
 
   const dispatchSOS = async () => {
     try {
@@ -184,50 +247,127 @@ export default function TripScreen() {
       {/* Map */}
       <View style={styles.mapWrap}>
         <MapView
+          ref={mapRef}
           provider={MAP_PROVIDER}
           style={StyleSheet.absoluteFill}
           region={{
             // Follow the driver once we have them; otherwise sit on the
             // rider's own pickup point so the map still means something.
-            latitude: driverLocation?.lat ?? (Number(ride?.pickup_lat) || 28.6139),
-            longitude: driverLocation?.lng ?? (Number(ride?.pickup_lng) || 77.2090),
-            latitudeDelta: 0.02,
-            longitudeDelta: 0.02,
+            latitude: driverLocation?.lat ?? pickupPoint?.latitude ?? 28.6139,
+            longitude: driverLocation?.lng ?? pickupPoint?.longitude ?? 77.2090,
+            latitudeDelta: 0.025,
+            longitudeDelta: 0.025,
           }}
         >
+          {/* Planned Route Line */}
+          {routePoints.length > 1 && (
+            <Polyline
+              coordinates={routePoints}
+              strokeColor="#2563EB"
+              strokeWidth={5}
+              lineCap="round"
+              lineJoin="round"
+            />
+          )}
+
+          {/* Pickup Point Marker */}
+          {pickupPoint && (
+            <Marker
+              coordinate={pickupPoint}
+              title="Pickup Point"
+              description={ride?.source || 'Boarding location'}
+            >
+              <View style={styles.pickupPin}>
+                <View style={styles.pickupPinDot} />
+              </View>
+            </Marker>
+          )}
+
+          {/* Destination Drop Point Marker */}
+          {dropPoint && (
+            <Marker
+              coordinate={dropPoint}
+              title="Destination"
+              description={ride?.destination || 'Drop-off location'}
+            >
+              <View style={styles.destPin}>
+                <Text style={{ fontSize: 16 }}>🏁</Text>
+              </View>
+            </Marker>
+          )}
+
+          {/* 🚗 Live Car Marker */}
           {driverLocation && (
             <Marker
               coordinate={{ latitude: driverLocation.lat, longitude: driverLocation.lng }}
-              title="Driver"
-              description={`${speed} km/h`}
-            />
+              title={ride?.driver_name ? `${ride.driver_name}'s Car` : 'Driver'}
+              description={`${speed > 0 ? `${speed} km/h · ` : ''}Live on road`}
+              anchor={{ x: 0.5, y: 0.5 }}
+              flat={true}
+              rotation={bearing}
+            >
+              <View style={styles.carMarker}>
+                <Text style={styles.carEmoji}>🚗</Text>
+              </View>
+            </Marker>
           )}
         </MapView>
+
         {!driverLocation && (
           <View style={styles.awaitingBox}>
             <Text style={styles.awaitingText}>
-              {ride?.status === 'STARTED'
-                ? 'Getting your driver’s location…'
-                : 'Live tracking starts when your driver begins the trip.'}
+              {ride?.status === 'STARTED' || ride?.status === 'IN_PROGRESS'
+                ? 'Connecting to driver’s live GPS…'
+                : 'Live tracking activates when your driver starts the trip.'}
             </Text>
           </View>
         )}
+
         <HapticPressable
           style={[styles.backChip, { top: insets.top + 8 }]}
           onPress={() => (router.canGoBack() ? router.back() : router.replace('/(tabs)'))}
         >
           <Text style={styles.backChipText}>← Home</Text>
         </HapticPressable>
+
+        {driverLocation && (
+          <HapticPressable
+            style={[styles.recenterBtn, { top: insets.top + 8 }]}
+            onPress={() => {
+              mapRef.current?.animateToRegion({
+                latitude: driverLocation.lat,
+                longitude: driverLocation.lng,
+                latitudeDelta: 0.015,
+                longitudeDelta: 0.015,
+              }, 500);
+            }}
+          >
+            <Navigation color={c.textPrimary} size={14} />
+            <Text style={styles.recenterText}>Car</Text>
+          </HapticPressable>
+        )}
       </View>
 
       {/* Bottom sheet */}
       <View style={[styles.sheet, { paddingBottom: insets.bottom + space.lg }]}>
         <View style={styles.statusRow}>
           <View>
-            <Text style={styles.statusLabel}>On the way</Text>
-            <Text style={styles.eta}>Arriving in <Text style={styles.etaMono}>6 min</Text></Text>
+            <Text style={styles.statusLabel}>
+              {driverLocation ? '🟢 Live Car Tracking' : 'Trip Scheduled'}
+            </Text>
+            <Text style={styles.eta}>
+              {liveEtaMins !== null ? (
+                <>Arriving in <Text style={styles.etaMono}>~{liveEtaMins} min</Text>{liveDistanceKm !== null ? ` (${liveDistanceKm.toFixed(1)} km)` : ''}</>
+              ) : driverLocation ? (
+                'Live location active'
+              ) : (
+                'Waiting for driver'
+              )}
+            </Text>
           </View>
-          <View style={styles.speedPill}><Text style={styles.speedText}>{speed} km/h</Text></View>
+          <View style={styles.speedPill}>
+            <Text style={styles.speedText}>{speed} km/h</Text>
+          </View>
         </View>
 
         {geofenceAlert ? (
@@ -371,6 +511,36 @@ const styles = StyleSheet.create({
   mapWrap: { flex: 1 },
   backChip: { position: 'absolute', left: space.lg, backgroundColor: c.surfaceCard, borderRadius: radius.pill, paddingHorizontal: 14, paddingVertical: 8, ...shadowSm },
   backChipText: { fontFamily: font.sansSemibold, fontSize: 13, color: c.textPrimary },
+
+  recenterBtn: {
+    position: 'absolute', right: space.lg, flexDirection: 'row', alignItems: 'center', gap: 6,
+    backgroundColor: c.surfaceCard, borderRadius: radius.pill, paddingHorizontal: 14, paddingVertical: 8,
+    ...shadowSm, borderWidth: 1, borderColor: c.borderSubtle,
+  },
+  recenterText: { fontFamily: font.sansSemibold, fontSize: 13, color: c.textPrimary },
+
+  carMarker: {
+    width: 44, height: 44, borderRadius: 22,
+    backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center',
+    borderWidth: 2.5, borderColor: '#2563EB',
+    ...shadowSm,
+  },
+  carEmoji: { fontSize: 22 },
+
+  pickupPin: {
+    width: 28, height: 28, borderRadius: 14,
+    backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center',
+    borderWidth: 2, borderColor: '#16A34A',
+    ...shadowSm,
+  },
+  pickupPinDot: { width: 12, height: 12, borderRadius: 6, backgroundColor: '#16A34A' },
+
+  destPin: {
+    width: 32, height: 32, borderRadius: 16,
+    backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center',
+    borderWidth: 2, borderColor: '#DC2626',
+    ...shadowSm,
+  },
 
   sheet: {
     backgroundColor: c.bgBase, borderTopLeftRadius: radius.xl, borderTopRightRadius: radius.xl,
