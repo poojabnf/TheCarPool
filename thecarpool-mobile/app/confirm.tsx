@@ -413,6 +413,16 @@ function describeDistance(metres: number, minutes: number): string {
         {/* Fare breakdown */}
         <View style={styles.card}>
           <Row label={`Seat fare · ${seats} seat${seats > 1 ? 's' : ''}`} value={num(seatFare)} />
+          {/* Say WHY it is less than the advertised fare. An unexplained
+              smaller number reads as a mistake, and the rider wonders what
+              they are not getting. */}
+          {quote?.fare_via_stop && quote?.full_journey_fare_per_seat != null
+            && quote.full_journey_fare_per_seat > (quote.fare_per_seat ?? 0) && (
+            <Text style={styles.stopFareNote}>
+              Boarding at {quote.fare_via_stop} — {num(quote.fare_per_seat ?? 0)} a seat instead of
+              {' '}{num(quote.full_journey_fare_per_seat)} for the full journey.
+            </Text>
+          )}
           <Row label="Convenience fee" value="FREE" />
           {insuranceOpted && <Row label="Journey insurance" value={num(insuranceCharge)} />}
           <View style={styles.totalDivider} />
@@ -544,6 +554,10 @@ const styles = StyleSheet.create({
   ackRequiredNote: {
     fontFamily: font.sans, fontSize: 12.5, color: c.danger,
     textAlign: 'center', marginBottom: 8, lineHeight: 17,
+  },
+  stopFareNote: {
+    fontFamily: font.sans, fontSize: 12, color: c.goStrong,
+    marginTop: 4, marginBottom: 2, lineHeight: 16.5,
   },
   totalDivider: { height: 1, backgroundColor: c.borderSubtle, marginVertical: 8 },
   totalLabel: { fontFamily: font.sansBold, fontSize: 16, color: c.textPrimary },
