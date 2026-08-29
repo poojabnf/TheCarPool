@@ -55,28 +55,22 @@ function disputeMinutesLeft(completedAt: string | null | undefined): number {
 }
 
 function statusColor(escrow: string, ride: string | null, completedAt?: string | null) {
-  if (escrow === 'SETTLED') return c.go;
-  if (completedAt) return c.go;
-  if (ride === 'STARTED') return '#f59e0b';
+  if (escrow === 'SETTLED' || ride === 'COMPLETED' || completedAt) return '#15803D'; // Green
+  if (ride === 'STARTED' || ride === 'IN_PROGRESS') return '#C2410C'; // Orange
   if (ride === 'CANCELLED') return c.danger;
-  return c.textAccent;
+  return '#B45309'; // Yellow
 }
 
 /**
  * The booking's own state comes first, then the ride's.
- *
- * A finished booking on a ride still marked STARTED used to read "In Progress
- * · LIVE" directly above the words "Ride marked complete" — the card arguing
- * with itself. The rider's booking is over at completed_at regardless of what
- * the driver has done with the ride.
  */
 function statusLabel(escrow: string, ride: string | null, completedAt?: string | null) {
-  if (escrow === 'SETTLED') return 'Completed';
-  if (completedAt) return 'Awaiting payment';
-  if (ride === 'STARTED') return 'In Progress';
+  if (escrow === 'SETTLED' || ride === 'COMPLETED') return 'Completed';
+  if (completedAt) return 'Completed';
+  if (ride === 'STARTED' || ride === 'IN_PROGRESS') return 'Ongoing';
   if (ride === 'CANCELLED') return 'Cancelled';
-  if (ride === 'SCHEDULED') return 'Upcoming';
-  return 'Booked';
+  if (ride === 'SCHEDULED') return 'Not yet started';
+  return 'Not yet started';
 }
 
 function formatDate(iso: string | null) {

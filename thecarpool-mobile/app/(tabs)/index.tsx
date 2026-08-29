@@ -66,6 +66,10 @@ interface ActivityItem {
   title: string;
   subtitle: string;
   href: string;
+  statusLabel: string;
+  statusColor: string;
+  statusBg: string;
+  statusBorder: string;
 }
 
 type WhenKey = 'ANY' | 'NOW' | 'TODAY' | 'TOMORROW';
@@ -184,20 +188,25 @@ export default function HomeScreen() {
       if (bookingsRes.ok) {
         const d = await bookingsRes.json();
         for (const b of (d.bookings ?? [])) {
-          // Finished and settled trips belong in history, not on the home screen.
-          if (b.ride_status === 'COMPLETED' || b.escrow_status === 'SETTLED') continue;
           if (b.ride_status === 'CANCELLED') continue;
+          const isOngoing = b.ride_status === 'STARTED' || b.ride_status === 'IN_PROGRESS';
+          const isCompleted = b.ride_status === 'COMPLETED';
+          const isRequested = b.booking_status === 'REQUESTED';
+
           items.push({
             kind: 'BOOKED',
             id: String(b.id),
             at: b.departure_time || b.created_at,
             title: b.driver_name ? `Ride with ${b.driver_name}` : 'Your booking',
             subtitle: [
-              b.booking_status === 'REQUESTED' ? 'Awaiting driver' : null,
               formatDeparture(b.departure_time),
               b.vehicle,
             ].filter(Boolean).join(' · '),
             href: `/trip/${b.ride_id}`,
+            statusLabel: isCompleted ? 'Completed' : isOngoing ? 'Ongoing' : isRequested ? 'Awaiting driver' : 'Confirmed',
+            statusColor: isCompleted ? '#15803D' : isOngoing ? '#C2410C' : '#B45309',
+            statusBg: isCompleted ? '#DCFCE7' : isOngoing ? '#FFEDD5' : '#FEF3C7',
+            statusBorder: isCompleted ? '#BBF7D0' : isOngoing ? '#FED7AA' : '#FDE68A',
           });
         }
       }
@@ -205,10 +214,14 @@ export default function HomeScreen() {
       if (ridesRes.ok) {
         const d = await ridesRes.json();
         for (const r of (Array.isArray(d) ? d : (d.rides ?? []))) {
-          if (r.status === 'COMPLETED' || r.status === 'CANCELLED') continue;
+          if (r.status === 'CANCELLED') continue;
+          const isOngoing = r.status === 'STARTED' || r.status === 'IN_PROGRESS';
+          const isCompleted = r.status === 'COMPLETED';
+
           const seatsBooked = typeof r.seats_total === 'number' && typeof r.seats_available === 'number'
             ? r.seats_total - r.seats_available
             : null;
+
           items.push({
             kind: 'OFFERED',
             id: String(r.id),
@@ -219,12 +232,22 @@ export default function HomeScreen() {
               seatsBooked !== null ? `${seatsBooked}/${r.seats_total} booked` : null,
             ].filter(Boolean).join(' · '),
             href: '/(tabs)/driver',
+            // Yellow: Not yet started | Orange: Started / Ongoing | Green: Completed
+            statusLabel: isCompleted ? 'Completed' : isOngoing ? 'Started' : 'Not yet started',
+            statusColor: isCompleted ? '#15803D' : isOngoing ? '#C2410C' : '#B45309',
+            statusBg: isCompleted ? '#DCFCE7' : isOngoing ? '#FFEDD5' : '#FEF3C7',
+            statusBorder: isCompleted ? '#BBF7D0' : isOngoing ? '#FED7AA' : '#FDE68A',
           });
         }
       }
 
-      items.sort((a, b) => String(a.at ?? '').localeCompare(String(b.at ?? '')));
-      setActivity(items.slice(0, 5));
+      // Prioritize ongoing, then upcoming (not yet started), then completed
+      items.sort((a, b) => {
+        if (a.statusLabel === 'Started' || a.statusLabel === 'Ongoing') return -1;
+        if (b.statusLabel === 'Started' || b.statusLabel === 'Ongoing') return 1;
+        return String(a.at ?? '').localeCompare(String(b.at ?? ''));
+      });
+      setActivity(items.slice(0, 6));
     } catch {
       /* a shortcut list is not worth an error state */
     }
@@ -534,12 +557,23 @@ export default function HomeScreen() {
                   onPress={() => router.push(a.href as any)}
                   activeOpacity={0.8}
                 >
-                  <View style={[styles.routeDot, a.kind === 'OFFERED' && { backgroundColor: brass[500] }]} />
-                  <View style={{ flex: 1 }}>
+                  <View style={[styles.routeDot, { backgroundColor: a.statusColor }]} />
+                  <View style={{ flex: 1, marginRight: 8 }}>
                     <Text style={styles.routeTitle} numberOfLines={1}>{a.title}</Text>
                     <Text style={styles.routeSub} numberOfLines={1}>{a.subtitle}</Text>
                   </View>
-                  <Text style={styles.activityTag}>{a.kind === 'OFFERED' ? 'Driving' : 'Booked'}</Text>
+                  <View style={{
+                    paddingHorizontal: 8,
+                    paddingVertical: 3,
+                    borderRadius: radius.pill,
+                    backgroundColor: a.statusBg,
+                    borderWidth: 1,
+                    borderColor: a.statusBorder,
+                  }}>
+                    <Text style={{ fontFamily: font.sansBold, fontSize: 11, color: a.statusColor }}>
+                      {a.statusLabel}
+                    </Text>
+                  </View>
                 </HapticPressable>
               ))}
             </>

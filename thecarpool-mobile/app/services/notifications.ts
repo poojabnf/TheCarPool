@@ -23,60 +23,98 @@ Notifications.setNotificationHandler({
     shouldShowBanner: true,
     shouldShowList: true,
     shouldPlaySound: true,
-    shouldSetBadge: false,
+    shouldSetBadge: true,
   }),
 });
+
+// Top-level background message handler for FCM
+try {
+  messaging().setBackgroundMessageHandler(async () => {
+    // Processed by native system notification tray
+  });
+} catch {
+  // Already registered or web environment
+}
 
 export async function registerForPushNotifications(): Promise<string | null> {
   // Push only works on physical devices.
   if (!Device.isDevice) return null;
 
-  const { status: existing } = await Notifications.getPermissionsAsync();
-  let finalStatus = existing;
-  if (existing !== 'granted') {
-    const { status } = await Notifications.requestPermissionsAsync();
-    finalStatus = status;
-  }
-  if (finalStatus !== 'granted') return null;
-
-  if (Platform.OS === 'android') {
-    await Notifications.setNotificationChannelAsync('default', {
-      name: 'default',
-      importance: Notifications.AndroidImportance.DEFAULT,
-    });
-  }
-
   try {
-    // iOS will not issue an FCM token until the device has registered with
-    // APNs. Without this the first call after a fresh install can return an
-    // empty token, and the device then receives nothing until the next
-    // launch.
+    // 1. Expo Notification Permissions
+    const { status: existing } = await Notifications.getPermissionsAsync();
+    let finalStatus = existing;
+    if (existing !== 'granted') {
+      const { status } = await Notifications.requestPermissionsAsync();
+      finalStatus = status;
+    }
+    if (finalStatus !== 'granted') return null;
+
+    // 2. Firebase Messaging Permissions (required for APNs on iOS)
+    if (Platform.OS === 'ios') {
+      const authStatus = await messaging().requestPermission();
+      const enabled =
+        authStatus === messaging.AuthorizationStatus.AUTHORIZED ||
+        authStatus === messaging.AuthorizationStatus.PROVISIONAL;
+      if (!enabled) return null;
+    }
+
+    // 3. Android High-Importance Channel
+    if (Platform.OS === 'android') {
+      await Notifications.setNotificationChannelAsync('default', {
+        name: 'General Notifications',
+        importance: Notifications.AndroidImportance.MAX,
+        vibrationPattern: [0, 250, 250, 250],
+        lightColor: '#16A34A',
+        sound: 'default',
+        enableLights: true,
+        enableVibrate: true,
+      });
+    }
+
+    // 4. Register iOS device for remote messages
     if (Platform.OS === 'ios' && !messaging().isDeviceRegisteredForRemoteMessages) {
       await messaging().registerDeviceForRemoteMessages();
     }
 
+    // 5. Get FCM Token
     const token = await messaging().getToken();
     if (!token) return null;
 
-    // Register the token with the backend (best-effort).
+    // 6. Register token with backend
     await apiFetch('/api/users/push-token', {
       method: 'POST',
       body: JSON.stringify({ token, platform: Platform.OS }),
     });
 
     return token;
-  } catch {
+  } catch (err) {
+    console.warn('Push notification registration warning:', err);
     return null;
   }
 }
 
 /**
- * Keep the registered token current.
- *
- * FCM rotates a token on reinstall, restore-from-backup, and occasionally on
- * its own. Registering only at launch leaves the server holding a dead token
- * until the next cold start, and the user silently stops receiving anything.
- * Returns the unsubscribe function.
+ * Handle foreground notifications and present them as heads-up alerts.
+ */
+export function setupForegroundNotifications(): () => void {
+  return messaging().onMessage(async (remoteMessage) => {
+    if (remoteMessage.notification) {
+      await Notifications.scheduleNotificationAsync({
+        content: {
+          title: remoteMessage.notification.title || 'TheCarPool',
+          body: remoteMessage.notification.body || '',
+          data: remoteMessage.data || {},
+          sound: 'default',
+        },
+        trigger: null,
+      });
+    }
+  });
+}
+
+/**
+ * Keep the registered token current on rotation.
  */
 export function subscribeToTokenRefresh(): () => void {
   return messaging().onTokenRefresh(async (token) => {
@@ -85,6 +123,7 @@ export function subscribeToTokenRefresh(): () => void {
         method: 'POST',
         body: JSON.stringify({ token, platform: Platform.OS }),
       });
-    } catch { /* best effort — the next launch re-registers anyway */ }
+    } catch { /* best effort */ }
   });
 }
+

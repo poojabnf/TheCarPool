@@ -14,7 +14,11 @@ import { JetBrainsMono_500Medium, JetBrainsMono_700Bold } from '@expo-google-fon
 import { c } from '../theme/tokens';
 import { useAuthStore } from './store/authStore';
 import { auth } from './services/firebase';
-import { registerForPushNotifications, subscribeToTokenRefresh } from './services/notifications';
+import {
+  registerForPushNotifications,
+  subscribeToTokenRefresh,
+  setupForegroundNotifications,
+} from './services/notifications';
 import { apiFetch } from './services/api';
 import { warmUp } from './services/geo';
 
@@ -48,6 +52,8 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     // Held across auth changes so a sign-out/sign-in does not stack listeners.
     let unsubscribeTokenRefresh: (() => void) | undefined;
+    let unsubscribeForeground: (() => void) | undefined;
+
     const unsubscribe = auth().onAuthStateChanged(async (user) => {
       setFirebaseUser(user);
       if (!user) {
@@ -60,6 +66,8 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
         registerForPushNotifications().catch(() => { /* non-fatal */ });
         unsubscribeTokenRefresh?.();
         unsubscribeTokenRefresh = subscribeToTokenRefresh();
+        unsubscribeForeground?.();
+        unsubscribeForeground = setupForegroundNotifications();
 
         // Rehydrate the profile from backend — fixes cold-start reset bug.
         try {
@@ -97,6 +105,7 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
     return () => {
       unsubscribe();
       unsubscribeTokenRefresh?.();
+      unsubscribeForeground?.();
     };
   }, []);
 

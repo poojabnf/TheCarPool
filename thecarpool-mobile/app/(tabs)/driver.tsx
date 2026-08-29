@@ -228,6 +228,8 @@ export default function DriverInterface() {
   const [activeRideId, setActiveRideId] = useState<string | null>(null);
 
   // ── Real upcoming rides + passenger manifests (replaces the old mock card) ──
+  const [allRides, setAllRides] = useState<any[]>([]);
+  const [rideFilter, setRideFilter] = useState<'ALL' | 'ONGOING' | 'SCHEDULED' | 'COMPLETED'>('ALL');
   const [myRides, setMyRides] = useState<any[]>([]);
   const [manifests, setManifests] = useState<Record<string, any>>({});
   const [ridesLoading, setRidesLoading] = useState(false);
@@ -251,14 +253,11 @@ export default function DriverInterface() {
     setRidesLoading(true);
     try {
       const res = await apiFetch('/api/rides/mine');
-      if (!res.ok) { setMyRides([]); return; }
+      if (!res.ok) { setAllRides([]); setMyRides([]); return; }
       const all = await res.json();
       const list = Array.isArray(all) ? all : [];
 
-      // Reuse the vehicle from the driver's most recent ride. People drive the
-      // same car every day, but the form made them retype make, model, colour
-      // and number plate for every single offer. Only fills blanks, so it can
-      // never overwrite something already being typed, and stays editable.
+      // Reuse the vehicle from the driver's most recent ride.
       const last = list.find((r: any) => r.vehicle_make || r.vehicle_plate);
       if (last) {
         setVehicleMake((v) => v || last.vehicle_make || '');
@@ -270,19 +269,21 @@ export default function DriverInterface() {
         }
       }
 
-      const active = list
-        .filter((r: any) => r.status === 'SCHEDULED' || r.status === 'STARTED')
-        .slice(0, 5);
-      setMyRides(active);
-      // Fetch each ride's passenger manifest (best-effort).
-      const entries = await Promise.all(active.map(async (r: any) => {
+      const nonCancelled = list.filter((r: any) => r.status !== 'CANCELLED');
+      setAllRides(nonCancelled);
+
+      const toDisplay = nonCancelled.slice(0, 15);
+      setMyRides(toDisplay);
+
+      // Fetch passenger manifests for active / recent rides (best-effort).
+      const entries = await Promise.all(toDisplay.map(async (r: any) => {
         try {
           const m = await apiFetch(`/api/bookings/for-ride/${r.id}`);
           return m.ok ? [r.id, await m.json()] : [r.id, null];
         } catch { return [r.id, null]; }
       }));
       setManifests(Object.fromEntries(entries));
-    } catch { setMyRides([]); }
+    } catch { setAllRides([]); setMyRides([]); }
     finally { setRidesLoading(false); }
   };
   useEffect(() => { loadMyRides(); }, []);
@@ -834,159 +835,243 @@ export default function DriverInterface() {
               <Text style={styles.postRideText}>Offer a New Ride</Text>
             </HapticPressable>
 
-            <Text style={styles.sectionTitle}>My Upcoming Rides</Text>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 16, marginBottom: 8 }}>
+              <Text style={styles.sectionTitle}>Rides You Offered</Text>
+              <Text style={{ fontSize: 12, color: colors.textMuted }}>{allRides.length} total</Text>
+            </View>
 
-            {ridesLoading && myRides.length === 0 && <ActivityIndicator color={colors.success} style={{ marginTop: 12 }} />}
-            {!ridesLoading && myRides.length === 0 && (
+            {/* Filter Chips: All, Yellow (Not yet started), Orange (Ongoing), Green (Completed) */}
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, marginBottom: 14 }}>
+              {[
+                { key: 'ALL', label: `All (${allRides.length})` },
+                { key: 'SCHEDULED', label: '🟡 Not yet started' },
+                { key: 'ONGOING', label: '🟠 Ongoing' },
+                { key: 'COMPLETED', label: '🟢 Completed' },
+              ].map((f) => (
+                <HapticPressable
+                  key={f.key}
+                  style={[
+                    {
+                      paddingHorizontal: 12,
+                      paddingVertical: 6,
+                      borderRadius: 9999,
+                      borderWidth: 1,
+                      borderColor: '#D6DBE1',
+                      backgroundColor: rideFilter === f.key ? '#0B0F14' : '#FFFFFF',
+                    },
+                  ]}
+                  onPress={() => setRideFilter(f.key as any)}
+                >
+                  <Text style={{
+                    fontSize: 12,
+                    fontWeight: rideFilter === f.key ? '700' : '500',
+                    color: rideFilter === f.key ? '#FFFFFF' : '#4D5862',
+                  }}>
+                    {f.label}
+                  </Text>
+                </HapticPressable>
+              ))}
+            </ScrollView>
+
+            {ridesLoading && allRides.length === 0 && <ActivityIndicator color={colors.success} style={{ marginTop: 12 }} />}
+            {!ridesLoading && allRides.length === 0 && (
               <Text style={styles.noRidesText}>No active rides. Offer a ride to start earning.</Text>
             )}
-            {myRides.map((r) => {
-              const m = manifests[r.id];
-              const seatsFilled = m ? m.seats_booked : (r.seats_total - r.seats_available);
-              const dep = new Date(r.departure_time);
-              return (
-                <View key={r.id} style={styles.upcomingCard}>
-                  <View style={styles.routeBox}>
-                    <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-                      <Text style={styles.routeTime}>
-                        {dep.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })} · {dep.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
-                      </Text>
-                      <View style={styles.badgeRow}>
-                        <Text style={styles.miniBadge}>{r.vehicle_type || 'CAR'}</Text>
-                        {r.status === 'STARTED' && <Text style={[styles.miniBadge, { color: colors.success }]}>LIVE</Text>}
-                        {r.women_only && <Text style={styles.miniBadge}>♀ WOMEN</Text>}
-                      </View>
-                    </View>
-                    {/* Rides created before endpoints were stored have no
-                        names, so fall back to the id rather than render an
-                        arrow between two blanks. */}
-                    <Text style={styles.routeDest} numberOfLines={2}>
-                      {r.source && r.destination
-                        ? `${r.source} → ${r.destination}`
-                        : `Ride #${String(r.id).replace('ride_', '').slice(0, 8)}`}
-                      {' · '}{formatMoney(Number(r.price_split), { decimals: 0 })}/seat
-                    </Text>
-                  </View>
+            {allRides
+              .filter((r) => {
+                if (rideFilter === 'ONGOING') return r.status === 'STARTED' || r.status === 'IN_PROGRESS';
+                if (rideFilter === 'SCHEDULED') return r.status === 'SCHEDULED' || r.status === 'CREATED';
+                if (rideFilter === 'COMPLETED') return r.status === 'COMPLETED';
+                return true;
+              })
+              .map((r) => {
+                const m = manifests[r.id];
+                const seatsFilled = m ? m.seats_booked : (r.seats_total - r.seats_available);
+                const dep = new Date(r.departure_time);
+                const isOngoing = r.status === 'STARTED' || r.status === 'IN_PROGRESS';
+                const isCompleted = r.status === 'COMPLETED';
 
-                  {/* Passenger manifest with contact options */}
-                  <View style={styles.passengerBox}>
-                    <View style={{ flex: 1 }}>
-                      {m && m.passengers.length > 0 ? (
-                        m.passengers.map((p: any) => (
-                          <View key={p.booking_id} style={styles.passengerRow}>
-                            <View style={{ flex: 1 }}>
-                              <Text style={styles.manifestRow}>
-                                {p.rider_name}{p.rider_rating ? ` ★${p.rider_rating}` : ''} · {p.seats_booked} seat{p.seats_booked > 1 ? 's' : ''}
-                              </Text>
-                              {/* Awaiting this driver's decision. Their fare is
-                                  already held, so declining refunds it. */}
-                              {p.booking_status === 'REQUESTED' && (
-                                <View style={styles.decisionRow}>
-                                  <Text style={styles.pendingTag}>Awaiting your approval</Text>
-                                  <HapticPressable
-                                    haptic="press"
-                                    style={styles.seatAcceptBtn}
-                                    onPress={() => decideBooking(p.booking_id, 'ACCEPT', r.id)}
-                                    disabled={decidingBooking === p.booking_id}
-                                  >
-                                    <Text style={styles.seatAcceptBtnText}>Accept</Text>
-                                  </HapticPressable>
-                                  <HapticPressable
-                                    haptic="warning"
-                                    style={styles.seatDeclineBtn}
-                                    onPress={() => decideBooking(p.booking_id, 'DECLINE', r.id)}
-                                    disabled={decidingBooking === p.booking_id}
-                                  >
-                                    <Text style={styles.seatDeclineBtnText}>Decline</Text>
-                                  </HapticPressable>
-                                </View>
-                              )}
-                              {p.rider_phone && (
-                                <Text style={styles.passengerPhoneText}>📞 {p.rider_phone}</Text>
-                              )}
-                            </View>
-                            <View style={styles.passengerContactIcons}>
-                              {p.rider_phone && (
-                                <HapticPressable
-                                  haptic="tap"
-                                  style={styles.passengerContactBtn}
-                                  onPress={() => Linking.openURL(`tel:${p.rider_phone}`)}
-                                  accessibilityLabel={`Call ${p.rider_name}`}
-                                >
-                                  <Phone color={colors.success} size={15} />
-                                </HapticPressable>
-                              )}
-                              {p.rider_email && (
-                                <HapticPressable
-                                  haptic="tap"
-                                  style={styles.passengerContactBtn}
-                                  onPress={() => Linking.openURL(`mailto:${p.rider_email}`)}
-                                  accessibilityLabel={`Email ${p.rider_name}`}
-                                >
-                                  <Mail color={colors.primary} size={15} />
-                                </HapticPressable>
-                              )}
-                            </View>
-                          </View>
-                        ))
-                      ) : (
-                        <Text style={styles.manifestRow}>No bookings yet</Text>
-                      )}
-                    </View>
-                    <Text style={styles.seatText}>{seatsFilled}/{r.seats_total} Seats Filled</Text>
-                  </View>
+                // Yellow: Not yet started | Orange: Started / Ongoing | Green: Completed
+                const statusLabel = isCompleted ? 'Completed' : isOngoing ? 'Ongoing' : 'Not yet started';
+                const statusColor = isCompleted ? '#15803D' : isOngoing ? '#C2410C' : '#B45309';
+                const statusBg = isCompleted ? '#DCFCE7' : isOngoing ? '#FFEDD5' : '#FEF3C7';
+                const statusBorder = isCompleted ? '#BBF7D0' : isOngoing ? '#FED7AA' : '#FDE68A';
 
-                  {/* Boarding codes.
-                      This used to be reachable only by pressing "Start trip",
-                      which meant a driver who had already started had no way
-                      back to it — and one who hadn't found it never verified
-                      anyone. Every booking then settled as a no-show at 5%.
-                      Give it its own button whenever anyone has a seat. */}
-                  {m && m.passengers.length > 0 && (r.status === 'SCHEDULED' || r.status === 'STARTED') && (() => {
-                    const pending = m.passengers.filter((p: any) => !p.boarding_verified).length;
-                    return (
-                      <HapticPressable
-                        haptic="press"
-                        style={styles.verifyBoardingBtn}
-                        onPress={() => { setOtpInput(''); setOtpTarget(null); setBoardingRideId(r.id); }}
-                        activeOpacity={0.9}
-                      >
-                        <Text style={styles.verifyBoardingText}>
-                          {pending === 0
-                            ? '✓ All riders verified'
-                            : `🔑 Enter boarding code · ${pending} to verify`}
+                return (
+                  <View key={r.id} style={styles.upcomingCard}>
+                    <View style={styles.routeBox}>
+                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <Text style={styles.routeTime}>
+                          {dep.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })} · {dep.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
                         </Text>
-                      </HapticPressable>
-                    );
-                  })()}
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                          <Text style={styles.miniBadge}>{r.vehicle_type || 'CAR'}</Text>
+                          {/* Color-Coded Status Badge */}
+                          <View style={{
+                            paddingHorizontal: 8,
+                            paddingVertical: 3,
+                            borderRadius: 9999,
+                            backgroundColor: statusBg,
+                            borderWidth: 1,
+                            borderColor: statusBorder,
+                          }}>
+                            <Text style={{ fontSize: 11, fontWeight: '700', color: statusColor }}>
+                              {statusLabel}
+                            </Text>
+                          </View>
+                          {r.women_only && <Text style={styles.miniBadge}>♀ WOMEN</Text>}
+                        </View>
+                      </View>
+                      {/* Rides created before endpoints were stored have no
+                          names, so fall back to the id rather than render an
+                          arrow between two blanks. */}
+                      <Text style={styles.routeDest} numberOfLines={2}>
+                        {r.source && r.destination
+                          ? `${r.source} → ${r.destination}`
+                          : `Ride #${String(r.id).replace('ride_', '').slice(0, 8)}`}
+                        {' · '}{formatMoney(Number(r.price_split), { decimals: 0 })}/seat
+                      </Text>
+                    </View>
 
-                  {/* Lifecycle controls */}
-                  <View style={{ flexDirection: 'row', gap: 8, marginTop: 12 }}>
-                    {r.status === 'SCHEDULED' && (
-                      <>
-                        <HapticPressable haptic="press" style={styles.startBtn} onPress={() => updateRideStatus(r.id, 'STARTED')} activeOpacity={0.9}>
-                          <Text style={styles.startBtnText}>▶ Start trip</Text>
+                    {/* Passenger manifest with contact options */}
+                    <View style={styles.passengerBox}>
+                      <View style={{ flex: 1 }}>
+                        {m && m.passengers.length > 0 ? (
+                          m.passengers.map((p: any) => (
+                            <View key={p.booking_id} style={styles.passengerRow}>
+                              <View style={{ flex: 1 }}>
+                                <Text style={styles.manifestRow}>
+                                  {p.rider_name}{p.rider_rating ? ` ★${p.rider_rating}` : ''} · {p.seats_booked} seat{p.seats_booked > 1 ? 's' : ''}
+                                </Text>
+                                {/* Awaiting this driver's decision. Their fare is
+                                    already held, so declining refunds it. */}
+                                {p.booking_status === 'REQUESTED' && (
+                                  <View style={styles.decisionRow}>
+                                    <Text style={styles.pendingTag}>Awaiting your approval</Text>
+                                    <HapticPressable
+                                      haptic="press"
+                                      style={styles.seatAcceptBtn}
+                                      onPress={() => decideBooking(p.booking_id, 'ACCEPT', r.id)}
+                                      disabled={decidingBooking === p.booking_id}
+                                    >
+                                      <Text style={styles.seatAcceptBtnText}>Accept</Text>
+                                    </HapticPressable>
+                                    <HapticPressable
+                                      haptic="warning"
+                                      style={styles.seatDeclineBtn}
+                                      onPress={() => decideBooking(p.booking_id, 'DECLINE', r.id)}
+                                      disabled={decidingBooking === p.booking_id}
+                                    >
+                                      <Text style={styles.seatDeclineBtnText}>Decline</Text>
+                                    </HapticPressable>
+                                  </View>
+                                )}
+                                {p.rider_phone && (
+                                  <Text style={styles.passengerPhoneText}>📞 {p.rider_phone}</Text>
+                                )}
+                              </View>
+                              <View style={styles.passengerContactIcons}>
+                                {p.rider_phone && (
+                                  <HapticPressable
+                                    haptic="tap"
+                                    style={styles.passengerContactBtn}
+                                    onPress={() => Linking.openURL(`tel:${p.rider_phone}`)}
+                                    accessibilityLabel={`Call ${p.rider_name}`}
+                                  >
+                                    <Phone color={colors.success} size={15} />
+                                  </HapticPressable>
+                                )}
+                                {p.rider_email && (
+                                  <HapticPressable
+                                    haptic="tap"
+                                    style={styles.passengerContactBtn}
+                                    onPress={() => Linking.openURL(`mailto:${p.rider_email}`)}
+                                    accessibilityLabel={`Email ${p.rider_name}`}
+                                  >
+                                    <Mail color={colors.primary} size={15} />
+                                  </HapticPressable>
+                                )}
+                              </View>
+                            </View>
+                          ))
+                        ) : (
+                          <Text style={styles.manifestRow}>No bookings yet</Text>
+                        )}
+                      </View>
+                      <Text style={styles.seatText}>{seatsFilled}/{r.seats_total} Seats Filled</Text>
+                    </View>
+
+                    {/* Boarding codes.
+                        This used to be reachable only by pressing "Start trip",
+                        which meant a driver who had already started had no way
+                        back to it — and one who hadn't found it never verified
+                        anyone. Every booking then settled as a no-show at 5%.
+                        Give it its own button whenever anyone has a seat. */}
+                    {m && m.passengers.length > 0 && (r.status === 'SCHEDULED' || r.status === 'STARTED') && (() => {
+                      const pending = m.passengers.filter((p: any) => !p.boarding_verified).length;
+                      return (
+                        <HapticPressable
+                          haptic="press"
+                          style={styles.verifyBoardingBtn}
+                          onPress={() => { setOtpInput(''); setOtpTarget(null); setBoardingRideId(r.id); }}
+                          activeOpacity={0.9}
+                        >
+                          <Text style={styles.verifyBoardingText}>
+                            {pending === 0
+                              ? '✓ All riders verified'
+                              : `🔑 Enter boarding code · ${pending} to verify`}
+                          </Text>
                         </HapticPressable>
-                        <HapticPressable haptic="press" style={styles.editRideBtn} onPress={() => openEdit(r)} activeOpacity={0.9}>
-                          <Text style={styles.editRideBtnText}>✎ Edit</Text>
+                      );
+                    })()}
+
+                    {/* Lifecycle controls */}
+                    {isCompleted ? (
+                      <View style={{
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        backgroundColor: '#DCFCE7',
+                        paddingHorizontal: 12,
+                        paddingVertical: 10,
+                        borderRadius: 12,
+                        marginTop: 12,
+                      }}>
+                        <Text style={{ fontSize: 12.5, fontWeight: '600', color: '#15803D' }}>
+                          ✓ Trip Completed & Settled
+                        </Text>
+                        <HapticPressable style={styles.chatMiniBtn} onPress={() => router.push(`/chat/${r.id}`)} activeOpacity={0.9}>
+                          <Text style={styles.chatMiniText}>💬</Text>
                         </HapticPressable>
-                        <HapticPressable haptic="warning" style={styles.cancelRideBtn} onPress={() => updateRideStatus(r.id, 'CANCELLED')} activeOpacity={0.9}>
-                          <Text style={styles.cancelRideBtnText}>✕ Cancel</Text>
+                      </View>
+                    ) : (
+                      <View style={{ flexDirection: 'row', gap: 8, marginTop: 12 }}>
+                        {r.status === 'SCHEDULED' && (
+                          <>
+                            <HapticPressable haptic="press" style={styles.startBtn} onPress={() => updateRideStatus(r.id, 'STARTED')} activeOpacity={0.9}>
+                              <Text style={styles.startBtnText}>▶ Start trip</Text>
+                            </HapticPressable>
+                            <HapticPressable haptic="press" style={styles.editRideBtn} onPress={() => openEdit(r)} activeOpacity={0.9}>
+                              <Text style={styles.editRideBtnText}>✎ Edit</Text>
+                            </HapticPressable>
+                            <HapticPressable haptic="warning" style={styles.cancelRideBtn} onPress={() => updateRideStatus(r.id, 'CANCELLED')} activeOpacity={0.9}>
+                              <Text style={styles.cancelRideBtnText}>✕ Cancel</Text>
+                            </HapticPressable>
+                          </>
+                        )}
+                        {r.status === 'STARTED' && (
+                          <HapticPressable haptic="press" style={styles.completeBtn} onPress={() => updateRideStatus(r.id, 'COMPLETED')} activeOpacity={0.9}>
+                            <Text style={styles.startBtnText}>✓ Complete trip · release escrow</Text>
+                          </HapticPressable>
+                        )}
+                        <HapticPressable style={styles.chatMiniBtn} onPress={() => router.push(`/chat/${r.id}`)} activeOpacity={0.9}>
+                          <Text style={styles.chatMiniText}>💬</Text>
                         </HapticPressable>
-                      </>
+                      </View>
                     )}
-                    {r.status === 'STARTED' && (
-                      <HapticPressable haptic="press" style={styles.completeBtn} onPress={() => updateRideStatus(r.id, 'COMPLETED')} activeOpacity={0.9}>
-                        <Text style={styles.startBtnText}>✓ Complete trip · release escrow</Text>
-                      </HapticPressable>
-                    )}
-                    <HapticPressable style={styles.chatMiniBtn} onPress={() => router.push(`/chat/${r.id}`)} activeOpacity={0.9}>
-                      <Text style={styles.chatMiniText}>💬</Text>
-                    </HapticPressable>
                   </View>
-                </View>
-              );
-            })}
+                );
+              })}
           </ScrollView>
         )}
 

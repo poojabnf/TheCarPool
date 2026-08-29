@@ -32,11 +32,28 @@ export async function sendPushToUser(
       notification: { title, body },
       data: data || {},
       apns: {
-        payload: { aps: { sound: 'default', badge: 1 } },
+        payload: {
+          aps: {
+            sound: 'default',
+            badge: 1,
+            contentAvailable: true,
+          },
+        },
+        headers: {
+          'apns-priority': '10',
+          'apns-push-type': 'alert',
+        },
       },
       android: {
         priority: 'high' as const,
-        notification: { sound: 'default' },
+        notification: {
+          channelId: 'default',
+          sound: 'default',
+          priority: 'high' as const,
+          defaultSound: true,
+          defaultVibrateTimings: true,
+          visibility: 'public' as const,
+        },
       },
     }));
 
