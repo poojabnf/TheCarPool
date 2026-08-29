@@ -63,6 +63,10 @@ export default function PayoutMethodScreen() {
   // with phone OTP and have none on file, which silently blocked the very
   // first real PAN submission — the PAN saved, no account was created, and
   // nothing said so.
+  // The legal name on the PAN card, kept separate from the display name.
+  // Razorpay checks the linked account's name against the PAN, so a chosen
+  // display name like "Yadav Ji" would fail their KYC.
+  const [panName, setPanName] = useState('');
   const [payoutEmail, setPayoutEmail] = useState('');
   const [needsEmail, setNeedsEmail] = useState(false);
   const [kycStatus, setKycStatus] = useState<'MISSING' | 'COLLECTED' | 'LINKED'>('MISSING');
@@ -223,7 +227,12 @@ export default function PayoutMethodScreen() {
   const panOk = /^[A-Z]{3}[PH][A-Z][0-9]{4}[A-Z]$/.test(panValue);
   const emailOk = /^[^@\s]+@[^@\s]+\.[^@\s]{2,}$/.test(payoutEmail.trim());
   const emailSatisfied = !needsEmail || kycStatus === 'LINKED' || emailOk;
-  const panSatisfied = kycStatus === 'LINKED' || !!panOnFile || panOk;
+  // Any word may be the surname: Indian names order differently by region, and
+  // a rule demanding the LAST word match would reject many real people.
+  const panNameOk = panOk && panName
+    .trim().toUpperCase().split(/[^A-Z]+/).filter(Boolean)
+    .some((w: string) => w[0] === panValue[4]);
+  const panSatisfied = kycStatus === 'LINKED' || !!panOnFile || (panOk && panNameOk);
   const canSave = panSatisfied && emailSatisfied && (type === 'VPA' ? vpaOk : (accOk && accMatches && ifscOk && nameOk));
 
   const saveDetails = async () => {
@@ -234,6 +243,7 @@ export default function PayoutMethodScreen() {
           method: 'POST',
           body: JSON.stringify({
             pan: panValue,
+            pan_name: panName.trim(),
             ...(payoutEmail.trim() ? { email: payoutEmail.trim() } : {}),
           }),
         });
@@ -548,6 +558,26 @@ export default function PayoutMethodScreen() {
                 />
                 {pan.length > 0 && !panOk && (
                   <Text style={styles.err}>A PAN is 10 characters in the format ABCDE1234F.</Text>
+                )}
+
+                <Text style={styles.label}>Name as printed on your PAN</Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="e.g. SANJAY YADAV"
+                  placeholderTextColor={c.textDisabled}
+                  value={panName}
+                  onChangeText={setPanName}
+                  autoCapitalize="words"
+                  autoCorrect={false}
+                  maxLength={80}
+                />
+                {/* Checked against the PAN's 5th character, which is the
+                    holder's surname initial — so a mismatch is caught here
+                    rather than failing Razorpay's KYC days later. */}
+                {panOk && panName.trim().length >= 2 && !panNameOk && (
+                  <Text style={styles.err}>
+                    This name doesn't match the PAN. Your surname should begin with "{panValue[4]}".
+                  </Text>
                 )}
                 <Text style={styles.panNote}>
                   {panOnFile

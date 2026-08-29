@@ -99,3 +99,70 @@ export function panStatus(user: {
   if (user.razorpay_account_id) return 'LINKED';
   return validatePan(user.pan_number).valid ? 'COLLECTED' : 'MISSING';
 }
+
+/**
+ * The surname initial encoded in a PAN.
+ *
+ * The 5th character of a PAN is the first letter of the holder's surname (for
+ * an individual). It is the ONLY thing about the holder's identity that can be
+ * derived from the number itself, offline, with no API call.
+ */
+export function panSurnameInitial(raw: unknown): string | null {
+  const pan = normalisePan(raw);
+  if (!validatePan(pan).valid) return null;
+  return pan[4];
+}
+
+export interface NameMatch {
+  match: boolean;
+  /** Rider-facing explanation, safe to display. */
+  reason?: string;
+}
+
+/**
+ * Does this name plausibly belong to this PAN?
+ *
+ * WHAT THIS IS: a structural consistency check. The PAN's 5th character must
+ * be the first letter of the holder's surname, so we check it against the
+ * initials of the words in the name given. It catches the case that matters
+ * in practice — someone entering a family member's or a stranger's PAN.
+ *
+ * WHAT THIS IS NOT: verification. Nothing offline can confirm a PAN exists or
+ * that this person holds it; that needs a PAN verification API and a contract
+ * with a provider. Razorpay performs its own KYC when the linked account is
+ * created, and that remains the real check. Do not describe this to a user as
+ * "PAN verified".
+ *
+ * Deliberately forgiving about WHICH word is the surname. Indian names order
+ * differently across regions — surname first in Maharashtra and much of the
+ * south, last in the north, and many people write initials expanded or not —
+ * so any word matching is accepted. Requiring the LAST word to match would
+ * reject large numbers of legitimate users, and a check that fires on honest
+ * people gets switched off.
+ */
+export function nameMatchesPan(rawPan: unknown, rawName: unknown): NameMatch {
+  const initial = panSurnameInitial(rawPan);
+  if (!initial) return { match: false, reason: 'Enter a valid PAN first.' };
+
+  const name = String(rawName ?? '').trim();
+  if (name.length < 2) {
+    return { match: false, reason: 'Enter your name exactly as printed on your PAN card.' };
+  }
+
+  // Words only; strip initials-with-dots and punctuation so "R. K. Sharma"
+  // yields R, K, SHARMA.
+  const words = name
+    .toUpperCase()
+    .split(/[^A-Z]+/)
+    .filter(Boolean);
+  if (words.length === 0) {
+    return { match: false, reason: 'Enter your name exactly as printed on your PAN card.' };
+  }
+
+  if (words.some((w) => w[0] === initial)) return { match: true };
+
+  return {
+    match: false,
+    reason: `That name doesn't match this PAN. The 5th character of your PAN is "${initial}", so your surname should begin with "${initial}". Enter your name exactly as printed on the card.`,
+  };
+}

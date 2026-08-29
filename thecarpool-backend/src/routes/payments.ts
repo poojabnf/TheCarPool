@@ -13,7 +13,7 @@ import {
   buildPayoutStages,
   PayoutTracking,
 } from '../lib/payouts';
-import { validatePan, normalisePan, maskPan, panStatus } from '../lib/kyc';
+import { validatePan, normalisePan, maskPan, panStatus, nameMatchesPan } from '../lib/kyc';
 import { isRouteConfigured, createLinkedAccount } from '../lib/route';
 import { creditWalletForPayment } from '../lib/wallet';
 import { calculateSplit, suggestPricing, fuelSavings } from '../lib/pricing';
@@ -332,6 +332,29 @@ export async function paymentRoutes(fastify: FastifyInstance) {
     }
     const pan = normalisePan(raw);
 
+    // The name must be consistent with the PAN. The 5th character of a PAN is
+    // the holder's surname initial, so a name whose words all start with
+    // something else cannot be the holder — which is what catches someone
+    // entering a relative's card.
+    //
+    // This is a consistency check, NOT verification: nothing offline proves a
+    // PAN exists or belongs to this person. Razorpay's own KYC on the linked
+    // account remains the real check, and no part of the UI calls this
+    // "verified".
+    const submittedName = typeof (request.body as any)?.pan_name === 'string'
+      ? String((request.body as any).pan_name).trim().replace(/\s+/g, ' ')
+      : '';
+    if (!submittedName) {
+      return reply.code(400).send({
+        error: 'PAN_NAME_REQUIRED',
+        message: 'Enter your name exactly as printed on your PAN card.',
+      });
+    }
+    const nameCheck = nameMatchesPan(pan, submittedName);
+    if (!nameCheck.match) {
+      return reply.code(400).send({ error: 'PAN_NAME_MISMATCH', message: nameCheck.reason });
+    }
+
     const userRef = db.collection('users').doc(uid);
     const snap = await userRef.get();
     if (!snap.exists) return reply.code(404).send({ error: 'User not found.' });
@@ -349,6 +372,9 @@ export async function paymentRoutes(fastify: FastifyInstance) {
 
     await userRef.set({
       pan_number: pan,
+      // Kept separate from the display name: this is the legal name on the
+      // card, and it is what Razorpay's linked account is opened against.
+      pan_name: submittedName,
       pan_submitted_at: new Date().toISOString(),
     }, { merge: true });
 
@@ -387,7 +413,9 @@ export async function paymentRoutes(fastify: FastifyInstance) {
       }
 
       const email = user.email || user.corporate_email || (emailOk ? submittedEmail : null);
-      const name = user.full_name || user.name || user.displayName;
+      // The PAN name first: Razorpay checks the account name against the PAN,
+      // so a display name like "Yadav Ji" would be rejected by their KYC.
+      const name = submittedName || user.full_name || user.name || user.displayName;
       if (!email) {
         linkBlocked = 'EMAIL_REQUIRED';
         linkError = 'Add an email address so we can set up your bank payouts — Razorpay needs one to open your payout account.';

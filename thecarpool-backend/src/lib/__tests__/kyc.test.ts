@@ -1,4 +1,4 @@
-import { validatePan, normalisePan, maskPan, panStatus } from '../kyc';
+import { validatePan, normalisePan, maskPan, panStatus, panSurnameInitial, nameMatchesPan } from '../kyc';
 
 describe('normalisePan', () => {
   it('uppercases and strips the separators people type', () => {
@@ -92,5 +92,69 @@ describe('panStatus', () => {
 
   it('reports LINKED from the account alone, since that is what moves money', () => {
     expect(panStatus({ razorpay_account_id: 'acc_123' })).toBe('LINKED');
+  });
+});
+
+describe('panSurnameInitial', () => {
+  it('reads the 5th character, which encodes the surname initial', () => {
+    expect(panSurnameInitial('ABCPS1234F')).toBe('S');
+    expect(panSurnameInitial('abcpy1234f')).toBe('Y');
+  });
+
+  it('returns null for anything that is not a usable PAN', () => {
+    expect(panSurnameInitial('nonsense')).toBeNull();
+    expect(panSurnameInitial('ABCCS1234F')).toBeNull(); // company PAN
+    expect(panSurnameInitial(null)).toBeNull();
+  });
+});
+
+describe('nameMatchesPan', () => {
+  const PAN = 'ABCPY1234F'; // surname initial: Y
+
+  it('accepts a matching surname', () => {
+    expect(nameMatchesPan(PAN, 'Sanjay Yadav').match).toBe(true);
+  });
+
+  it('accepts the surname written first, as much of India does', () => {
+    // Surname-first is normal in Maharashtra and much of the south. Requiring
+    // the LAST word to match would reject a great many real people.
+    expect(nameMatchesPan(PAN, 'Yadav Sanjay').match).toBe(true);
+  });
+
+  it('accepts a name written with initials', () => {
+    expect(nameMatchesPan(PAN, 'S. K. Yadav').match).toBe(true);
+    expect(nameMatchesPan('ABCPR1234F', 'R. Kumar').match).toBe(true);
+  });
+
+  it('ignores case and extra whitespace', () => {
+    expect(nameMatchesPan(PAN, '  sanjay   YADAV  ').match).toBe(true);
+  });
+
+  it('rejects a name whose surname cannot belong to this PAN', () => {
+    // The case that matters: someone entering a relative's or stranger's PAN.
+    const r = nameMatchesPan(PAN, 'Sanjay Sharma');
+    expect(r.match).toBe(false);
+    expect(r.reason).toContain('Y');
+  });
+
+  it('rejects an empty or one-character name', () => {
+    expect(nameMatchesPan(PAN, '').match).toBe(false);
+    expect(nameMatchesPan(PAN, 'Y').match).toBe(false);
+    expect(nameMatchesPan(PAN, null).match).toBe(false);
+  });
+
+  it('rejects when the PAN itself is unusable, rather than passing blindly', () => {
+    const r = nameMatchesPan('garbage', 'Sanjay Yadav');
+    expect(r.match).toBe(false);
+    expect(r.reason).toMatch(/valid PAN/i);
+  });
+
+  it('accepts a single-word name that matches', () => {
+    // Mononyms exist and are valid on a PAN card.
+    expect(nameMatchesPan(PAN, 'Yadav').match).toBe(true);
+  });
+
+  it('is not defeated by punctuation between name parts', () => {
+    expect(nameMatchesPan(PAN, 'Sanjay-Kumar Yadav').match).toBe(true);
   });
 });
