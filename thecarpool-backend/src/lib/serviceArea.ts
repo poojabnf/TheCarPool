@@ -49,18 +49,51 @@ export function serviceArea(): CountryArea {
   return AREAS[iso] ?? AREAS.IN;
 }
 
+const FOREIGN_COUNTRIES = [
+  'pakistan', 'nepal', 'bangladesh', 'sri lanka', 'myanmar', 'burma', 'bhutan',
+  'china', 'afghanistan', 'maldives', 'united states', 'usa', 'uk', 'united kingdom',
+  'canada', 'australia',
+];
+
+const INDIAN_STATES = [
+  'andhra pradesh', 'arunachal pradesh', 'assam', 'bihar', 'chhattisgarh', 'goa', 'gujarat',
+  'haryana', 'himachal pradesh', 'jharkhand', 'karnataka', 'kerala', 'madhya pradesh',
+  'maharashtra', 'manipur', 'meghalaya', 'mizoram', 'nagaland', 'odisha', 'punjab',
+  'rajasthan', 'sikkim', 'tamil nadu', 'telangana', 'tripura', 'uttar pradesh',
+  'uttarakhand', 'west bengal', 'delhi', 'jammu', 'kashmir', 'ladakh', 'puducherry',
+  'chandigarh', 'daman', 'diu', 'lakshadweep', 'andaman', 'nicobar'
+];
+
 /**
  * Does this address sit in the serviceable country?
  *
- * Google's formattedAddress ends with the country name, so that is what is
- * checked. A result with no address at all is REJECTED rather than allowed:
- * letting unknowns through is what a bounding box already does, and this
- * layer exists precisely to catch what the box lets slip.
+ * Google Places in India formats addresses as e.g. "Jhansi, Uttar Pradesh 284001"
+ * or "New Delhi, Delhi", often omitting the literal word "India" at the end.
+ * We reject known foreign/neighbouring countries and accept addresses containing
+ * Indian states, 6-digit Indian PIN codes, or the country name.
  */
 export function isInServiceArea(address: string | null | undefined): boolean {
   const area = serviceArea();
-  const text = String(address ?? '').trim();
+  const text = String(address ?? '').trim().toLowerCase();
   if (!text) return false;
+
+  // 1. Explicitly reject known foreign / neighbouring countries
+  for (const country of FOREIGN_COUNTRIES) {
+    if (new RegExp(`\\b${country}\\b`, 'i').test(text)) {
+      return false;
+    }
+  }
+
+  // 2. If configured for India, match India, Indian states, or 6-digit Indian postal codes
+  if (area.iso === 'IN') {
+    if (/\bindia\b/i.test(text)) return true;
+    if (/\b[1-9][0-9]{5}\b/.test(text)) return true;
+    for (const state of INDIAN_STATES) {
+      if (new RegExp(`\\b${state}\\b`, 'i').test(text)) return true;
+    }
+    return false;
+  }
+
   return new RegExp(`(^|,)\\s*${area.name}\\s*$`, 'i').test(text);
 }
 

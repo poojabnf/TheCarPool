@@ -31,11 +31,10 @@ export type GeoOutcome =
 /**
  * Below this we don't search.
  *
- * Raised from 3 to 4: every lookup is a billed Google Places request, and
- * 3-character prefixes are both the least useful and the most numerous — you
- * pass through one on the way to typing anything longer.
+ * 3-character minimum allows searching for short place names (e.g. "Goa",
+ * "Leh", "Diu", "Mau") without firing on 1 or 2 character keystrokes.
  */
-export const MIN_QUERY_LENGTH = 4;
+export const MIN_QUERY_LENGTH = 3;
 
 /**
  * How long the field must be idle before we spend a lookup.

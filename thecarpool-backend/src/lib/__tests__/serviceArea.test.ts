@@ -23,6 +23,9 @@ describe('serviceArea', () => {
 describe('isInServiceArea', () => {
   it('accepts an Indian address', () => {
     expect(isInServiceArea('Connaught Place, New Delhi, Delhi 110001, India')).toBe(true);
+    expect(isInServiceArea('Jhokan Bagh, Jhansi, Uttar Pradesh 284001')).toBe(true);
+    expect(isInServiceArea('Westend Marg, Saket, New Delhi, Delhi 110030')).toBe(true);
+    expect(isInServiceArea('Bengaluru, Karnataka')).toBe(true);
   });
 
   it('rejects a US address — the case that started this', () => {
