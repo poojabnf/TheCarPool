@@ -1,11 +1,15 @@
 import React, { useEffect, useState, useMemo, useRef } from 'react';
-import { View, Text, StyleSheet, Alert, Platform, Share, Linking } from 'react-native';
+import { View, Text, StyleSheet, Alert, Platform, Share, Linking, LayoutAnimation, UIManager } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import io from 'socket.io-client';
 import * as Location from 'expo-location';
 import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
-import { ShieldAlert, Share2, MapPin, MessageCircle, Phone, Mail, Navigation } from 'lucide-react-native';
+import { ShieldAlert, Share2, MapPin, MessageCircle, Phone, Mail, Navigation, ChevronUp, ChevronDown } from 'lucide-react-native';
+
+if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
 
 const MAP_PROVIDER = Platform.OS === 'android' ? PROVIDER_GOOGLE : undefined;
 import { auth } from '../services/firebase';
@@ -49,6 +53,13 @@ export default function TripScreen() {
   const [ride, setRide] = useState<any | null>(null);
   const [boardingOtp, setBoardingOtp] = useState<string | null>(null);
   const [boardingVerified, setBoardingVerified] = useState<boolean>(false);
+  const [isSheetExpanded, setIsSheetExpanded] = useState<boolean>(false);
+
+  const toggleSheet = () => {
+    haptics.tap();
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setIsSheetExpanded((prev) => !prev);
+  };
 
   const fetchRideData = async () => {
     try {
@@ -348,10 +359,21 @@ export default function TripScreen() {
         )}
       </View>
 
-      {/* Bottom sheet */}
-      <View style={[styles.sheet, { paddingBottom: insets.bottom + space.lg }]}>
-        <View style={styles.statusRow}>
-          <View>
+      {/* Bottom sheet with Hide / Unhide Toggle */}
+      <View style={[styles.sheet, { paddingBottom: insets.bottom + (isSheetExpanded ? space.lg : space.sm) }]}>
+        {/* Drag / Tap Handle Bar */}
+        <HapticPressable style={styles.sheetHandleWrap} onPress={toggleSheet} activeOpacity={0.7}>
+          <View style={styles.sheetHandlePill} />
+          <View style={styles.sheetHandleLabelRow}>
+            <Text style={styles.sheetHandleLabel}>
+              {isSheetExpanded ? '▾ Tap to minimize details (view full map)' : '▴ Tap to view driver, OTP & safety details'}
+            </Text>
+          </View>
+        </HapticPressable>
+
+        {/* Primary Status & ETA Header */}
+        <HapticPressable style={styles.statusRow} onPress={toggleSheet} activeOpacity={0.9}>
+          <View style={{ flex: 1 }}>
             <Text style={styles.statusLabel}>
               {driverLocation ? '🟢 Live Car Tracking' : 'Trip Scheduled'}
             </Text>
@@ -365,141 +387,182 @@ export default function TripScreen() {
               )}
             </Text>
           </View>
-          <View style={styles.speedPill}>
-            <Text style={styles.speedText}>{speed} km/h</Text>
+          <View style={styles.headerRightActions}>
+            <View style={styles.speedPill}>
+              <Text style={styles.speedText}>{speed} km/h</Text>
+            </View>
+            <HapticPressable
+              haptic="tap"
+              style={styles.toggleSheetBtn}
+              onPress={toggleSheet}
+              accessibilityLabel={isSheetExpanded ? 'Hide details' : 'Show details'}
+            >
+              {isSheetExpanded ? (
+                <ChevronDown color={c.textPrimary} size={18} />
+              ) : (
+                <ChevronUp color={c.textPrimary} size={18} />
+              )}
+            </HapticPressable>
           </View>
-        </View>
+        </HapticPressable>
 
-        {geofenceAlert ? (
-          <View style={styles.alertBox}>
-            <ShieldAlert color={c.danger} size={16} strokeWidth={2.4} />
-            <Text style={styles.alertText}>{geofenceAlert}</Text>
-          </View>
-        ) : (
-          <View style={styles.okBox}>
-            <Text style={styles.okText}>✓ On planned route · within safe detour threshold</Text>
-          </View>
+        {/* Compact Mode Quick Snippet (Visible when collapsed) */}
+        {!isSheetExpanded && (
+          <HapticPressable style={styles.compactQuickRow} onPress={toggleSheet} activeOpacity={0.85}>
+            {boardingOtp && (
+              <View style={styles.compactOtpPill}>
+                <Text style={styles.compactOtpLabel}>🛡️ OTP</Text>
+                <Text style={styles.compactOtpValue}>{boardingOtp}</Text>
+                {boardingVerified && <Text style={styles.compactVerifiedBadge}>✓</Text>}
+              </View>
+            )}
+            <View style={styles.compactDriverPill}>
+              <Text style={styles.compactDriverText} numberOfLines={1}>
+                🚗 {ride?.driver_name || 'Driver'} · Trip #{String(id).slice(0, 6)}
+              </Text>
+            </View>
+            <Text style={styles.compactExpandPrompt}>Details ▴</Text>
+          </HapticPressable>
         )}
 
-        {/* 🛡️ Boarding Verification OTP Card */}
-        {boardingOtp && (
-          <View style={styles.otpCard}>
-            <View style={styles.otpCardHeader}>
-              <Text style={styles.otpCardTitle}>🛡️ Boarding Verification OTP</Text>
-              {boardingVerified && <Text style={styles.verifiedBadge}>✓ Verified</Text>}
-            </View>
-            <Text style={styles.otpCardSub}>
-              {boardingVerified
-                ? 'Your identity has been verified by the driver.'
-                : 'Share this 4-digit code with your driver before getting in:'}
-            </Text>
-            <View style={styles.otpBox}>
-              <Text style={styles.otpCode}>{boardingOtp}</Text>
-            </View>
-          </View>
-        )}
+        {/* Expanded Full Details (Visible when expanded) */}
+        {isSheetExpanded && (
+          <>
+            {geofenceAlert ? (
+              <View style={styles.alertBox}>
+                <ShieldAlert color={c.danger} size={16} strokeWidth={2.4} />
+                <Text style={styles.alertText}>{geofenceAlert}</Text>
+              </View>
+            ) : (
+              <View style={styles.okBox}>
+                <Text style={styles.okText}>✓ On planned route · within safe detour threshold</Text>
+              </View>
+            )}
 
-        <View style={styles.tripCard}>
-          <View style={styles.tripIcon}><MapPin color={c.textSecondary} size={18} /></View>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.tripId}>Trip #{String(id).slice(0, 8)}</Text>
-            <Text style={styles.tripVehicle}>
-              {ride ? `${ride.vehicle_plate || ''}${ride.vehicle ? ` · ${ride.vehicle}` : ''}` : 'Loading vehicle…'}
-            </Text>
-          </View>
-        </View>
+            {/* 🛡️ Boarding Verification OTP Card */}
+            {boardingOtp && (
+              <View style={styles.otpCard}>
+                <View style={styles.otpCardHeader}>
+                  <Text style={styles.otpCardTitle}>🛡️ Boarding Verification OTP</Text>
+                  {boardingVerified && <Text style={styles.verifiedBadge}>✓ Verified</Text>}
+                </View>
+                <Text style={styles.otpCardSub}>
+                  {boardingVerified
+                    ? 'Your identity has been verified by the driver.'
+                    : 'Share this 4-digit code with your driver before getting in:'}
+                </Text>
+                <View style={styles.otpBox}>
+                  <Text style={styles.otpCode}>{boardingOtp}</Text>
+                </View>
+              </View>
+            )}
 
-        {/* Driver Contact & Profile Card */}
-        {ride && (
-          <View style={styles.driverContactCard}>
-            <View style={styles.driverInfoRow}>
-              <View style={styles.driverAvatar}>
-                <Text style={styles.driverAvatarText}>
-                  {(ride.driver_name || 'Driver').charAt(0).toUpperCase()}
+            <View style={styles.tripCard}>
+              <View style={styles.tripIcon}><MapPin color={c.textSecondary} size={18} /></View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.tripId}>Trip #{String(id).slice(0, 8)}</Text>
+                <Text style={styles.tripVehicle}>
+                  {ride ? `${ride.vehicle_plate || ''}${ride.vehicle ? ` · ${ride.vehicle}` : ''}` : 'Loading vehicle…'}
                 </Text>
               </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.driverName}>{ride.driver_name || 'Driver'}</Text>
-                <Text style={styles.driverRole}>Your Driver</Text>
-              </View>
-              <View style={styles.driverActionsRow}>
-                {ride.driver_phone && (
-                  <HapticPressable
-                    haptic="tap"
-                    style={styles.contactBtn}
-                    onPress={() => Linking.openURL(`tel:${ride.driver_phone}`)}
-                    accessibilityLabel="Call driver"
-                  >
-                    <Phone color={c.go} size={18} />
-                  </HapticPressable>
-                )}
-                {ride.driver_email && (
-                  <HapticPressable
-                    haptic="tap"
-                    style={styles.contactBtn}
-                    onPress={() => Linking.openURL(`mailto:${ride.driver_email}`)}
-                    accessibilityLabel="Email driver"
-                  >
-                    <Mail color={c.textAccent} size={18} />
-                  </HapticPressable>
-                )}
-              </View>
             </View>
-            {ride.driver_phone && (
-              <Text style={styles.phoneSubText}>📞 {ride.driver_phone}</Text>
-            )}
-          </View>
-        )}
 
-        {!showRating ? (
-          <>
-            <View style={styles.actions}>
-              <HapticPressable style={styles.sos} onPress={triggerSOS} activeOpacity={0.9}>
-                <ShieldAlert color="#fff" size={18} strokeWidth={2.4} />
-                <Text style={styles.sosText}>SOS</Text>
-              </HapticPressable>
-              <HapticPressable style={styles.share} onPress={shareTrip} activeOpacity={0.9}>
-                <Share2 color={c.textPrimary} size={17} strokeWidth={2.2} />
-                <Text style={styles.shareText}>Share live trip</Text>
-              </HapticPressable>
-            </View>
-            <HapticPressable style={styles.chatBtn} onPress={() => router.push(`/chat/${id}`)} activeOpacity={0.9}>
-              <MessageCircle color={c.textPrimary} size={17} strokeWidth={2.2} />
-              <Text style={styles.shareText}>Message co-travellers</Text>
-            </HapticPressable>
-            <HapticPressable style={styles.endTrip} onPress={() => setShowRating(true)}>
-              <Text style={styles.endTripText}>End trip & rate</Text>
-            </HapticPressable>
-          </>
-        ) : (
-          <View>
-            <Text style={styles.rateTitle}>How was your ride?</Text>
-            <View style={styles.starsRow}>
-              {[1, 2, 3, 4, 5].map((n) => (
-                <HapticPressable key={n} onPress={() => { haptics.tap(); setStars(n); }}>
-                  <Text style={[styles.star, n <= stars && styles.starOn]}>★</Text>
+            {/* Driver Contact & Profile Card */}
+            {ride && (
+              <View style={styles.driverContactCard}>
+                <View style={styles.driverInfoRow}>
+                  <View style={styles.driverAvatar}>
+                    <Text style={styles.driverAvatarText}>
+                      {(ride.driver_name || 'Driver').charAt(0).toUpperCase()}
+                    </Text>
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.driverName}>{ride.driver_name || 'Driver'}</Text>
+                    <Text style={styles.driverRole}>Your Driver</Text>
+                  </View>
+                  <View style={styles.driverActionsRow}>
+                    {ride.driver_phone && (
+                      <HapticPressable
+                        haptic="tap"
+                        style={styles.contactBtn}
+                        onPress={() => Linking.openURL(`tel:${ride.driver_phone}`)}
+                        accessibilityLabel="Call driver"
+                      >
+                        <Phone color={c.go} size={18} />
+                      </HapticPressable>
+                    )}
+                    {ride.driver_email && (
+                      <HapticPressable
+                        haptic="tap"
+                        style={styles.contactBtn}
+                        onPress={() => Linking.openURL(`mailto:${ride.driver_email}`)}
+                        accessibilityLabel="Email driver"
+                      >
+                        <Mail color={c.textAccent} size={18} />
+                      </HapticPressable>
+                    )}
+                  </View>
+                </View>
+                {ride.driver_phone && (
+                  <Text style={styles.phoneSubText}>📞 {ride.driver_phone}</Text>
+                )}
+              </View>
+            )}
+
+            {!showRating ? (
+              <>
+                <View style={styles.actions}>
+                  <HapticPressable style={styles.sos} onPress={triggerSOS} activeOpacity={0.9}>
+                    <ShieldAlert color="#fff" size={18} strokeWidth={2.4} />
+                    <Text style={styles.sosText}>SOS</Text>
+                  </HapticPressable>
+                  <HapticPressable style={styles.share} onPress={shareTrip} activeOpacity={0.9}>
+                    <Share2 color={c.textPrimary} size={17} strokeWidth={2.2} />
+                    <Text style={styles.shareText}>Share live trip</Text>
+                  </HapticPressable>
+                </View>
+                <HapticPressable style={styles.chatBtn} onPress={() => router.push(`/chat/${id}`)} activeOpacity={0.9}>
+                  <MessageCircle color={c.textPrimary} size={17} strokeWidth={2.2} />
+                  <Text style={styles.shareText}>Message co-travellers</Text>
                 </HapticPressable>
-              ))}
-            </View>
-            <Text style={styles.rateSub}>Did you feel safe on this trip?</Text>
-            <View style={styles.safeRow}>
-              <HapticPressable
-                style={[styles.safeBtn, feltSafe === true && styles.safeBtnOn]}
-                onPress={() => setFeltSafe(true)}
-              >
-                <Text style={[styles.safeBtnText, feltSafe === true && { color: '#fff' }]}>Yes, felt safe</Text>
-              </HapticPressable>
-              <HapticPressable
-                style={[styles.safeBtn, feltSafe === false && styles.safeBtnDanger]}
-                onPress={() => setFeltSafe(false)}
-              >
-                <Text style={[styles.safeBtnText, feltSafe === false && { color: '#fff' }]}>No</Text>
-              </HapticPressable>
-            </View>
-            <HapticPressable style={styles.submitRating} onPress={submitRating} disabled={submittingRating} activeOpacity={0.9}>
-              <Text style={styles.submitRatingText}>{submittingRating ? 'Submitting…' : 'Submit rating'}</Text>
-            </HapticPressable>
-          </View>
+                <HapticPressable style={styles.endTrip} onPress={() => setShowRating(true)}>
+                  <Text style={styles.endTripText}>End trip & rate</Text>
+                </HapticPressable>
+                <HapticPressable style={styles.collapseBottomBtn} onPress={toggleSheet} activeOpacity={0.8}>
+                  <Text style={styles.collapseBottomText}>▾ Hide Details · View Full Map</Text>
+                </HapticPressable>
+              </>
+            ) : (
+              <View>
+                <Text style={styles.rateTitle}>How was your ride?</Text>
+                <View style={styles.starsRow}>
+                  {[1, 2, 3, 4, 5].map((n) => (
+                    <HapticPressable key={n} onPress={() => { haptics.tap(); setStars(n); }}>
+                      <Text style={[styles.star, n <= stars && styles.starOn]}>★</Text>
+                    </HapticPressable>
+                  ))}
+                </View>
+                <Text style={styles.rateSub}>Did you feel safe on this trip?</Text>
+                <View style={styles.safeRow}>
+                  <HapticPressable
+                    style={[styles.safeBtn, feltSafe === true && styles.safeBtnOn]}
+                    onPress={() => setFeltSafe(true)}
+                  >
+                    <Text style={[styles.safeBtnText, feltSafe === true && { color: '#fff' }]}>Yes, felt safe</Text>
+                  </HapticPressable>
+                  <HapticPressable
+                    style={[styles.safeBtn, feltSafe === false && styles.safeBtnDanger]}
+                    onPress={() => setFeltSafe(false)}
+                  >
+                    <Text style={[styles.safeBtnText, feltSafe === false && { color: '#fff' }]}>No</Text>
+                  </HapticPressable>
+                </View>
+                <HapticPressable style={styles.submitRating} onPress={submitRating} disabled={submittingRating} activeOpacity={0.9}>
+                  <Text style={styles.submitRatingText}>{submittingRating ? 'Submitting…' : 'Submit rating'}</Text>
+                </HapticPressable>
+              </View>
+            )}
+          </>
         )}
       </View>
     </View>
@@ -544,15 +607,49 @@ const styles = StyleSheet.create({
 
   sheet: {
     backgroundColor: c.bgBase, borderTopLeftRadius: radius.xl, borderTopRightRadius: radius.xl,
-    paddingHorizontal: space.xl, paddingTop: space.lg, marginTop: -radius.xl,
+    paddingHorizontal: space.xl, paddingTop: space.sm, marginTop: -radius.xl,
     borderTopWidth: 1, borderColor: c.borderSubtle, ...shadowLg(),
   },
-  statusRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: space.md },
+  sheetHandleWrap: { alignItems: 'center', paddingVertical: 6, marginBottom: 4 },
+  sheetHandlePill: { width: 36, height: 4, borderRadius: 2, backgroundColor: '#CBD5E1' },
+  sheetHandleLabelRow: { marginTop: 4 },
+  sheetHandleLabel: { fontFamily: font.sansMedium, fontSize: 11, color: c.textTertiary },
+
+  statusRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: space.sm },
   statusLabel: { fontFamily: font.sansMedium, fontSize: 12.5, color: c.go },
-  eta: { fontFamily: font.sansBold, fontSize: 20, color: c.textPrimary, marginTop: 2 },
+  eta: { fontFamily: font.sansBold, fontSize: 19, color: c.textPrimary, marginTop: 1 },
   etaMono: { fontFamily: font.monoBold, color: c.textPrimary },
-  speedPill: { backgroundColor: c.surfaceSunken, borderRadius: radius.pill, paddingHorizontal: 12, paddingVertical: 6, borderWidth: 1, borderColor: c.borderSubtle },
-  speedText: { fontFamily: font.mono, fontSize: 13, color: c.textSecondary },
+  headerRightActions: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  speedPill: { backgroundColor: c.surfaceSunken, borderRadius: radius.pill, paddingHorizontal: 10, paddingVertical: 5, borderWidth: 1, borderColor: c.borderSubtle },
+  speedText: { fontFamily: font.mono, fontSize: 12.5, color: c.textSecondary },
+  toggleSheetBtn: {
+    width: 32, height: 32, borderRadius: 16, backgroundColor: c.surfaceSunken,
+    alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: c.borderSubtle,
+  },
+
+  compactQuickRow: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    backgroundColor: c.surfaceSunken, borderRadius: radius.md, paddingHorizontal: 12, paddingVertical: 9,
+    marginTop: 2, borderWidth: 1, borderColor: c.borderSubtle,
+  },
+  compactOtpPill: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    backgroundColor: '#FEF3C7', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6,
+    borderWidth: 1, borderColor: '#F59E0B',
+  },
+  compactOtpLabel: { fontFamily: font.sansBold, fontSize: 11, color: '#B45309' },
+  compactOtpValue: { fontFamily: font.monoBold, fontSize: 14, color: '#92400E', letterSpacing: 2 },
+  compactVerifiedBadge: { fontFamily: font.sansBold, fontSize: 11, color: '#15803D' },
+  compactDriverPill: { flex: 1, marginHorizontal: 8 },
+  compactDriverText: { fontFamily: font.sansMedium, fontSize: 12, color: c.textSecondary },
+  compactExpandPrompt: { fontFamily: font.sansBold, fontSize: 11.5, color: c.goStrong },
+
+  collapseBottomBtn: {
+    alignItems: 'center', justifyContent: 'center', paddingVertical: 10,
+    marginTop: space.sm, backgroundColor: c.surfaceSunken, borderRadius: radius.md,
+    borderWidth: 1, borderColor: c.borderSubtle,
+  },
+  collapseBottomText: { fontFamily: font.sansSemibold, fontSize: 12.5, color: c.textSecondary },
 
   alertBox: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: c.dangerSoft, borderRadius: radius.md, padding: space.md, marginBottom: space.md },
   alertText: { flex: 1, fontFamily: font.sansSemibold, fontSize: 12.5, color: c.dangerStrong },
