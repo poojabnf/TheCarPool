@@ -300,8 +300,27 @@ export default function DriverInterface() {
     finally { setRidesLoading(false); }
   };
 
-  useEffect(() => { loadMyRides(); }, []);
-  useFocusEffect(useCallback(() => { loadMyRides(); }, []));
+  /**
+   * Pending seat requests, fetched in one call across EVERY ride this driver
+   * has — not assembled from the manifests of whichever rides happened to fit
+   * on screen. The old approach missed them twice over: the ride list was
+   * capped at 15 and this driver had 16, and manifests were only loaded for
+   * displayed rides. Seven riders paid and waited on decisions that were never
+   * shown to anyone.
+   */
+  const [pendingRequests, setPendingRequests] = useState<any[]>([]);
+
+  const loadPendingRequests = useCallback(async () => {
+    try {
+      const res = await apiFetch('/api/bookings/requests/pending');
+      if (!res.ok) return;
+      const d = await res.json();
+      setPendingRequests(Array.isArray(d?.requests) ? d.requests : []);
+    } catch { /* the banner simply stays hidden */ }
+  }, []);
+
+  useEffect(() => { loadMyRides(); loadPendingRequests(); }, [loadPendingRequests]);
+  useFocusEffect(useCallback(() => { loadMyRides(); loadPendingRequests(); }, [loadPendingRequests]));
 
   const activityRefreshEpoch = useAuthStore((s) => s.activityRefreshEpoch);
   useEffect(() => {
@@ -384,17 +403,6 @@ export default function DriverInterface() {
    * No extra fetch — the data was on screen already, just buried one ride card
    * at a time.
    */
-  const pendingRequests = myRides.flatMap((r: any) => {
-    const passengers: any[] = manifests[r.id]?.passengers ?? [];
-    return passengers
-      .filter((p) => p.booking_status === 'REQUESTED')
-      .map((p) => ({
-        ...p,
-        ride_id: r.id,
-        ride_source: r.source ?? null,
-        ride_destination: r.destination ?? null,
-      }));
-  });
 
   // The same sheet serves two jobs: verifying everyone before pulling away,
   // and verifying a rider who got in later. Only the first ends in "Start trip".

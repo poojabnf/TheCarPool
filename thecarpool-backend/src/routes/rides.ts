@@ -18,6 +18,8 @@ import { settleDueBookingsForRide } from '../lib/rideSettlement';
 import { sendPushToUser } from '../lib/fcm';
 import { getUserEmail, buildRideOfferedEmail, sendEmail } from '../lib/email';
 import { round2 } from '../lib/money';
+import { refundPaymentToSource } from '../lib/razorpay';
+import { reverseTransfer } from '../lib/route';
 import { isInServiceBounds, outOfAreaMessage } from '../lib/serviceArea';
 import { normaliseStopPrice, validateStopPrices } from '../lib/stopPricing';
 import { findMetroByCoords, findMetroByText, coordInMetroBbox, type MetroRegion } from '../lib/metroRegions';
@@ -1448,6 +1450,81 @@ export async function rideRoutes(fastify: FastifyInstance) {
         .where('escrow_status', '==', 'HELD')
         .get();
 
+      // ── Riders the driver never decided on ────────────────────────────────
+      // A booking still REQUESTED at completion was paid for and never
+      // accepted. Left in the settlement set it is treated as a NO-SHOW, which
+      // keeps 20% of the fare from someone who was never given a seat — they
+      // did not fail to turn up, they were never let on.
+      //
+      // They are refunded in full instead, exactly as a driver decline does.
+      // Seven riders had already reached this state before it was caught.
+      const unapproved = heldSnap.docs.filter(
+        (d) => String(d.data().booking_status ?? 'CONFIRMED') === 'REQUESTED'
+      );
+      for (const d of unapproved) {
+        const b = d.data();
+        const riderUid = String(b.rider_id ?? b.rider_uid ?? '');
+        const refund = round2(Number(b.total_paid) || 0);
+        if (!riderUid || refund <= 0) continue;
+
+        // Card/UPI goes back to source; wallet-funded goes back to the wallet.
+        let sourceRefundId: string | null = null;
+        if (b.payment_method === 'RAZORPAY' && b.razorpay_payment_id) {
+          try {
+            const r = await refundPaymentToSource({
+              paymentId: String(b.razorpay_payment_id),
+              amountRupees: refund,
+              referenceId: `unapproved_${d.id}`,
+              notes: { reason: 'RIDE_COMPLETED_WITHOUT_APPROVAL', ride_id: id },
+            });
+            sourceRefundId = r.refund_id;
+          } catch (err) {
+            fastify.log.error(
+              { err, booking: d.id },
+              'Refund to source failed for an unapproved rider at completion'
+            );
+          }
+        }
+        if (b.route_transfer_id) {
+          await reverseTransfer(String(b.route_transfer_id)).catch((err) =>
+            fastify.log.error({ err, booking: d.id }, 'Route reversal failed for unapproved rider')
+          );
+        }
+
+        try {
+          await db.runTransaction(async (tx) => {
+            const fresh = await tx.get(d.ref);
+            if (fresh.data()?.escrow_status !== 'HELD') return;
+            const walletRef = db.collection('wallets').doc(riderUid);
+            const wallet = await tx.get(walletRef);
+            tx.update(d.ref, {
+              booking_status: 'DECLINED',
+              escrow_status: 'CANCELLED',
+              payment_status: 'CANCELLED_REFUNDED',
+              cancelled_by: 'SYSTEM_UNAPPROVED_AT_COMPLETION',
+              refunded_amount: refund,
+              refund_destination: sourceRefundId ? 'SOURCE' : 'WALLET',
+              refund_id: sourceRefundId,
+              decided_at: completedAt,
+            });
+            if (!sourceRefundId) {
+              const cur = wallet.exists
+                ? wallet.data()!
+                : { available_wallet_balance: 0, escrow_locked_balance: 0, currency: defaultCurrency() };
+              tx.set(walletRef, {
+                ...cur,
+                available_wallet_balance: round2((cur.available_wallet_balance || 0) + refund),
+              }, { merge: true });
+            }
+          });
+        } catch (err) {
+          fastify.log.error({ err, booking: d.id }, 'Failed to refund an unapproved rider at completion');
+        }
+      }
+
+      const unapprovedIds = new Set(unapproved.map((d) => d.id));
+      const toSettle = heldSnap.docs.filter((d) => !unapprovedIds.has(d.id));
+
       const batch = db.batch();
       batch.update(rideRef, {
         status,
@@ -1457,7 +1534,7 @@ export async function rideRoutes(fastify: FastifyInstance) {
       });
       // Stamped on each booking too, so the sweep can select on the booking
       // alone and a per-rider dispute can block just that rider's payout.
-      for (const d of heldSnap.docs) {
+      for (const d of toSettle) {
         batch.update(d.ref, { completed_at: completedAt, settlement_due_at: dueAt });
       }
       await batch.commit();
@@ -1470,7 +1547,8 @@ export async function rideRoutes(fastify: FastifyInstance) {
         updated: true,
         completed_at: completedAt,
         settlement_due_at: dueAt,
-        bookings_awaiting_settlement: heldSnap.size,
+        bookings_awaiting_settlement: toSettle.length,
+        unapproved_refunded: unapproved.length,
         dispute_window_minutes: DISPUTE_WINDOW_MINUTES,
       });
     } catch (err: any) {

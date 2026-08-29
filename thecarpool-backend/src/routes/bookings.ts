@@ -1326,6 +1326,80 @@ export async function bookingRoutes(fastify: FastifyInstance) {
     }
   });
 
+  /**
+   * ── GET /requests/pending — every seat awaiting THIS driver's decision ────
+   *
+   * One call across all their rides, rather than the app fetching a manifest
+   * per ride and assembling the list itself. That approach missed requests
+   * twice over: the dashboard capped its ride list at 15 and a driver with 16
+   * lost one entirely, and manifests were only fetched for rides that made it
+   * onto the screen. A request nobody can see is a rider who has paid and is
+   * waiting on a decision that will never come.
+   */
+  fastify.get('/requests/pending', { preHandler: [requireAuth] }, async (request, reply) => {
+    const uid = String(request.user!.id);
+    try {
+      const ridesSnap = await db.collection('rides').where('driver_uid', '==', uid).get();
+      const rides = new Map(ridesSnap.docs.map((d) => [d.id, d.data()]));
+      if (rides.size === 0) return reply.send({ requests: [] });
+
+      // Firestore caps an `in` filter at 30 values, so chunk the ride ids.
+      const ids = [...rides.keys()];
+      const chunks: string[][] = [];
+      for (let i = 0; i < ids.length; i += 30) chunks.push(ids.slice(i, i + 30));
+
+      const requests: any[] = [];
+      for (const chunk of chunks) {
+        const snap = await db.collection('bookings')
+          .where('ride_id', 'in', chunk)
+          .where('booking_status', '==', 'REQUESTED')
+          .get();
+
+        for (const d of snap.docs) {
+          const b = d.data();
+          // A request on a cancelled or already-refunded booking is history.
+          if (['CANCELLED', 'REFUNDED'].includes(String(b.escrow_status))) continue;
+          const ride = rides.get(String(b.ride_id)) ?? {};
+          let riderName = 'Rider';
+          let riderRating: number | null = null;
+          try {
+            const u = await db.collection('users').doc(String(b.rider_id)).get();
+            if (u.exists) {
+              const ud = u.data()!;
+              riderName = ud.full_name || ud.name || ud.displayName || 'Rider';
+              riderRating = ud.rating_avg ? parseFloat(Number(ud.rating_avg).toFixed(1)) : null;
+            }
+          } catch { /* name enrichment is best-effort */ }
+
+          requests.push({
+            booking_id: d.id,
+            ride_id: String(b.ride_id),
+            rider_id: String(b.rider_id),
+            rider_name: riderName,
+            rider_rating: riderRating,
+            seats_booked: b.seats_booked ?? 1,
+            luggage_note: b.luggage_note ?? null,
+            pickup_label: pickupLabelFor(
+              { exists: true, data: () => ride } as any,
+              Number(b.pickup_point?.lat), Number(b.pickup_point?.lng)
+            ),
+            ride_source: ride.source ?? null,
+            ride_destination: ride.destination ?? null,
+            ride_status: ride.status ?? null,
+            departure_time: ride.departure_time ?? null,
+            created_at: b.created_at ?? null,
+          });
+        }
+      }
+
+      requests.sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)));
+      return reply.send({ requests });
+    } catch (err: any) {
+      fastify.log.error(err, 'Failed to list pending seat requests');
+      return reply.code(500).send({ error: 'Failed to fetch pending requests.' });
+    }
+  });
+
   // ── GET /for-ride/:ride_id — passenger manifest for the ride's driver ────
   // Lets the driver see who booked, how many seats, and their pickup points.
   fastify.get('/for-ride/:ride_id', { preHandler: [requireAuth] }, async (request, reply) => {

@@ -72,6 +72,21 @@
           "order": "ASCENDING"
         }
       ]
+    },
+    {
+      "_comment": "GET /api/bookings/requests/pending \u2014 ride_id IN + booking_status. Without it the driver cannot see any pending seat request at all.",
+      "collectionGroup": "bookings",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "ride_id",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "booking_status",
+          "order": "ASCENDING"
+        }
+      ]
     }
   ],
   "fieldOverrides": []
