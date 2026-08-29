@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import {
   View, Text, StyleSheet, ScrollView,
   RefreshControl, ActivityIndicator, Alert,
@@ -10,6 +10,7 @@ import { c, font, radius, space, shadowSm } from '../../theme/tokens';
 import { apiFetch } from '../services/api';
 import * as haptics from '../services/haptics';
 import HapticPressable from '../components/HapticPressable';
+import { useAuthStore } from '../store/authStore';
 import { formatMoney } from '../services/currency';
 import * as Location from 'expo-location';
 
@@ -83,6 +84,7 @@ function formatDate(iso: string | null) {
 export default function TripsScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { activityRefreshEpoch } = useAuthStore();
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -106,6 +108,11 @@ export default function TripsScreen() {
 
   // Reload every time the tab comes into focus
   useFocusEffect(useCallback(() => { load(); }, [load]));
+
+  // Instantly reload when a booking or ride is created/modified anywhere
+  useEffect(() => {
+    if (activityRefreshEpoch > 0) load();
+  }, [activityRefreshEpoch, load]);
 
   // Cancel an upcoming booking. The exact charge is quoted by the server first
   // and shown to the rider before they commit — the quote and the charge share
@@ -154,6 +161,7 @@ export default function TripsScreen() {
                     : `${formatMoney(Number(d.refunded_amount))} has been refunded to your wallet in full.`
                 );
                 load(true);
+                useAuthStore.getState().triggerActivityRefresh();
               } else {
                 haptics.error();
                 const e = await res.json().catch(() => ({}));
@@ -210,7 +218,7 @@ export default function TripsScreen() {
                   const r2 = await apiFetch(`/api/bookings/${b.id}/complete`, {
                     method: 'POST', body: JSON.stringify({}),
                   }, { timeoutMs: 25000 });
-                  if (r2.ok) { haptics.success(); load(true); }
+                  if (r2.ok) { haptics.success(); load(true); useAuthStore.getState().triggerActivityRefresh(); }
                   else Alert.alert('Could not complete', 'Please try again.');
                 },
               },
@@ -228,6 +236,7 @@ export default function TripsScreen() {
         `Thanks for riding. The driver is paid shortly — you have ${d.dispute_minutes_remaining ?? DISPUTE_WINDOW_MINUTES} minutes to tell us if anything was wrong.`
       );
       load(true);
+      useAuthStore.getState().triggerActivityRefresh();
     } catch {
       Alert.alert('Could not complete', 'Check your connection and try again.');
     }

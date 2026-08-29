@@ -201,6 +201,11 @@ function describeDistance(metres: number, minutes: number): string {
       }
       const b = await bookingRes.json();
       haptics.success(); // seat locked & paid
+
+      // Signal all screens to refresh immediately — homepage shortcuts and
+      // booking-history will pick up the new booking without a restart.
+      useAuthStore.getState().triggerActivityRefresh();
+
       const rideId = b.ride_id || b.id || p.ride_id;
       if (!rideId) {
         Alert.alert('Booking confirmed!', `Your seat is locked & paid. Booking ref: ${b.id || 'N/A'}`);
