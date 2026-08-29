@@ -22,6 +22,22 @@
 
 const API = 'https://api.razorpay.com/v1';
 
+/**
+ * Accounts live on v2, everything else on v1.
+ *
+ * Transfers and reversals are genuinely v1 endpoints
+ * (/v1/payments/{id}/transfers, /v1/transfers/{id}). Creating a linked
+ * account is not: it belongs to the Onboarding API at /v2/accounts. Posting
+ * it to /v1/accounts returns
+ *
+ *   400: The requested URL was not found on the server.
+ *
+ * which reads like a rejected request but simply means the path does not
+ * exist. That cost us a whole evening of believing Razorpay had refused a PAN
+ * when they had never been asked anything.
+ */
+const ACCOUNTS_API = 'https://api.razorpay.com/v2';
+
 /** Route rides on the ordinary Razorpay keys — no separate product to enable. */
 export function isRouteConfigured(): boolean {
   return Boolean(process.env.RAZORPAY_KEY_ID && process.env.RAZORPAY_KEY_SECRET);
@@ -74,7 +90,7 @@ export async function createLinkedAccount(opts: {
   name: string;
   pan: string;
 }): Promise<LinkedAccount> {
-  const res = await fetch(`${API}/accounts`, {
+  const res = await fetch(`${ACCOUNTS_API}/accounts`, {
     method: 'POST',
     headers: { Authorization: authHeader(), 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -99,9 +115,14 @@ export async function createLinkedAccount(opts: {
 
   const data: any = await res.json().catch(() => ({}));
   if (!res.ok) {
-    throw new Error(
-      `Linked account creation failed (${res.status}): ${data?.error?.description || 'unknown'}`
-    );
+    // Carry Razorpay's own code and field through. "unknown" told us nothing
+    // the first time this failed, and the description alone hid that the
+    // request had never reached a real endpoint.
+    const e = data?.error ?? {};
+    const detail = [e.code, e.description, e.field].filter(Boolean).join(' | ')
+      || JSON.stringify(data).slice(0, 200)
+      || 'no error body';
+    throw new Error(`Linked account creation failed (${res.status}): ${detail}`);
   }
   if (!data?.id) throw new Error('Linked account creation returned no account id');
   return { id: String(data.id), status: data.status ? String(data.status) : undefined };
