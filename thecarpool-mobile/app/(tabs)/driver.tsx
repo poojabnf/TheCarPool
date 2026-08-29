@@ -331,6 +331,33 @@ export default function DriverInterface() {
     setOtpBusy(false);
   };
 
+
+  /**
+   * Suggested fare for boarding at a stop: the share of the journey still to
+   * travel. Mirrors proportionalStopFare() on the server, which is what
+   * actually charges — this only pre-fills the box so the driver starts from a
+   * sensible number rather than guessing or leaving it blank.
+   */
+  const suggestedStopFare = (stopLat: number, stopLng: number): number | null => {
+    const full = parseFloat(customPrice);
+    if (!sourceCoords || !destCoords || isNaN(full) || full <= 0) return null;
+    const m = (aLat: number, aLng: number, bLat: number, bLng: number) => {
+      const R = 6371e3;
+      const p1 = (aLat * Math.PI) / 180;
+      const p2 = (bLat * Math.PI) / 180;
+      const dp = ((bLat - aLat) * Math.PI) / 180;
+      const dl = ((bLng - aLng) * Math.PI) / 180;
+      const h = Math.sin(dp / 2) ** 2 + Math.cos(p1) * Math.cos(p2) * Math.sin(dl / 2) ** 2;
+      return R * 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
+    };
+    const total = m(sourceCoords.lat, sourceCoords.lng, destCoords.lat, destCoords.lng);
+    if (total <= 0) return null;
+    const remaining = m(stopLat, stopLng, destCoords.lat, destCoords.lng);
+    const fraction = Math.min(1, remaining / total);
+    const suggested = Math.round(full * fraction);
+    return suggested > 0 && suggested < full ? suggested : null;
+  };
+
   const boardingPassengers: any[] =
     (boardingRideId && manifests[boardingRideId]?.passengers) || [];
 
@@ -1257,7 +1284,10 @@ export default function DriverInterface() {
                     <Text style={styles.stopTimeLabel}>Fare from here</Text>
                     <TextInput
                       style={styles.stopTimeInput}
-                      placeholder={customPrice ? `${customPrice} (full)` : 'Full fare'}
+                      placeholder={(() => {
+                        const sug = suggestedStopFare(pt.lat, pt.lng);
+                        return sug !== null ? `${sug} suggested` : 'Fare for this leg';
+                      })()}
                       placeholderTextColor={colors.inputPlaceholder}
                       keyboardType="number-pad"
                       maxLength={7}
@@ -1267,6 +1297,25 @@ export default function DriverInterface() {
                       )}
                     />
                   </View>
+                  {(() => {
+                    const sug = suggestedStopFare(pt.lat, pt.lng);
+                    const typed = (pt.priceText ?? '').trim();
+                    if (sug !== null && typed === '') {
+                      return (
+                        <HapticPressable
+                          onPress={() => setPickupPoints((prev) =>
+                            prev.map((q, j) => (j === i ? { ...q, priceText: String(sug) } : q))
+                          )}
+                        >
+                          <Text style={styles.stopPriceHint}>
+                            💡 {formatMoney(sug, { decimals: 0 })} for this leg (tap to use). Left blank,
+                            riders boarding here are charged for the distance they actually travel.
+                          </Text>
+                        </HapticPressable>
+                      );
+                    }
+                    return null;
+                  })()}
                   {(() => {
                     const full = parseFloat(customPrice);
                     const here = parseFloat(pt.priceText ?? '');
@@ -2317,6 +2366,7 @@ const styles = StyleSheet.create({
   pickupRow: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: colors.inputBackground, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 10, marginBottom: 8, borderWidth: 1, borderColor: colors.cardBorder },
   pickupLabel: { flex: 1, fontSize: 13, color: colors.text },
   stopTimeRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: -4, marginBottom: 10, paddingLeft: 24 },
+  stopPriceHint: { color: colors.primary, fontSize: 12, marginTop: 4, marginLeft: 2, lineHeight: 16.5 },
   stopPriceWarn: { color: '#ef4444', fontSize: 12, marginTop: 4, marginLeft: 2 },
   stopTimeLabel: { fontSize: 12, color: colors.textMuted },
   stopTimeInput: { flex: 1, backgroundColor: colors.inputBackground, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 8, fontSize: 13, color: colors.text, borderWidth: 1, borderColor: colors.cardBorder },

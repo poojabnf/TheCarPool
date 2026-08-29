@@ -3,6 +3,7 @@ import {
   farePerSeatForPickup,
   validateStopPrices,
   normaliseStopPrice,
+  proportionalStopFare,
   STOP_MATCH_TOLERANCE_DEG,
 } from '../stopPricing';
 
@@ -50,8 +51,10 @@ describe('farePerSeatForPickup', () => {
     expect(r.isStopFare).toBe(false);
   });
 
-  it('charges the full fare at a stop the driver did not price', () => {
-    // A stop with no price is not free — it just has no discount.
+  it('charges the full fare at an unpriced stop when no route is supplied', () => {
+    // Without route geometry there is no way to know how far along the stop
+    // is, so there is no basis for a discount. With a route, the proportional
+    // fallback applies instead — see the suite further down.
     const r = at(UNPRICED.lat, UNPRICED.lng);
     expect(r.farePerSeat).toBe(RIDE_PRICE);
     expect(r.isStopFare).toBe(false);
@@ -139,5 +142,99 @@ describe('normaliseStopPrice', () => {
 
   it('keeps an explicit zero, which is a real price', () => {
     expect(normaliseStopPrice(0)).toBe(0);
+  });
+});
+
+/**
+ * The rule that matters: nobody pays for distance they do not travel.
+ *
+ * A declared stop with no price used to charge the FULL journey fare, so a
+ * rider joining halfway through a 1000 km run paid the whole 1000 km price
+ * because the driver had not filled in a box.
+ */
+describe('proportional fare for a stop the driver did not price', () => {
+  // Delhi (0 km) → Surat (~700 km) → Mumbai (~1000 km), straight-line.
+  const DELHI = { lat: 28.6139, lng: 77.2090 };
+  const SURAT = { lat: 21.1702, lng: 72.8311 };
+  const MUMBAI = { lat: 19.0760, lng: 72.8777 };
+  const ROUTE = [DELHI, SURAT, MUMBAI];
+  const FULL = 1000;
+
+  const fareAt = (pt: { lat: number; lng: number }, stops: any[]) =>
+    farePerSeatForPickup({
+      ridePrice: FULL, stops, routeCoords: ROUTE,
+      pickupLat: pt.lat, pickupLng: pt.lng,
+    });
+
+  it('charges much less than the full fare at an unpriced late stop', () => {
+    const r = fareAt(SURAT, [{ label: 'Surat', lat: SURAT.lat, lng: SURAT.lng }]);
+    expect(r.farePerSeat).toBeLessThan(FULL);
+    expect(r.isStopFare).toBe(true);
+    expect(r.isEstimated).toBe(true);
+  });
+
+  it('prices the remaining distance, not the distance already covered', () => {
+    // Surat→Mumbai is a small tail of Delhi→Mumbai, so the fare should be a
+    // small fraction — certainly under a third.
+    const r = fareAt(SURAT, [{ label: 'Surat', lat: SURAT.lat, lng: SURAT.lng }]);
+    expect(r.farePerSeat).toBeLessThan(FULL / 3);
+    expect(r.farePerSeat).toBeGreaterThan(0);
+  });
+
+  it("still prefers the driver's own price when they set one", () => {
+    // An explicit price is a decision; the estimate is only a fallback.
+    const r = fareAt(SURAT, [{ label: 'Surat', lat: SURAT.lat, lng: SURAT.lng, price: 350 }]);
+    expect(r.farePerSeat).toBe(350);
+    expect(r.isEstimated).toBeUndefined();
+  });
+
+  it('charges the full fare from the origin, where nothing is saved', () => {
+    const r = fareAt(DELHI, [{ label: 'Delhi', lat: DELHI.lat, lng: DELHI.lng }]);
+    expect(r.farePerSeat).toBe(FULL);
+  });
+
+  it('keeps the full fare when the route is too sparse to judge', () => {
+    // No invented discount without evidence of a shorter journey.
+    const r = farePerSeatForPickup({
+      ridePrice: FULL, stops: [{ label: 'X', lat: 1, lng: 1 }],
+      routeCoords: [], pickupLat: 1, pickupLng: 1,
+    });
+    expect(r.farePerSeat).toBe(FULL);
+    expect(r.isStopFare).toBe(false);
+  });
+
+  it('charges the full fare when the rider is not at a declared stop', () => {
+    // Off-route riders have no known position along the journey, so the safe
+    // assumption is that they are travelling all of it.
+    const r = fareAt({ lat: 26.9124, lng: 75.7873 }, [
+      { label: 'Surat', lat: SURAT.lat, lng: SURAT.lng },
+    ]);
+    expect(r.farePerSeat).toBe(FULL);
+    expect(r.isStopFare).toBe(false);
+  });
+});
+
+describe('proportionalStopFare', () => {
+  const ROUTE = [{ lat: 0, lng: 0 }, { lat: 0, lng: 1 }, { lat: 0, lng: 2 }];
+
+  it('halves the fare at the halfway point', () => {
+    const f = proportionalStopFare({ ridePrice: 400, routeCoords: ROUTE, stopLat: 0, stopLng: 1 });
+    expect(f).toBe(200);
+  });
+
+  it('is zero at the destination — there is nothing left to travel', () => {
+    // Guarded by the caller, which keeps the full fare rather than a free ride.
+    expect(proportionalStopFare({ ridePrice: 400, routeCoords: ROUTE, stopLat: 0, stopLng: 2 })).toBeNull();
+  });
+
+  it('returns null rather than guessing when there is no usable route', () => {
+    expect(proportionalStopFare({ ridePrice: 400, routeCoords: [], stopLat: 0, stopLng: 0 })).toBeNull();
+    expect(proportionalStopFare({ ridePrice: 400, routeCoords: null, stopLat: 0, stopLng: 0 })).toBeNull();
+  });
+
+  it('never exceeds the full fare', () => {
+    const f = proportionalStopFare({ ridePrice: 400, routeCoords: ROUTE, stopLat: 0, stopLng: -5 });
+    expect(f).not.toBeNull();
+    expect(f!).toBeLessThanOrEqual(400);
   });
 });

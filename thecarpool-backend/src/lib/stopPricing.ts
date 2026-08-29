@@ -56,6 +56,87 @@ export function matchStop(
   return (hit as PricedStop) ?? null;
 }
 
+/** Metres between two coordinates. Local so this module stays dependency-free. */
+function metresBetween(aLat: number, aLng: number, bLat: number, bLng: number): number {
+  const R = 6371e3;
+  const p1 = (aLat * Math.PI) / 180;
+  const p2 = (bLat * Math.PI) / 180;
+  const dp = ((bLat - aLat) * Math.PI) / 180;
+  const dl = ((bLng - aLng) * Math.PI) / 180;
+  const h = Math.sin(dp / 2) ** 2 + Math.cos(p1) * Math.cos(p2) * Math.sin(dl / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
+}
+
+/** Total length of a route polyline, in metres. */
+export function routeLengthMetres(routeCoords: unknown): number {
+  if (!Array.isArray(routeCoords) || routeCoords.length < 2) return 0;
+  let total = 0;
+  for (let i = 1; i < routeCoords.length; i++) {
+    const a = routeCoords[i - 1] as any;
+    const b = routeCoords[i] as any;
+    if (typeof a?.lat !== 'number' || typeof b?.lat !== 'number') continue;
+    total += metresBetween(a.lat, a.lng, b.lat, b.lng);
+  }
+  return total;
+}
+
+/**
+ * Distance still to travel from a point on the route to the destination.
+ *
+ * Finds the nearest route vertex and sums the remaining legs. Approximate by
+ * design — it decides a fare, not a navigation instruction, and the driver can
+ * always override the number it produces.
+ */
+export function remainingMetresFrom(routeCoords: unknown, lat: number, lng: number): number {
+  if (!Array.isArray(routeCoords) || routeCoords.length < 2) return 0;
+  let nearest = -1;
+  let best = Infinity;
+  for (let i = 0; i < routeCoords.length; i++) {
+    const pt = routeCoords[i] as any;
+    if (typeof pt?.lat !== 'number' || typeof pt?.lng !== 'number') continue;
+    const d = metresBetween(lat, lng, pt.lat, pt.lng);
+    if (d < best) { best = d; nearest = i; }
+  }
+  if (nearest === -1) return 0;
+  let remaining = 0;
+  for (let i = nearest + 1; i < routeCoords.length; i++) {
+    const a = routeCoords[i - 1] as any;
+    const b = routeCoords[i] as any;
+    if (typeof a?.lat !== 'number' || typeof b?.lat !== 'number') continue;
+    remaining += metresBetween(a.lat, a.lng, b.lat, b.lng);
+  }
+  return remaining;
+}
+
+/**
+ * What a stop SHOULD cost, purely from how far it still is to the destination.
+ *
+ * Someone boarding halfway pays about half. This is the figure the driver's
+ * form pre-fills, and the figure used when a driver adds a stop and leaves the
+ * fare blank — because charging the full journey price to someone travelling
+ * half of it is the behaviour we are trying to remove, and "the driver did not
+ * fill in a box" is not a good reason to do it to a rider.
+ *
+ * Returns null when the route is too sparse to judge, in which case the caller
+ * keeps the full fare rather than inventing a discount.
+ */
+export function proportionalStopFare(opts: {
+  ridePrice: number;
+  routeCoords: unknown;
+  stopLat: number;
+  stopLng: number;
+}): number | null {
+  const full = Math.max(0, Number(opts.ridePrice) || 0);
+  const total = routeLengthMetres(opts.routeCoords);
+  if (total <= 0) return null;
+
+  const remaining = remainingMetresFrom(opts.routeCoords, opts.stopLat, opts.stopLng);
+  if (remaining <= 0) return null;
+
+  const fraction = Math.min(1, remaining / total);
+  return Math.round(full * fraction * 100) / 100;
+}
+
 export interface PickupFare {
   /** Per-seat fare to charge. */
   farePerSeat: number;
@@ -63,14 +144,33 @@ export interface PickupFare {
   viaStopLabel: string | null;
   /** True when a stop's own price was used rather than the full ride fare. */
   isStopFare: boolean;
+  /**
+   * True when the fare was worked out from distance because the driver did not
+   * set one. The app can say "estimated from distance" rather than implying the
+   * driver chose the number.
+   */
+  isEstimated?: boolean;
 }
 
 /**
  * What one seat costs for a rider boarding at this coordinate.
  *
- * Falls back to the full ride fare whenever there is no matching stop or the
- * stop carries no price. Falling back UP to the full fare is deliberate: the
- * failure mode of a bad match is then "charged the normal price", never
+ * Three cases, in order:
+ *
+ *   1. A declared stop with a price the driver typed  -> that price.
+ *   2. A declared stop with NO price                  -> a distance-proportional
+ *      fare worked out from how far the stop still is from the destination.
+ *   3. No declared stop at all                        -> the full ride fare.
+ *
+ * Case 2 used to be case 3, and that was wrong. Someone boarding halfway
+ * through a 1000 km run was charged the whole 1000 km fare because the driver
+ * had not filled in a box. "The driver left a field blank" is not a reason to
+ * overcharge a rider for a journey they are not taking.
+ *
+ * Case 3 still falls back UP to the full fare, deliberately. There the rider is
+ * not at a declared stop, so there is nothing to say how far along the route
+ * they are — the safe assumption is that they are riding the whole thing. The
+ * failure mode of a bad match stays "charged the normal price", never
  * "travelled most of the way for nothing".
  */
 export function farePerSeatForPickup(opts: {
@@ -78,12 +178,34 @@ export function farePerSeatForPickup(opts: {
   stops: unknown;
   pickupLat: number;
   pickupLng: number;
+  /** Route polyline. Needed for the proportional fallback; omitting it keeps
+   *  the old full-fare behaviour for unpriced stops. */
+  routeCoords?: unknown;
 }): PickupFare {
   const ridePrice = Math.max(0, Number(opts.ridePrice) || 0);
   const stop = matchStop(opts.stops, opts.pickupLat, opts.pickupLng);
 
   const raw = stop?.price;
   const hasPrice = raw !== null && raw !== undefined && Number.isFinite(Number(raw));
+
+  if (stop && !hasPrice) {
+    // Declared stop, no price set: charge for the distance actually travelled.
+    const proportional = proportionalStopFare({
+      ridePrice,
+      routeCoords: opts.routeCoords,
+      stopLat: stop.lat,
+      stopLng: stop.lng,
+    });
+    if (proportional !== null && proportional < ridePrice) {
+      return {
+        farePerSeat: proportional,
+        viaStopLabel: stop.label ?? null,
+        isStopFare: true,
+        isEstimated: true,
+      };
+    }
+  }
+
   if (!stop || !hasPrice) {
     return { farePerSeat: ridePrice, viaStopLabel: stop?.label ?? null, isStopFare: false };
   }

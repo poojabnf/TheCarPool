@@ -197,6 +197,7 @@ export async function bookingRoutes(fastify: FastifyInstance) {
     const pickupFare = farePerSeatForPickup({
       ridePrice: Number(rideForQuote.price_split || 0),
       stops: rideForQuote.pickup_points,
+      routeCoords: rideForQuote.route_coords,
       pickupLat: pickup_lat,
       pickupLng: pickup_lng,
     });
@@ -1453,6 +1454,7 @@ export async function bookingRoutes(fastify: FastifyInstance) {
       const quoteFare = farePerSeatForPickup({
         ridePrice: Number(ride.price_split || 0),
         stops: ride.pickup_points,
+        routeCoords: ride.route_coords,
         pickupLat: qLat,
         pickupLng: qLng,
       });
@@ -1471,6 +1473,9 @@ export async function bookingRoutes(fastify: FastifyInstance) {
         // showing a smaller number than the ride advertised.
         fare_per_seat: quoteFare.farePerSeat,
         fare_via_stop: quoteFare.isStopFare ? (quoteFare.viaStopLabel ?? 'stop') : null,
+        // True when we worked the fare out from distance rather than the
+        // driver setting it, so the app can say so honestly.
+        fare_estimated: quoteFare.isEstimated === true,
         full_journey_fare_per_seat: round2(Number(ride.price_split || 0)),
         convenience_fee: CONVENIENCE_FEE,
         // Optional — only added to the total if the rider opts in.
