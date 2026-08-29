@@ -324,7 +324,21 @@ export async function paymentRoutes(fastify: FastifyInstance) {
   // to. Both steps are idempotent: an existing account is returned unchanged.
   fastify.post('/kyc/pan', { preHandler: [requireAuth] }, async (request, reply) => {
     const uid = String(request.user!.id);
-    const raw = (request.body as any)?.pan;
+    const userSnapEarly = await db.collection('users').doc(uid).get();
+    if (!userSnapEarly.exists) return reply.code(404).send({ error: 'User not found.' });
+
+    // Fall back to the PAN already on file when the caller sends none.
+    //
+    // Setup can stall after the PAN is stored — a missing name or email stops
+    // the payout account being created — and finishing it should not require
+    // typing the PAN again. It happened: the number was saved, the app showed
+    // it as a placeholder, and because the client only submitted when a FULL
+    // PAN had been retyped, the follow-up never fired and the account was
+    // never created.
+    const rawBody = (request.body as any)?.pan;
+    const raw = (typeof rawBody === 'string' && rawBody.trim())
+      ? rawBody
+      : (userSnapEarly.data()?.pan_number ?? '');
 
     const check = validatePan(raw);
     if (!check.valid) {
@@ -356,9 +370,7 @@ export async function paymentRoutes(fastify: FastifyInstance) {
     }
 
     const userRef = db.collection('users').doc(uid);
-    const snap = await userRef.get();
-    if (!snap.exists) return reply.code(404).send({ error: 'User not found.' });
-    const user = snap.data()!;
+    const user = userSnapEarly.data()!;
 
     // A PAN already tied to a live linked account is not editable here: the
     // identity Razorpay holds and the one we hold would diverge, and money is

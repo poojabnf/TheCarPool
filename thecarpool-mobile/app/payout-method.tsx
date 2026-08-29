@@ -232,17 +232,30 @@ export default function PayoutMethodScreen() {
   const panNameOk = panOk && panName
     .trim().toUpperCase().split(/[^A-Z]+/).filter(Boolean)
     .some((w: string) => w[0] === panValue[4]);
-  const panSatisfied = kycStatus === 'LINKED' || !!panOnFile || (panOk && panNameOk);
+  // A PAN on file is not enough once we know the account was never created:
+  // the name is what Razorpay checks against the card, so setup cannot finish
+  // without it. panNameOk falls back to the stored PAN when none was retyped.
+  const effectivePan = panOk ? panValue : '';
+  const panNameMatchesStored = panName.trim().length >= 2 && (!!panOnFile || panOk);
+  const panSatisfied = kycStatus === 'LINKED'
+    ? true
+    : kycStatus === 'COLLECTED'
+      ? panNameMatchesStored
+      : (panOk && panNameOk);
   const canSave = panSatisfied && emailSatisfied && (type === 'VPA' ? vpaOk : (accOk && accMatches && ifscOk && nameOk));
 
   const saveDetails = async () => {
     setSaving(true);
     try {
-      if (panOk && kycStatus !== 'LINKED') {
+      // Submit whenever the payout account is not yet linked — not only when a
+      // full PAN has been retyped. A PAN already on file with setup unfinished
+      // is exactly the case that needs finishing, and requiring a retype meant
+      // the request never fired at all.
+      if (kycStatus !== 'LINKED' && (panOk || !!panOnFile)) {
         const panRes = await apiFetch('/api/payments/kyc/pan', {
           method: 'POST',
           body: JSON.stringify({
-            pan: panValue,
+            ...(panOk ? { pan: panValue } : {}),
             pan_name: panName.trim(),
             ...(payoutEmail.trim() ? { email: payoutEmail.trim() } : {}),
           }),
@@ -592,7 +605,7 @@ export default function PayoutMethodScreen() {
             no email on file, and without it no payout account can be opened —
             which is exactly how the first real PAN submission stalled without
             anyone noticing. */}
-        {needsEmail && kycStatus !== 'LINKED' && (
+        {(needsEmail || kycStatus === 'COLLECTED') && kycStatus !== 'LINKED' && (
           <>
             <Text style={styles.label}>Email address</Text>
             <TextInput
@@ -924,6 +937,10 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: c.borderDefault, marginBottom: space.sm,
   },
   err: { fontFamily: font.sans, fontSize: 11.5, color: c.danger, marginTop: -4, marginBottom: space.sm },
+  blockedNote: {
+    fontFamily: font.sans, fontSize: 12.5, color: c.danger,
+    marginBottom: 8, textAlign: 'center', lineHeight: 17,
+  },
   panNote: { fontFamily: font.sans, fontSize: 11.5, color: c.textTertiary, marginTop: -2, marginBottom: space.md, lineHeight: 16 },
   panDone: {
     borderRadius: radius.md, paddingVertical: 10, paddingHorizontal: 12, marginBottom: space.md,

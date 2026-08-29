@@ -236,8 +236,14 @@ export default function HomeScreen() {
             subtitle: [
               formatDeparture(r.departure_time),
               seatsBooked !== null ? `${seatsBooked}/${r.seats_total} booked` : null,
+              // When this ride was posted. It was on the search cards but not
+              // here, which is the list people actually tap from home.
+              r.created_at ? `posted ${formatPostedAgo(r.created_at)}` : null,
             ].filter(Boolean).join(' · '),
-            href: '/(tabs)/driver',
+            // Open THIS ride, not the whole dashboard. Tapping one ride and
+            // landing on a list of every ride you have ever offered loses the
+            // thing you tapped.
+            href: `/trip/${r.id}`,
             // Yellow: Not yet started | Orange: Started / Ongoing | Green: Completed
             statusLabel: isCompleted ? 'Completed' : isOngoing ? 'Started' : 'Not yet started',
             statusColor: isCompleted ? '#15803D' : isOngoing ? '#C2410C' : '#B45309',
