@@ -17,11 +17,8 @@ import {
   verifyWebhookSignature,
   createPayout,
 } from '../lib/razorpay';
+import { round2, isShortOf } from '../lib/money';
 
-/** Rounds to paise — wallet balances are rupees held as JS numbers. */
-function round2(n: number): number {
-  return Math.round((n + Number.EPSILON) * 100) / 100;
-}
 
 const OrderSchema = z.object({
   amount: z.number().positive(),
@@ -427,7 +424,7 @@ export async function paymentRoutes(fastify: FastifyInstance) {
         await db.runTransaction(async (tx) => {
           const w = await tx.get(walletRef);
           const bal = Number(w.data()?.available_wallet_balance || 0);
-          if (bal + 0.01 < amount) throw new Error('INSUFFICIENT_WALLET');
+          if (isShortOf(bal, amount)) throw new Error('INSUFFICIENT_WALLET');
           tx.set(walletRef, { available_wallet_balance: round2(bal - amount) }, { merge: true });
         });
 

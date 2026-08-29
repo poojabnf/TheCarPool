@@ -14,6 +14,7 @@ import { settlementDueAt, DISPUTE_WINDOW_MINUTES } from '../lib/settlement';
 import { settleDueBookingsForRide } from '../lib/rideSettlement';
 import { sendPushToUser } from '../lib/fcm';
 import { getUserEmail, buildRideOfferedEmail, sendEmail } from '../lib/email';
+import { round2 } from '../lib/money';
 
 /** Uids of riders with a live booking on a ride — who gets told about it. */
 async function activeRiderUids(rideId: string): Promise<string[]> {
@@ -28,10 +29,6 @@ async function activeRiderUids(rideId: string): Promise<string[]> {
   )];
 }
 
-/** Rounds to paise — wallet balances are rupees held as JS numbers. */
-function round2(n: number): number {
-  return Math.round((n + Number.EPSILON) * 100) / 100;
-}
 
 /** Hard cap on driver-declared pickup points; keeps ride docs and rider UI sane. */
 const MAX_PICKUP_POINTS = 10;

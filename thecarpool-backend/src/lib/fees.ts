@@ -11,10 +11,8 @@
  *    part of the driver payout — it is held for remittance to the insurer.
  */
 
-/** Rounds to paise. Money is handled in rupees as a JS number. */
-function round2(n: number): number {
-  return Math.round((n + Number.EPSILON) * 100) / 100;
-}
+import { round2 } from './money';
+
 
 // ── Convenience fee ────────────────────────────────────────────────────────
 export const CONVENIENCE_FEE = 0;

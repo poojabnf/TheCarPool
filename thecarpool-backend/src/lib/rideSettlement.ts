@@ -21,10 +21,8 @@ import { planPayout, maskPayoutMethod } from './payouts';
 import { isSettlementDue } from './settlement';
 import { releaseTransfer } from './route';
 import { isRazorpayXConfigured } from './razorpay';
+import { round2 } from './money';
 
-function round2(n: number): number {
-  return Math.round((n + Number.EPSILON) * 100) / 100;
-}
 
 export interface SettleOutcome {
   paid: number;

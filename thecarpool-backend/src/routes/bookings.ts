@@ -26,6 +26,7 @@ import {
   cancellationOutcome,
   noShowOutcome,
 } from '../lib/fees';
+import { round2, isShortOf } from '../lib/money';
 
 /**
  * Name the driver stop this rider is boarding at, when their pickup matches
@@ -49,10 +50,6 @@ function pickupLabelFor(
   return match?.label ? String(match.label) : null;
 }
 
-/** Rounds to paise — booking amounts are rupees held as JS numbers. */
-function round2(n: number): number {
-  return Math.round((n + Number.EPSILON) * 100) / 100;
-}
 
 const CreateBookingSchema = z.object({
   ride_id: z.string().min(1),
@@ -199,7 +196,7 @@ export async function bookingRoutes(fastify: FastifyInstance) {
         fastify.log.error(err, 'Could not fetch payment for booking');
         return reply.code(502).send({ error: 'Could not verify your payment with the gateway.' });
       }
-      if (capturedAmount + 0.01 < totalDue) {
+      if (isShortOf(capturedAmount, totalDue)) {
         return reply.code(402).send({
           error: 'PAYMENT_TOO_SMALL',
           message: 'The payment does not cover the full fare.',
@@ -262,7 +259,7 @@ export async function bookingRoutes(fastify: FastifyInstance) {
             ? walletDoc!.data()!
             : { available_wallet_balance: 0, escrow_locked_balance: 0, currency: defaultCurrency() };
           const available = Number(cur.available_wallet_balance || 0);
-          if (available + 0.01 < totalDue) {
+          if (isShortOf(available, totalDue)) {
             throw new Error('INSUFFICIENT_WALLET');
           }
           transaction.set(riderWalletRef, {

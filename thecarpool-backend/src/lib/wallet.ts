@@ -1,5 +1,6 @@
 import { db } from './firestore';
 import { defaultCurrency } from './config';
+import { isAtLeast } from './money';
 
 /**
  * Credit a user's wallet for a captured Razorpay payment, exactly once.
@@ -43,7 +44,10 @@ export function claimPaymentInTransaction(
     throw new Error('PAYMENT_NOT_YOURS');
   }
   // Guard against a partial payment funding a full-price seat.
-  if (!(amountRupees + 0.01 >= requiredRupees)) {
+  // Exact, in paise. The old `+ 0.01` slack existed to absorb float drift
+  // but could not tell drift from a genuine shortfall, so it also accepted a
+  // payment one paisa short. isAtLeast removes the drift instead.
+  if (!isAtLeast(amountRupees, requiredRupees)) {
     throw new Error('PAYMENT_TOO_SMALL');
   }
 
