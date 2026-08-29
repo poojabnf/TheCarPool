@@ -123,3 +123,27 @@ async def voice_gather(request: Request, SpeechResult: str = Form(None)):
         response.append(gather)
         
     return Response(content=str(response), media_type="application/xml")
+
+@router.post("/intent-parse")
+async def voice_intent_parse(request: Request, SpeechResult: str = Form(None)):
+    """
+    Dedicated REST JSON endpoint for internal backend AI calls.
+    """
+    if not SpeechResult:
+        try:
+            body = await request.json()
+            SpeechResult = body.get("SpeechResult") or body.get("raw_speech")
+        except Exception:
+            pass
+
+    if not SpeechResult:
+        return {"intent": "UNKNOWN", "delay_minutes": 0, "status": "NO_INPUT"}
+
+    nlu_slots = parse_user_intent(SpeechResult)
+    return {
+        "status": "OK",
+        "raw_speech": SpeechResult,
+        "intent": nlu_slots.get("intent", "UNKNOWN"),
+        "delay_minutes": nlu_slots.get("delay_minutes", 0)
+    }
+

@@ -993,6 +993,23 @@ export async function rideRoutes(fastify: FastifyInstance) {
         return reply.code(404).send({ error: 'Ride not found.' });
       }
       const ride: any = { id: rideDoc.id, ...rideDoc.data() };
+      const callerId = String(request.user?.id || '');
+      const isDriver = callerId === String(ride.driver_uid || ride.driver_id);
+      let isConfirmedPassenger = false;
+
+      if (!isDriver && callerId) {
+        const userBookingSnap = await db.collection('bookings')
+          .where('ride_id', '==', String(id))
+          .where('rider_id', '==', callerId)
+          .get();
+        isConfirmedPassenger = userBookingSnap.docs.some((d) => {
+          const b = d.data();
+          return b.booking_status === 'CONFIRMED' || b.escrow_status === 'HELD' || b.escrow_status === 'SETTLED';
+        });
+      }
+
+      const hasDirectAccess = isDriver || isConfirmedPassenger || request.user?.role === 'ADMIN';
+
       // Enrich with the driver's display & contact info
       if (ride.driver_uid || ride.driver_id) {
         const driverUid = ride.driver_uid || (ride.driver_id.startsWith('driver_') ? ride.driver_id.replace('driver_', '') : ride.driver_id);
@@ -1000,8 +1017,8 @@ export async function rideRoutes(fastify: FastifyInstance) {
         if (userDoc.exists) {
           const u = userDoc.data()!;
           ride.driver_name = ride.driver_name || u.name || u.displayName || u.full_name;
-          ride.driver_phone = u.phone_number || u.phone || null;
-          ride.driver_email = u.email || u.corporate_email || null;
+          ride.driver_phone = hasDirectAccess ? (u.phone_number || u.phone || null) : null;
+          ride.driver_email = hasDirectAccess ? (u.email || u.corporate_email || null) : null;
           ride.driver_photo = u.photo_url || u.photoURL || u.avatar_path || null;
         }
 
@@ -1010,28 +1027,30 @@ export async function rideRoutes(fastify: FastifyInstance) {
           if (driverDoc.exists) {
             const d = driverDoc.data()!;
             ride.driver_name = ride.driver_name || d.name;
-            ride.driver_phone = ride.driver_phone || d.phone || null;
+            ride.driver_phone = hasDirectAccess ? (ride.driver_phone || d.phone || null) : null;
             ride.vehicle = ride.vehicle || d.vehicle_model || d.vehicle_type;
-            ride.vehicle_plate = ride.vehicle_plate || d.vehicle_plate;
+            ride.vehicle_plate = hasDirectAccess ? (ride.vehicle_plate || d.vehicle_plate) : (ride.vehicle_plate ? `${String(ride.vehicle_plate).slice(0, 4)}••••` : null);
           }
         }
 
-        // Enrich with driver's live GPS telemetry if active
-        try {
-          const coordDoc = await db.collection('device_coordinates').doc(String(driverUid)).get();
-          if (coordDoc.exists) {
-            const cData = coordDoc.data()!;
-            if (cData.current_location?.lat && cData.current_location?.lng) {
-              ride.live_telemetry = {
-                lat: cData.current_location.lat,
-                lng: cData.current_location.lng,
-                speed: cData.speed ?? 0,
-                bearing: cData.bearing ?? 0,
-                last_updated: cData.last_updated ?? null,
-              };
+        // Enrich with driver's live GPS telemetry ONLY for active ride participants
+        if (hasDirectAccess) {
+          try {
+            const coordDoc = await db.collection('device_coordinates').doc(String(driverUid)).get();
+            if (coordDoc.exists) {
+              const cData = coordDoc.data()!;
+              if (cData.current_location?.lat && cData.current_location?.lng) {
+                ride.live_telemetry = {
+                  lat: cData.current_location.lat,
+                  lng: cData.current_location.lng,
+                  speed: cData.speed ?? 0,
+                  bearing: cData.bearing ?? 0,
+                  last_updated: cData.last_updated ?? null,
+                };
+              }
             }
-          }
-        } catch { /* non-critical enrichment */ }
+          } catch { /* non-critical enrichment */ }
+        }
       }
       return reply.send(ride);
     } catch (err: any) {

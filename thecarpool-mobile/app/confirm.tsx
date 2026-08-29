@@ -183,8 +183,8 @@ function describeDistance(metres: number, minutes: number): string {
           razorpay_payment_id: paymentData.razorpay_payment_id,
           insurance_opted: insuranceOpted,
           // Book at the chosen meeting point (zero driver detour) when picked.
-          pickup_lng: chosenMp !== null ? allPickups[chosenMp].longitude : Number(p.pickup_lng),
-          pickup_lat: chosenMp !== null ? allPickups[chosenMp].latitude : Number(p.pickup_lat),
+          pickup_lng: (chosenMp !== null && allPickups[chosenMp]) ? allPickups[chosenMp].longitude : Number(p.pickup_lng),
+          pickup_lat: (chosenMp !== null && allPickups[chosenMp]) ? allPickups[chosenMp].latitude : Number(p.pickup_lat),
           drop_lng: Number(p.drop_lng), drop_lat: Number(p.drop_lat),
         }),
       });

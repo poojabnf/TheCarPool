@@ -125,6 +125,18 @@ export async function safetyRoutes(fastify: FastifyInstance) {
         return reply.code(400).send({ status: 'DEACTIVATED', error: 'Corporate domain is currently deactivated.' });
       }
 
+      // Check if user authenticated directly with this domain email
+      const authedEmail = String(request.user?.email || '').toLowerCase();
+      const authedDomain = authedEmail.includes('@') ? authedEmail.split('@')[1] : '';
+
+      if (authedDomain !== domain && request.user?.role !== 'ADMIN') {
+        // Require explicit domain match on authenticated token
+        return reply.code(403).send({
+          status: 'CHALLENGE_REQUIRED',
+          error: `Please sign in with your corporate @${domain} email account to join this Trust Circle.`
+        });
+      }
+
       await db.collection('users').doc(String(user_id)).update({ company_domain: domain });
 
       // Count coworkers in the same domain
@@ -209,7 +221,7 @@ export async function safetyRoutes(fastify: FastifyInstance) {
       const newAggregate = parseFloat(avg.toFixed(2));
 
       await db.collection('users').doc(String(ratee_id)).set(
-        { aggregate_rating: newAggregate, rating_count: scores.length },
+        { aggregate_rating: newAggregate, rating_avg: newAggregate, rating_count: scores.length },
         { merge: true }
       );
 
@@ -477,8 +489,12 @@ export async function safetyRoutes(fastify: FastifyInstance) {
 
       // ── Delete what is genuinely the user's own ──────────────────────────
       // Classifieds are the user's own content, so they go entirely.
-      const classifieds = await db.collection('classifieds').where('author_id', '==', uid).get();
-      await Promise.all(classifieds.docs.map((d) => d.ref.delete().catch(() => {})));
+      const [classifiedsAuthor, classifiedsUser] = await Promise.all([
+        db.collection('classifieds').where('author_id', '==', uid).get(),
+        db.collection('classifieds').where('user_id', '==', uid).get(),
+      ]);
+      const allClassifiedDocs = [...classifiedsAuthor.docs, ...classifiedsUser.docs];
+      await Promise.all(allClassifiedDocs.map((d) => d.ref.delete().catch(() => {})));
 
       await Promise.all([
         db.collection('users').doc(uid).delete().catch(() => {}),

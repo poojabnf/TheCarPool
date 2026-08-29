@@ -61,6 +61,7 @@ export const instantiateRecurringRides = onSchedule(
       batch.set(rideRef, {
         id: rideId,
         driver_id: String(t.driver_id),
+        driver_uid: String(t.driver_uid || (String(t.driver_id).startsWith('driver_') ? String(t.driver_id).replace('driver_', '') : t.driver_id)),
         route_coords: t.route_coords || [],
         seats_total: Number(t.seats_total) || 0,
         seats_available: Number(t.seats_total) || 0,

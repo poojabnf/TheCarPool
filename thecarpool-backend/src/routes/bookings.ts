@@ -1113,7 +1113,9 @@ export async function bookingRoutes(fastify: FastifyInstance) {
         return reply.code(409).send({ error: 'Cannot settle: the ride has no resolvable driver account.' });
       }
 
-      const fareAmount = Number(ride.price_split || 0) * Number(booking.seats_booked || 1);
+      const fareAmount = Number(
+        booking.fare_amount ?? (Number(ride?.price_split || 0) * Number(booking?.seats_booked || 1))
+      );
       const driverWalletRef = db.collection('wallets').doc(String(driver_id));
 
       await db.runTransaction(async (tx) => {

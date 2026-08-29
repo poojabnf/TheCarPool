@@ -76,7 +76,7 @@ export async function aiRoutes(fastify: FastifyInstance) {
 
     // Forwards the transcribed query to Claude NLU service (or local regex parser fallback)
     try {
-      const response = await fetch(`${aiServiceUrl.replace(/\/$/, '')}/voice/gather`, {
+      const response = await fetch(`${aiServiceUrl.replace(/\/$/, '')}/voice/intent-parse`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         body: new URLSearchParams({ SpeechResult: raw_speech })
@@ -185,6 +185,10 @@ export async function aiRoutes(fastify: FastifyInstance) {
   // 5. Calendar commute pattern learning triggers (Feature 15)
   fastify.get('/commute-patterns/:user_id', { preHandler: [requireAuth] }, async (request, reply) => {
     const { user_id } = request.params as { user_id: string };
+
+    if (String(request.user!.id) !== String(user_id) && request.user!.role !== 'ADMIN') {
+      return reply.code(403).send({ error: 'Forbidden: You can only inspect your own commute patterns.' });
+    }
     
     try {
       const bookingsSnap = await db.collection('bookings')

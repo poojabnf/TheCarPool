@@ -261,9 +261,8 @@ export default function TripScreen() {
           ref={mapRef}
           provider={MAP_PROVIDER}
           style={StyleSheet.absoluteFill}
-          region={{
-            // Follow the driver once we have them; otherwise sit on the
-            // rider's own pickup point so the map still means something.
+          initialRegion={{
+            // Initial focus on driver or rider pickup point
             latitude: driverLocation?.lat ?? pickupPoint?.latitude ?? 28.6139,
             longitude: driverLocation?.lng ?? pickupPoint?.longitude ?? 77.2090,
             latitudeDelta: 0.025,

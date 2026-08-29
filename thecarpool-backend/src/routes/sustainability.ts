@@ -20,7 +20,7 @@ export async function sustainabilityRoutes(fastify: FastifyInstance) {
   fastify.get('/leaderboard', async (request, reply) => {
     try {
       const bookingsSnap = await db.collection('bookings')
-        .where('status', '==', 'COMPLETED')
+        .where('escrow_status', '==', 'SETTLED')
         .get();
 
       const userMap: Record<string, { totalKm: number; count: number }> = {};

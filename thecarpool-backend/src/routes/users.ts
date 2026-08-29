@@ -237,27 +237,23 @@ export async function userRoutes(fastify: FastifyInstance) {
     try {
       await db.collection('users').doc(uid).set(updates, { merge: true });
 
-      // Keep phone and email identity indexes in sync so logins across Android/iOS link reliably
-      const phone = normalisePhone(request.user?.phone || updates.phone);
+      // Only index identities proven by Firebase Auth claims (not untrusted form inputs)
+      const phone = normalisePhone(request.user?.phone);
       if (phone) {
         await db.collection('phone_identities').doc(phoneKey(phone)).set({
           uid, phone, linked_at: new Date().toISOString(),
         }, { merge: true }).catch(() => {});
       }
 
-      const email = normaliseEmail(request.user?.email || updates.email || updates.corporate_email);
+      const email = normaliseEmail(request.user?.email);
       if (email) {
         await db.collection('email_identities').doc(emailKey(email)).set({
           uid, email, linked_at: new Date().toISOString(),
         }, { merge: true }).catch(() => {});
       }
 
-      // Propagate updates to linked parent uid if this account was adopted from another
       const userDoc = await db.collection('users').doc(uid).get();
       const userData = userDoc.data();
-      if (userData?.linked_from_uid) {
-        await db.collection('users').doc(userData.linked_from_uid).set(updates, { merge: true }).catch(() => {});
-      }
 
       return reply.send({ status: 'PROFILE_SAVED', user_id: uid, onboarded: true, profile: { ...userData, ...updates } });
     } catch (err: any) {

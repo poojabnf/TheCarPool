@@ -142,7 +142,10 @@ export async function settleDueBookingsForRide(
     }
 
     for (const w of bookingWrites) tx.update(w.ref, w.data);
-    tx.update(rideRef, { escrow_settled: true, settled_at: settledAt });
+    // Only mark the whole ride as settled if no bookings are still pending/held
+    if (skipped === 0) {
+      tx.update(rideRef, { escrow_settled: true, settled_at: settledAt });
+    }
 
     if (driverTotal > 0) {
       const cur = driverWalletDoc.exists

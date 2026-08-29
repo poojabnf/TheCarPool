@@ -18,20 +18,20 @@ service cloud.firestore {
     }
 
     function isAdmin() {
-      return isSignedIn() && request.auth.token.admin == true;
+      return isSignedIn() && (request.auth.token.admin == true || request.auth.token.role == 'ADMIN');
     }
 
     // Users may read and write only their own profile document.
-    // Sensitive fields (kycVerified, role, onboarded, company_domain, kyc_status)
+    // Sensitive fields (kycVerified, role, onboarded, company_domain, kyc_status, pan_number, payout_method, razorpay_account_id)
     // can only be written by the backend (Admin SDK bypasses rules) or by admins.
     match /users/{userId} {
       allow read: if isOwner(userId) || isAdmin();
       allow create: if isOwner(userId)
         && !request.resource.data.keys().hasAny(
-            ['kycVerified', 'kyc_status', 'role', 'onboarded', 'company_domain']);
+            ['kycVerified', 'kyc_status', 'role', 'onboarded', 'company_domain', 'pan_number', 'payout_method', 'razorpay_account_id', 'aggregate_rating', 'rating_avg', 'rating_count']);
       allow update: if isOwner(userId)
         && !request.resource.data.diff(resource.data).affectedKeys().hasAny(
-            ['kycVerified', 'kyc_status', 'role', 'onboarded', 'company_domain']);
+            ['kycVerified', 'kyc_status', 'role', 'onboarded', 'company_domain', 'pan_number', 'payout_method', 'razorpay_account_id', 'aggregate_rating', 'rating_avg', 'rating_count']);
       allow delete: if isAdmin();
     }
 

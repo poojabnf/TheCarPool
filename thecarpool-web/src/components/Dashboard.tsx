@@ -368,6 +368,70 @@ export default function AdminDashboard() {
           </div>
         )}
 
+        {/* ── USER MANAGEMENT TAB ── */}
+        {activeTab === 'users' && (
+          <div className="space-y-6">
+            <div className="flex justify-between items-center">
+              <div>
+                <h1 className="text-2xl font-black text-white">User Management</h1>
+                <p className="text-sm text-slate-400">View and manage registered riders, drivers, and trust status.</p>
+              </div>
+              <button 
+                onClick={() => { setUsers(null); }}
+                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-teal-400 font-bold text-sm rounded-xl transition-colors"
+              >
+                Refresh List
+              </button>
+            </div>
+
+            <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden">
+              {users === null ? (
+                <div className="p-12 text-center text-slate-400">Loading user registry...</div>
+              ) : users.length === 0 ? (
+                <div className="p-12 text-center text-slate-500">No users found or endpoint returned empty.</div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-sm text-slate-300">
+                    <thead className="bg-slate-800/60 text-xs font-bold text-slate-400 uppercase">
+                      <tr>
+                        <th className="p-4">User</th>
+                        <th className="p-4">Role</th>
+                        <th className="p-4">Company Domain</th>
+                        <th className="p-4">KYC Status</th>
+                        <th className="p-4">Joined</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-800">
+                      {users.map((u: any, idx: number) => (
+                        <tr key={u.id || idx} className="hover:bg-slate-800/40 transition-colors">
+                          <td className="p-4 font-bold text-white">
+                            <div>{u.name || u.displayName || 'Anonymous User'}</div>
+                            <div className="text-xs text-slate-500 font-normal">{u.email || u.phone || u.id}</div>
+                          </td>
+                          <td className="p-4">
+                            <span className="px-2.5 py-1 bg-slate-800 text-teal-400 rounded-lg text-xs font-semibold">
+                              {u.role || 'RIDER'}
+                            </span>
+                          </td>
+                          <td className="p-4 text-slate-400">{u.company_domain || '—'}</td>
+                          <td className="p-4">
+                            <span className={`px-2.5 py-1 rounded-lg text-xs font-semibold ${
+                              u.kycVerified ? 'bg-emerald-950 text-emerald-400' : 'bg-amber-950 text-amber-400'
+                            }`}>
+                              {u.kycVerified ? 'VERIFIED' : (u.kyc_status || 'UNVERIFIED')}
+                            </span>
+                          </td>
+                          <td className="p-4 text-slate-400 text-xs">{u.created_at ? new Date(u.created_at).toLocaleDateString() : '—'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* ── KYC APPROVALS TAB ── */}
         {/* PLACEHOLDER TABS (remaining) */}
         {(activeTab === 'moderation' || activeTab === 'compliance') && (

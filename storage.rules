@@ -14,7 +14,7 @@ service firebase.storage {
     }
 
     function isAdmin() {
-      return request.auth != null && request.auth.token.admin == true;
+      return request.auth != null && (request.auth.token.admin == true || request.auth.token.role == 'ADMIN');
     }
 
     function withinSizeLimit() {
@@ -22,23 +22,20 @@ service firebase.storage {
     }
 
     // Per-user KYC documents — owner only, images up to 10 MB.
-    //
-    // create/update and delete are separate on purpose. `allow write` covers
-    // all three, but on a DELETE `request.resource` is null, so the size and
-    // content-type checks error out and silently block every deletion — which
-    // is also what stopped the retention policy from ever removing anything.
     match /users/{uid}/kyc/{allPaths=**} {
       allow read: if isOwner(uid) || isAdmin();
       allow create, update: if isOwner(uid)
         && withinSizeLimit()
-        && request.resource.contentType.matches('image/.*');
+        && (request.resource.contentType.matches('image/.*') || request.resource.contentType == 'application/pdf');
       allow delete: if isOwner(uid) || isAdmin();
     }
 
-    // Any other per-user assets — owner only, up to 10 MB.
+    // Any other per-user assets (avatars, classifieds) — owner only, images up to 10 MB.
     match /users/{uid}/{allPaths=**} {
       allow read: if isOwner(uid) || isAdmin();
-      allow create, update: if isOwner(uid) && withinSizeLimit();
+      allow create, update: if isOwner(uid)
+        && withinSizeLimit()
+        && request.resource.contentType.matches('image/.*');
       allow delete: if isOwner(uid) || isAdmin();
     }
 

@@ -83,8 +83,8 @@ export async function creditWalletForPayment(opts: {
     // All reads before any writes (Firestore transaction requirement).
     const [payDoc, walletDoc] = await Promise.all([tx.get(payRef), tx.get(walletRef)]);
 
-    if (payDoc.exists && payDoc.data()?.wallet_credited === true) {
-      return { credited: false }; // already applied — no-op
+    if (payDoc.exists && (payDoc.data()?.wallet_credited === true || Boolean(payDoc.data()?.consumed_by_booking))) {
+      return { credited: false }; // already applied or directly funded a booking — no-op
     }
 
     const cur = walletDoc.exists

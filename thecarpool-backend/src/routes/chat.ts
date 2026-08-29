@@ -40,7 +40,10 @@ async function getRideIfParticipant(rideId: string, uid: string) {
     .where('rider_id', '==', uid)
     .limit(5)
     .get();
-  const active = booking.docs.some((d) => d.data().status !== 'CANCELLED');
+  const active = booking.docs.some((d) => {
+    const b = d.data();
+    return b.booking_status !== 'DECLINED' && b.escrow_status !== 'CANCELLED' && b.escrow_status !== 'REFUNDED';
+  });
   return active ? ride : null;
 }
 
@@ -51,7 +54,9 @@ async function getParticipantUids(rideId: string, ride: FirebaseFirestore.Docume
   const bookings = await db.collection('bookings').where('ride_id', '==', rideId).get();
   for (const doc of bookings.docs) {
     const b = doc.data();
-    if (b.status !== 'CANCELLED' && b.rider_id) uids.add(String(b.rider_id));
+    if (b.booking_status !== 'DECLINED' && b.escrow_status !== 'CANCELLED' && b.escrow_status !== 'REFUNDED' && b.rider_id) {
+      uids.add(String(b.rider_id));
+    }
   }
   return [...uids];
 }

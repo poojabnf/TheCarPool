@@ -701,40 +701,57 @@ export async function paymentRoutes(fastify: FastifyInstance) {
     }
 
     try {
-      const accountDoc = await db.collection('corporate_accounts').doc(company_domain).get();
-      if (!accountDoc.exists) {
-        return reply.code(404).send({ error: `No corporate account found for domain: ${company_domain}` });
-      }
-      const account = accountDoc.data() as { monthly_budget: number; spent_this_month: number; currency: string };
-      const remaining = (account.monthly_budget || 0) - (account.spent_this_month || 0);
+      const accountRef = db.collection('corporate_accounts').doc(company_domain);
+      
+      const billResult = await db.runTransaction(async (tx) => {
+        const accountDoc = await tx.get(accountRef);
+        if (!accountDoc.exists) {
+          throw new Error('ACCOUNT_NOT_FOUND');
+        }
+        const account = accountDoc.data() as { monthly_budget: number; spent_this_month: number; currency: string };
+        const remaining = (account.monthly_budget || 0) - (account.spent_this_month || 0);
 
-      if (amount > remaining) {
-        return reply.code(402).send({
-          error: 'Monthly corporate budget exceeded.',
-          budget_remaining: remaining,
+        if (amount > remaining) {
+          const err: any = new Error('BUDGET_EXCEEDED');
+          err.remaining = remaining;
+          throw err;
+        }
+
+        const newSpent = (account.spent_this_month || 0) + Number(amount);
+        tx.update(accountRef, { spent_this_month: newSpent });
+
+        const billingRef = db.collection('corporate_billing').doc();
+        tx.set(billingRef, {
+          employee_id: employee_id || null,
+          company_domain,
+          amount: Number(amount),
+          billed_by: request.user!.id,
+          billed_at: new Date().toISOString(),
         });
-      }
 
-      await db.collection('corporate_accounts').doc(company_domain).update({
-        spent_this_month: (account.spent_this_month || 0) + Number(amount),
-      });
-
-      await db.collection('corporate_billing').add({
-        employee_id: employee_id || null,
-        company_domain,
-        amount: Number(amount),
-        billed_by: request.user!.id,
-        billed_at: new Date().toISOString(),
+        return {
+          spent_this_month: newSpent,
+          budget_remaining: (account.monthly_budget || 0) - newSpent,
+        };
       });
 
       return reply.send({
-        status: 'BILLED_TO_CORPORATE_ALLOWANCE',
-        employee_id,
-        company: company_domain,
-        charged_amount: amount,
-        monthly_budget_remaining: parseFloat((remaining - amount).toFixed(2)),
+        status: 'BILLED_TO_COMPANY',
+        company_domain,
+        amount_billed: amount,
+        budget_remaining: billResult.budget_remaining,
+        spent_this_month: billResult.spent_this_month,
       });
     } catch (err: any) {
+      if (err.message === 'ACCOUNT_NOT_FOUND') {
+        return reply.code(404).send({ error: `No corporate account found for domain: ${company_domain}` });
+      }
+      if (err.message === 'BUDGET_EXCEEDED') {
+        return reply.code(402).send({
+          error: 'Monthly corporate budget exceeded.',
+          budget_remaining: err.remaining,
+        });
+      }
       fastify.log.error(err, 'Corporate billing failed');
       return reply.code(500).send({ error: 'Corporate billing failed.' });
     }

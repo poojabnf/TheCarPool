@@ -83,10 +83,40 @@ export function setupTelemetrySocket(io: SocketIOServer, log: FastifyBaseLogger)
     // it would repeat on every telemetry tick while the driver sits waiting.
     const arrivalNotified = new Set<string>();
 
-    // Join ride-specific room for broadcasts
-    socket.on('ride:join', (rideId: number) => {
-      socket.join(`ride_${rideId}`);
-      log.info({ socketId: socket.id, rideId }, 'Socket joined ride channel');
+    // Join ride-specific room for broadcasts (restricted to ride participants)
+    socket.on('ride:join', async (rideId: number | string) => {
+      const authedUid = String((socket as any).userId || '');
+      if (!authedUid) {
+        log.warn({ socketId: socket.id, rideId }, 'Unauthenticated socket rejected from ride channel');
+        return;
+      }
+      try {
+        const rideSnap = await db.collection('rides').doc(String(rideId)).get();
+        if (!rideSnap.exists) return;
+        const rideData = rideSnap.data()!;
+        const isDriver = String(rideData.driver_uid || rideData.driver_id) === authedUid;
+        let isPassenger = false;
+
+        if (!isDriver) {
+          const bookingSnap = await db.collection('bookings')
+            .where('ride_id', '==', String(rideId))
+            .where('rider_id', '==', authedUid)
+            .get();
+          isPassenger = bookingSnap.docs.some((d) => {
+            const b = d.data();
+            return b.booking_status === 'CONFIRMED' || b.escrow_status === 'HELD' || b.escrow_status === 'SETTLED';
+          });
+        }
+
+        if (isDriver || isPassenger || (socket as any).userRole === 'ADMIN') {
+          socket.join(`ride_${rideId}`);
+          log.info({ socketId: socket.id, rideId, authedUid }, 'Authorized socket joined ride channel');
+        } else {
+          log.warn({ socketId: socket.id, rideId, authedUid }, 'Unauthorized socket rejected from ride channel');
+        }
+      } catch (err) {
+        log.error(err, 'Failed to authorize socket for ride channel');
+      }
     });
 
     // Ingest telemetry update from mobile device
