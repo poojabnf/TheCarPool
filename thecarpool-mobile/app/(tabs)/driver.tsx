@@ -15,6 +15,7 @@ import * as Location from 'expo-location';
 import { useAuthStore } from '../store/authStore';
 import { rideStatusColors } from '../../theme/tokens';
 import HapticSwitch from '../components/HapticSwitch';
+import { AppCache } from '../services/cache';
 
 // Departure is picked as a real date AND time. Deliberately built from plain
 // chips rather than @react-native-community/datetimepicker: that is a native
@@ -234,15 +235,14 @@ export default function DriverInterface() {
   const [customPrice, setCustomPrice] = useState('');
   const [activeRideId, setActiveRideId] = useState<string | null>(null);
 
-  // ── Real upcoming rides + passenger manifests (replaces the old mock card) ──
-  const [allRides, setAllRides] = useState<any[]>([]);
+  const [allRides, setAllRides] = useState<any[]>(() => AppCache.get<any[]>('driver_all_rides') || []);
   const [rideFilter, setRideFilter] = useState<'ALL' | 'ONGOING' | 'SCHEDULED' | 'COMPLETED'>('ALL');
-  const [myRides, setMyRides] = useState<any[]>([]);
+  const [myRides, setMyRides] = useState<any[]>(() => AppCache.get<any[]>('driver_my_rides') || []);
   // Mirrors myRides so loadMyRides can check it without depending on it.
-  const myRidesRef = useRef<any[]>([]);
-  const [manifests, setManifests] = useState<Record<string, any>>({});
+  const myRidesRef = useRef<any[]>(myRides);
+  const [manifests, setManifests] = useState<Record<string, any>>(() => AppCache.get<Record<string, any>>('driver_manifests') || {});
   const [ridesLoading, setRidesLoading] = useState(false);
-  const [earnings, setEarnings] = useState(0);
+  const [earnings, setEarnings] = useState(() => AppCache.get<number>('driver_earnings') || 0);
   const [payoutDestination, setPayoutDestination] = useState<string | null>(null);
 
   // Real wallet balance and payout destination for the earnings card.
@@ -250,7 +250,13 @@ export default function DriverInterface() {
     if (!userId) return;
     apiFetch(`/api/payments/wallet/${userId}`)
       .then((r) => (r.ok ? r.json() : null))
-      .then((w) => { if (w) setEarnings(Number(w.available_wallet_balance || 0)); })
+      .then((w) => {
+        if (w) {
+          const bal = Number(w.available_wallet_balance || 0);
+          setEarnings(bal);
+          AppCache.set('driver_earnings', bal);
+        }
+      })
       .catch(() => { /* leave at zero rather than invent a number */ });
     apiFetch('/api/payments/payout-method')
       .then((r) => (r.ok ? r.json() : null))
@@ -283,10 +289,12 @@ export default function DriverInterface() {
 
       const nonCancelled = list.filter((r: any) => r.status !== 'CANCELLED');
       setAllRides(nonCancelled);
+      AppCache.set('driver_all_rides', nonCancelled);
 
       const toDisplay = nonCancelled.slice(0, 15);
       myRidesRef.current = toDisplay;
       setMyRides(toDisplay);
+      AppCache.set('driver_my_rides', toDisplay);
 
       // Fetch passenger manifests for active / recent rides (best-effort).
       const entries = await Promise.all(toDisplay.map(async (r: any) => {
@@ -295,7 +303,9 @@ export default function DriverInterface() {
           return m.ok ? [r.id, await m.json()] : [r.id, null];
         } catch { return [r.id, null]; }
       }));
-      setManifests(Object.fromEntries(entries));
+      const manifestObj = Object.fromEntries(entries);
+      setManifests(manifestObj);
+      AppCache.set('driver_manifests', manifestObj);
     } catch { setAllRides([]); myRidesRef.current = []; setMyRides([]); }
     finally { setRidesLoading(false); }
   };

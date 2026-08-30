@@ -225,32 +225,19 @@ function haversineDistance(lat1: number, lon1: number, lat2: number, lon2: numbe
 const MAX_RIDE_SCAN = 500;
 
 /**
- * How far a metro-area match may be from the rider.
+ * How far a metro-area match may be from the rider (expanded to 100km coverage).
  *
- * Deliberately large: the point of metro matching is to surface a ride from
- * Noida for someone searching in Gurugram, roughly 30 km apart but a normal
- * daily commute. It applies ONLY to rides that already passed the metro text
- * or bbox test — an ordinary search keeps the strict max_detour_meters, so
- * this cannot quietly loosen nearby matching.
+ * Covers long-distance inter-city and whole-region commutes across NCR (Delhi ↔ Gurugram ↔ Noida ↔ Greater Noida ↔ Faridabad ↔ Meerut),
+ * Mumbai MMR, Bengaluru, Pune, and other large metro belts.
  */
-const METRO_DETOUR_METERS = 35000;
+const METRO_DETOUR_METERS = 100_000; // 100 KM
 const DEFAULT_RESULT_LIMIT = 50;
 
 /**
  * How far a rider may be from one of the driver's DECLARED pickup stops and
- * still see the ride.
- *
- * Matching previously only measured the rider against the route polyline, so a
- * driver could add "Sipri Bazar" as a stop and a rider standing there still
- * would not find the ride unless the route happened to pass within
- * max_detour_meters. A declared stop is a commitment by the driver, so it is
- * matched far more generously than the route itself.
- *
- * 50 km is deliberately wide — it is a discovery radius, not a walking
- * distance. The rider still has to reach the stop, so the result carries
- * `via_pickup_point` and `pickup_deviation` for the UI to show how far it is.
+ * still see the ride (expanded to 100km).
  */
-const PICKUP_POINT_RADIUS_METERS = 50_000;
+const PICKUP_POINT_RADIUS_METERS = 100_000; // 100 KM
 
 // Cheap bounding-box test: does the ride's route pass within `detourMeters`
 // of BOTH the pickup and drop points? Used to skip the expensive per-point
@@ -759,9 +746,9 @@ export async function rideRoutes(fastify: FastifyInstance) {
         const data = doc.data();
         if (data.seats_available <= 0) return;
 
-        // 1. Standard coordinate bbox prefilter
+        // 1. Standard coordinate bbox prefilter (or wide-radius 100km route check)
         const nearRoute = routeBboxIntersects(
-          data.route_coords || [], pickup_lat, pickup_lng, drop_lat, drop_lng, max_detour_meters
+          data.route_coords || [], pickup_lat, pickup_lng, drop_lat, drop_lng, METRO_DETOUR_METERS
         );
         const nearDeclaredStop = !nearRoute && (data.pickup_points || []).some((stop: any) =>
           typeof stop?.lat === 'number' && typeof stop?.lng === 'number' &&
@@ -769,7 +756,7 @@ export async function rideRoutes(fastify: FastifyInstance) {
         );
 
         if (nearRoute || nearDeclaredStop) {
-          rides.push({ id: doc.id, ...data });
+          rides.push({ id: doc.id, ...data, _metroMatch: true });
           return;
         }
 
@@ -789,7 +776,7 @@ export async function rideRoutes(fastify: FastifyInstance) {
             (pt: any) => coordInMetroBbox(pt.lat, pt.lng, dropMetro!)
           );
 
-          if ((pickupSameMetro || routeInPickupMetro) && (dropSameMetro || routeInDropMetro)) {
+          if ((pickupSameMetro || routeInPickupMetro) || (dropSameMetro || routeInDropMetro)) {
             rides.push({ id: doc.id, ...data, _metroMatch: true });
             metroMatchedIds.add(doc.id);
           }

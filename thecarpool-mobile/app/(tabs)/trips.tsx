@@ -84,16 +84,18 @@ function formatDate(iso: string | null) {
     ' · ' + d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
 }
 
+import { AppCache } from '../services/cache';
+
 export default function TripsScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { activityRefreshEpoch } = useAuthStore();
   const { t } = useI18n();
-  const [bookings, setBookings] = useState<Booking[]>([]);
+  const [bookings, setBookings] = useState<Booking[]>(() => AppCache.get<Booking[]>('my_trips') || []);
   // Read inside load() without making it a dependency, which would rebuild the
   // callback on every fetch and retrigger useFocusEffect in a loop.
-  const bookingsRef = React.useRef<Booking[]>([]);
-  const [loading, setLoading] = useState(true);
+  const bookingsRef = React.useRef<Booking[]>(bookings);
+  const [loading, setLoading] = useState(() => bookings.length === 0);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -117,8 +119,11 @@ export default function TripsScreen() {
       const next = data.bookings ?? [];
       bookingsRef.current = next;
       setBookings(next);
+      AppCache.set('my_trips', next);
     } catch (e: any) {
-      setError('Could not load your trips. Pull down to retry.');
+      if (bookingsRef.current.length === 0) {
+        setError('Could not load your trips. Pull down to retry.');
+      }
     } finally {
       setLoading(false);
       setRefreshing(false);

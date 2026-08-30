@@ -15,6 +15,7 @@ import HapticPressable from '../components/HapticPressable';
 import { formatMoney } from '../services/currency';
 import { searchPlaces, MIN_QUERY_LENGTH, SEARCH_DEBOUNCE_MS, warmUp } from '../services/geo';
 import { formatDeparture, isDepartingSoon, formatPostedAgo } from '../services/datetime';
+import { AppCache } from '../services/cache';
 import VehicleIcon from '../components/VehicleIcon';
 
 // Offline-cached search (roadmap Phase 1, session-scoped): module-level so it
@@ -60,17 +61,16 @@ type Coords = { lat: number; lng: number };
 
 /** A ride you're driving, or a seat you've booked — shown as a home shortcut. */
 interface ActivityItem {
-  kind: 'OFFERED' | 'BOOKED';
+  kind: 'DRIVING' | 'BOOKED' | 'OFFERED';
   id: string;
-  /** Departure time where known; used only for ordering. */
-  at?: string | null;
+  at: string;
   title: string;
   subtitle: string;
   href: string;
-  statusLabel: string;
-  statusColor: string;
-  statusBg: string;
-  statusBorder: string;
+  statusLabel?: string;
+  statusColor?: string;
+  statusBg?: string;
+  statusBorder?: string;
 }
 
 type WhenKey = 'ANY' | 'NOW' | 'TODAY' | 'TOMORROW';
@@ -163,8 +163,8 @@ export default function HomeScreen() {
   // Surfaced under the inputs so a failed lookup isn't just an empty dropdown.
   const [geoError, setGeoError] = useState('');
   const [showingCached, setShowingCached] = useState(false);
-  const [activity, setActivity] = useState<ActivityItem[]>([]);
-  const [bookedRideIds, setBookedRideIds] = useState<Record<string, string>>({});
+  const [activity, setActivity] = useState<ActivityItem[]>(() => AppCache.get<ActivityItem[]>('home_activity') || []);
+  const [bookedRideIds, setBookedRideIds] = useState<Record<string, string>>(() => AppCache.get<Record<string, string>>('home_booked_rides') || {});
   const { t } = useI18n();
 
   const originTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -217,6 +217,7 @@ export default function HomeScreen() {
         }
       }
       setBookedRideIds(bookedMap);
+      AppCache.set('home_booked_rides', bookedMap);
 
       if (ridesRes.ok) {
         const d = await ridesRes.json();
@@ -261,7 +262,9 @@ export default function HomeScreen() {
         if (b.statusLabel === 'Started' || b.statusLabel === 'Ongoing') return 1;
         return String(a.at ?? '').localeCompare(String(b.at ?? ''));
       });
-      setActivity(items.slice(0, 6));
+      const topItems = items.slice(0, 6);
+      setActivity(topItems);
+      AppCache.set('home_activity', topItems);
     } catch {
       /* a shortcut list is not worth an error state */
     }

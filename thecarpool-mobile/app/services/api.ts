@@ -26,7 +26,11 @@ export const API_URL =
  * hang here: falling through unauthenticated is worse than a 401, but hanging
  * forever is worse still.
  */
-function waitForAuth(timeoutMs = 3000): Promise<ReturnType<typeof auth>['currentUser']> {
+let cachedToken: { token: string; expiresAt: number } | null = null;
+
+function waitForAuth(timeoutMs = 1500): Promise<ReturnType<typeof auth>['currentUser']> {
+  const current = auth().currentUser;
+  if (current) return Promise.resolve(current);
   return new Promise((resolve) => {
     let settled = false;
     const finish = (u: ReturnType<typeof auth>['currentUser']) => {
@@ -49,20 +53,23 @@ export async function apiFetch(
   const { timeoutMs = 15000, retries = 2 } = options;
   const headers = new Headers(init.headers || {});
 
-  // On a cold start `currentUser` is null until Firebase restores the persisted
-  // session. Firing immediately sends no Authorization header at all, and the
-  // backend 401s — which surfaced as silently empty location suggestions rather
-  // than any visible error. Wait briefly for auth to settle first.
   const user = auth().currentUser ?? (await waitForAuth());
   if (user) {
-    try {
-      const token = await user.getIdToken(false);
-      headers.set('Authorization', `Bearer ${token}`);
-    } catch {
+    const now = Date.now();
+    if (cachedToken && cachedToken.expiresAt > now + 60000) {
+      headers.set('Authorization', `Bearer ${cachedToken.token}`);
+    } else {
       try {
-        const token = await user.getIdToken(true);
+        const token = await user.getIdToken(false);
+        cachedToken = { token, expiresAt: now + 50 * 60 * 1000 };
         headers.set('Authorization', `Bearer ${token}`);
-      } catch {}
+      } catch {
+        try {
+          const token = await user.getIdToken(true);
+          cachedToken = { token, expiresAt: now + 50 * 60 * 1000 };
+          headers.set('Authorization', `Bearer ${token}`);
+        } catch {}
+      }
     }
   }
   if (init.body && !headers.has('Content-Type')) {
