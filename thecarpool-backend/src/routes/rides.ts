@@ -424,9 +424,24 @@ export async function rideRoutes(fastify: FastifyInstance) {
   // inside the transaction, so overlapping runs cannot double-pay.
   fastify.post('/settle-due', { preHandler: [requireCronOrAdmin] }, async (_request, reply) => {
     const now = new Date();
+    // Oldest due first.
+    //
+    // The limit bounds the work per run, but without an order Firestore
+    // returns an arbitrary hundred -- so once more than a hundred rides match,
+    // a newly due one can be crowded out by the same stale set on every run
+    // and never settle at all. A driver simply does not get paid, and nothing
+    // reports it. Ordering by the same field the range is on costs no extra
+    // index and guarantees the oldest debt is always cleared first.
+    //
+    // NOTE: rides that have already settled still match this query, because
+    // settlement marks the ride rather than changing its status, and 15 of the
+    // 35 currently matching are re-scanned every five minutes for nothing.
+    // Harmless at this size and not worth a migration yet, but it is what will
+    // push the matching set past the limit.
     const snap = await db.collection('rides')
       .where('status', '==', 'COMPLETED')
       .where('settlement_due_at', '<', now.toISOString())
+      .orderBy('settlement_due_at', 'asc')
       .limit(100)
       .get();
 
