@@ -24,7 +24,12 @@ export async function sendPushToUser(
     const userData = userDoc.data()!;
     const pushTokensMap: Record<string, { platform: string }> = userData.push_tokens || {};
     const tokens = Object.keys(pushTokensMap);
-    if (!tokens.length) return;
+    if (!tokens.length) {
+      // Worth saying out loud: a user with no registered device is a common
+      // and completely invisible reason for "I got no notification".
+      console.log(`FCM: no registered tokens for uid=${uid} — nothing sent`);
+      return;
+    }
 
     // Send to all registered device tokens for this user
     const messages: admin.messaging.Message[] = tokens.map((token) => ({
@@ -60,6 +65,20 @@ export async function sendPushToUser(
     const results = await Promise.allSettled(
       messages.map((msg) => admin.messaging().send(msg))
     );
+
+    // Log the successes too, not only the failures.
+    //
+    // This module only ever spoke up when something went wrong, which sounds
+    // frugal and is actually the reason a whole evening went into asking "did
+    // that arrive?" with no way to answer it. A send that succeeded and a send
+    // that never happened produced identical silence -- and `return` above,
+    // when a user has no tokens, is silent as well. With this line the log can
+    // distinguish "FCM accepted 4/4 for this uid" from "we never tried",
+    // which is the difference between an APNs problem and an application one.
+    const accepted = results.filter((r) => r.status === 'fulfilled').length;
+    if (accepted > 0) {
+      console.log(`FCM: ${accepted}/${messages.length} accepted for uid=${uid}`);
+    }
 
     const rejected = results.filter((r) => r.status === 'rejected') as PromiseRejectedResult[];
     if (rejected.length > 0) {
