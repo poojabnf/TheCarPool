@@ -51,16 +51,24 @@ describe('what counts as a no-show at settlement', () => {
 });
 
 describe('the penalty itself is unchanged', () => {
-  it('still refunds the rider 80% and gives the driver 5%', () => {
+  // Asserted against the constants rather than literals on purpose: this test
+  // is about the split adding up, not about the specific rate, which the fee
+  // tests pin. The name used to quote 80/5 and kept passing after the rate
+  // moved to 40/30 -- a green test describing the wrong policy.
+  it('splits the fare between rider, driver and platform without losing any', () => {
     const out = noShowOutcome(100);
     expect(out.refund).toBe(NO_SHOW_REFUND_PCT);
     expect(out.driver_share).toBe(NO_SHOW_DRIVER_PCT);
     expect(out.refund + out.driver_share + out.platform_share).toBeCloseTo(100, 2);
   });
 
-  it('is what a driver who drove the trip was losing: 95% of the fare', () => {
+  it('still costs a driver most of the fare, which is why it must be declared', () => {
     const fare = 200;
     const out = noShowOutcome(fare);
-    expect(fare - out.driver_share).toBe(190);
+    // 30% to the driver now, not the 5% that made the historical
+    // misclassification so expensive -- but still a 70% loss on a fare they
+    // earned, so it has to be a claim someone makes rather than a default.
+    expect(out.driver_share).toBe(60);
+    expect(fare - out.driver_share).toBe(140);
   });
 });

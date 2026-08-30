@@ -76,8 +76,38 @@ export const FREE_CANCEL_MINUTES = 240;    // >=4h before departure -> full refu
 export const STANDARD_CANCEL_MINUTES = 120; // 2-4h -> 20% fee
 export const LATE_CANCEL_MINUTES = 60;      // 1-2h -> 50% fee; under 1h -> 60%
 export const IMMINENT_CANCEL_MINUTES = 15;  // under 15m the driver is compensated
-/** Driver's cut of an imminent cancellation, as a % of the fare. */
-export const IMMINENT_DRIVER_PCT = 5;
+
+/**
+ * What the driver keeps from a cancellation, as a % of the FARE, per tier.
+ *
+ * The fee exists to compensate a driver who turned other riders away for a
+ * seat that is now empty, so the driver's share grows as their chance of
+ * refilling it shrinks. The platform takes the remainder of the fee, which
+ * also has to absorb the payment-gateway charge on the original booking --
+ * that is not returned when we refund.
+ *
+ *   tier         fee   driver   platform
+ *   FREE          0%      0%        0%
+ *   STANDARD     20%     10%       10%
+ *   LATE         50%     15%       35%
+ *   LATE_HOUR    60%     20%       40%
+ *   IMMINENT     60%     30%       30%
+ *
+ * This replaces a single IMMINENT_DRIVER_PCT of 5% that applied only under 15
+ * minutes, which meant the very worst cancellation paid the driver least of
+ * all -- nothing at 90 minutes, and 5% at 10 minutes.
+ *
+ * Every value here must stay at or below its tier's fee_pct, or the platform
+ * share goes negative and we would be paying the driver out of the rider's
+ * refund. cancellationOutcome clamps it regardless, and a test pins it.
+ */
+export const DRIVER_CANCEL_PCT: Record<CancellationTier, number> = {
+  FREE: 0,
+  STANDARD: 10,
+  LATE: 15,
+  LATE_HOUR: 20,
+  IMMINENT: 30,
+};
 
 /**
  * Work out what a rider is charged for cancelling, given how long remains
@@ -115,9 +145,9 @@ export function cancellationOutcome(
   }
 
   const fee = round2((amount * fee_pct) / 100);
-  const driver_share = tier === 'IMMINENT'
-    ? round2(Math.min(fee, (amount * IMMINENT_DRIVER_PCT) / 100))
-    : 0;
+  // Clamped to the fee: the driver's compensation comes out of what was
+  // charged, never out of the rider's refund.
+  const driver_share = round2(Math.min(fee, (amount * DRIVER_CANCEL_PCT[tier]) / 100));
 
   return {
     tier,
@@ -135,7 +165,10 @@ export function cancellationOutcome(
 // simply does not turn up should not do better than one who at least told
 // somebody. It was 80%, which made silence the cheaper option.
 export const NO_SHOW_REFUND_PCT = 40;
-export const NO_SHOW_DRIVER_PCT = 5;
+// Same 30% an imminent cancellation pays. A driver who waited at the pickup,
+// drove with an empty seat and was never told has lost at least as much as one
+// cancelled on ten minutes before departure -- and used to receive 5%.
+export const NO_SHOW_DRIVER_PCT = 30;
 
 export interface NoShowOutcome {
   refund: number;         // back to the rider's wallet

@@ -181,13 +181,24 @@ export default function TripsScreen() {
       ? `Cancel (${formatMoney(Number(q.cancellation_fee))} charge)`
       : t('cancel_booking');
 
+    // Show the whole rate card underneath the quote, not just tonight's number.
+    //
+    // A rider two hours from departure is one hour away from losing another
+    // 30%, and we are the only ones who can see that. Telling them the rule as
+    // well as the amount is the difference between a charge they understood
+    // and a charge that happened to them.
+    const card = Array.isArray(q.rate_card) && q.cancellation_fee !== undefined
+      ? '\n\nRefund depends on when you cancel:\n'
+        + q.rate_card.map((r: any) => `  ${r.refund_pct}%  ·  ${r.window}`).join('\n')
+      : '';
+
     Alert.alert(
       q.headline || 'Cancel this booking?',
       // The server's `detail` already names the destination and the timing,
       // and it is the only one that knows how the rider paid. A flat promise
       // that refunds reach the wallet immediately is now wrong for anyone who
       // paid by card or UPI, and contradicted the sentence right above it.
-      q.detail,
+      q.detail + card,
       [
         { text: 'Keep booking', style: 'cancel' },
         {

@@ -1701,11 +1701,21 @@ export async function bookingRoutes(fastify: FastifyInstance) {
 
       const rideDoc = await db.collection('rides').doc(String(b.ride_id)).get();
       const ride = rideDoc.exists ? rideDoc.data()! : {};
-      const { outcome, fare, premium, minutesToDeparture } = quoteCancellation(b, ride);
+      const { outcome, fare, premium, minutesToDeparture, pendingApproval } = quoteCancellation(b, ride);
 
-      const headline = outcome.fee === 0
-        ? 'Free cancellation — you get a full refund.'
-        : `A ${outcome.fee_pct}% cancellation charge applies.`;
+      // Lead with the number the rider actually cares about: what they get
+      // back. The charge is the same fact stated from the other side, and
+      // showing the refund first is the honest framing -- "you keep 80%" and
+      // "we take 20%" are the same arithmetic, but only one of them answers
+      // the question they opened this dialog to ask.
+      const refundTotalQuoted = round2(outcome.refund + outcome.insurance_refund);
+      const refundPct = fare > 0 ? Math.round((outcome.refund / fare) * 100) : 100;
+
+      const headline = pendingApproval
+        ? 'Withdraw this request? You get everything back.'
+        : outcome.fee === 0
+          ? `Free cancellation — you get all ₹${refundTotalQuoted} back.`
+          : `You'll get ₹${refundTotalQuoted} back — ${refundPct}% of your fare.`;
 
       const toSource = b.payment_method === 'RAZORPAY' && Boolean(b.razorpay_payment_id);
       const destinationPhrase = toSource
@@ -1731,10 +1741,28 @@ export async function bookingRoutes(fastify: FastifyInstance) {
         // What the rider needs to read before deciding. A card refund is not
         // instant and saying so up front avoids a support message three days
         // later asking where the money went.
-        detail: outcome.fee === 0
-          ? `You'll get the full ₹${round2(fare + premium)} back${destinationPhrase}.`
-          : `₹${outcome.fee} will be charged and ₹${round2(outcome.refund + outcome.insurance_refund)} returned${destinationPhrase}.`
-          + (premium > 0 ? ' Your insurance premium is refunded in full.' : ''),
+        // The refund as a percentage as well as an amount, so the rider can see
+        // the rule and not just tonight's number.
+        refund_pct: refundPct,
+        // The whole rate card, so they can judge whether to cancel now or
+        // wait. Someone two hours out is one hour away from losing another
+        // 30%, and only we can see that.
+        rate_card: [
+          { window: '4 hours or more before departure', refund_pct: 100 },
+          { window: '2 to 4 hours before', refund_pct: 80 },
+          { window: '1 to 2 hours before', refund_pct: 50 },
+          { window: 'under 1 hour before', refund_pct: 40 },
+        ],
+        detail: pendingApproval
+          ? `The driver hasn't accepted yet, so there's no charge. All ₹${refundTotalQuoted} comes back${destinationPhrase}.`
+          : outcome.fee === 0
+            ? `You're more than 4 hours from departure, so there's no charge. All ₹${round2(fare + premium)} comes back${destinationPhrase}.`
+            : `Fare ₹${fare}   −   cancellation charge ₹${outcome.fee} (${outcome.fee_pct}%)`
+              + `\n\nYou get ₹${refundTotalQuoted} back${destinationPhrase}.`
+              + (premium > 0 ? `\n\nYour ₹${premium} insurance premium is refunded in full.` : '')
+              + (outcome.driver_share > 0
+                  ? `\n\n₹${outcome.driver_share} of the charge goes to your driver for holding the seat.`
+                  : ''),
       });
     } catch (err: any) {
       fastify.log.error(err, 'Failed to quote cancellation');

@@ -79,9 +79,8 @@ describe('cancellationOutcome', () => {
     expect(r.tier).toBe('STANDARD');
     expect(r.fee).toBe(100);
     expect(r.refund).toBe(400);
-    // Driver is only compensated on an imminent cancel.
-    expect(r.driver_share).toBe(0);
-    expect(r.platform_share).toBe(100);
+    expect(r.driver_share).toBe(50);    // 10% of 500
+    expect(r.platform_share).toBe(50);
   });
 
   it('refunds 50% between 1 and 2 hours', () => {
@@ -89,7 +88,8 @@ describe('cancellationOutcome', () => {
     expect(r.tier).toBe('LATE');
     expect(r.fee).toBe(250);
     expect(r.refund).toBe(250);
-    expect(r.driver_share).toBe(0);
+    expect(r.driver_share).toBe(75);    // 15% of 500
+    expect(r.platform_share).toBe(175);
   });
 
   it('refunds 40% under an hour', () => {
@@ -97,16 +97,17 @@ describe('cancellationOutcome', () => {
     expect(r.tier).toBe('LATE_HOUR');
     expect(r.fee).toBe(300);
     expect(r.refund).toBe(200);
-    expect(r.driver_share).toBe(0);
+    expect(r.driver_share).toBe(100);   // 20% of 500
+    expect(r.platform_share).toBe(200);
   });
 
   it('pays the driver 5% of the fare when cancelled under 15 minutes out', () => {
     const r = cancellationOutcome(500, 10);
     expect(r.tier).toBe('IMMINENT');
-    expect(r.fee).toBe(300);          // same 60% as the rest of the last hour
+    expect(r.fee).toBe(300);           // same 60% as the rest of the last hour
     expect(r.refund).toBe(200);
-    expect(r.driver_share).toBe(25);  // 5% of 500
-    expect(r.platform_share).toBe(275);
+    expect(r.driver_share).toBe(150);  // 30% of 500
+    expect(r.platform_share).toBe(150);
   });
 
   it('keeps fee = driver + platform share at every tier', () => {
@@ -134,11 +135,11 @@ describe('cancellationOutcome', () => {
 describe('noShowOutcome', () => {
   // Deliberately the same 40% a rider gets for cancelling inside the hour:
   // simply not turning up should not be cheaper than saying so.
-  it('splits 40 / 5 / 55 between rider, driver and platform', () => {
+  it('splits 40 / 30 / 30 between rider, driver and platform', () => {
     const r = noShowOutcome(500);
     expect(r.refund).toBe(200);
-    expect(r.driver_share).toBe(25);
-    expect(r.platform_share).toBe(275);
+    expect(r.driver_share).toBe(150);
+    expect(r.platform_share).toBe(150);
   });
 
   it('never creates or destroys money', () => {
@@ -150,5 +151,45 @@ describe('noShowOutcome', () => {
 
   it('returns the insurance premium on top of the 80%', () => {
     expect(noShowOutcome(500, 30).insurance_refund).toBe(30);
+  });
+});
+
+describe('the driver share never comes out of the rider refund', () => {
+  // The one way this arithmetic can go wrong is a driver percentage set above
+  // its tier's fee, which would fund the driver from money already promised
+  // back to the rider. Every tier, every fare.
+  const minutesPerTier = [600, 300, 180, 90, 30, 10, 0, -30];
+
+  it('keeps the platform share non-negative at every tier', () => {
+    for (const fare of [1, 7.5, 99.99, 500, 1234.56]) {
+      for (const mins of minutesPerTier) {
+        const r = cancellationOutcome(fare, mins);
+        expect(r.platform_share).toBeGreaterThanOrEqual(0);
+        expect(r.driver_share).toBeLessThanOrEqual(r.fee + 0.001);
+      }
+    }
+  });
+
+  it('never returns more than the fare between refund, driver and platform', () => {
+    for (const fare of [1, 7.5, 99.99, 500, 1234.56]) {
+      for (const mins of minutesPerTier) {
+        const r = cancellationOutcome(fare, mins);
+        expect(r.refund + r.driver_share + r.platform_share).toBeCloseTo(fare, 2);
+      }
+    }
+  });
+
+  it('compensates the driver more the later the cancellation', () => {
+    const at = (mins: number) => cancellationOutcome(1000, mins).driver_share;
+    expect(at(300)).toBe(0);      // 4h+, no fee at all
+    expect(at(180)).toBe(100);    // 2-4h, 10%
+    expect(at(90)).toBe(150);     // 1-2h, 15%
+    expect(at(30)).toBe(200);     // under 1h, 20%
+    expect(at(10)).toBe(300);     // under 15m, 30%
+    // Monotonic: a later cancellation must never pay the driver less.
+    const shares = [300, 180, 90, 30, 10].map(at);
+    for (let i = 1; i < shares.length; i++) {
+      expect(shares[i]).toBeGreaterThanOrEqual(shares[i - 1]);
+    }
   });
 });
