@@ -344,13 +344,25 @@ export default function DriverInterface() {
     loadMyRides();
   }, [activityRefreshEpoch]);
 
-  // Periodic refresh so driver gets new booking requests without needing to restart the app
+  // Periodic refresh so a driver sees new seat requests without restarting.
+  //
+  // This used to call loadMyRides() every 10 seconds, which is not one request
+  // but SIXTEEN: the ride list plus a passenger manifest for each of up to 15
+  // displayed rides. That is ~96 requests a minute from a dashboard merely
+  // left open, against a 200/minute budget — so one driver watching their
+  // screen could exhaust it and start refusing real work. In a single 40
+  // minute session it produced 225 rejected requests, and what got refused
+  // included a payment order, a ride creation, both scheduled reminder
+  // sweeps, and the driver's own pending-request list.
+  //
+  // What actually needs to be fresh is the pending-request list, and that is
+  // exactly one request. The heavy refresh drops to once a minute; it also
+  // runs on focus and after every decision, so nothing waits on it.
   useEffect(() => {
-    const pollInterval = setInterval(() => {
-      loadMyRides();
-    }, 10000);
-    return () => clearInterval(pollInterval);
-  }, []);
+    const requestsPoll = setInterval(() => { loadPendingRequests(); }, 10000);
+    const ridesPoll = setInterval(() => { loadMyRides(); }, 60000);
+    return () => { clearInterval(requestsPoll); clearInterval(ridesPoll); };
+  }, [loadPendingRequests]);
 
   // Switching between Car Pool and Bike Pool invalidates whatever was picked
   // under the other mode — otherwise a driver who selects Maruti Swift and

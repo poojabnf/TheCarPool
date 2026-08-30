@@ -37,10 +37,46 @@ const fastify = Fastify({ logger: true, bodyLimit: 15 * 1024 * 1024 });
 // is driven by CORS_ALLOWED_ORIGINS (comma-separated; '*' to allow all).
 fastify.register(helmet, { contentSecurityPolicy: false });
 fastify.register(cors, { origin: allowedOrigins(), credentials: true });
+// Rate limit per SIGNED-IN USER, not per IP.
+//
+// Keyed on the IP, two phones on the same WiFi shared one budget -- which is
+// the ordinary case for this app (a driver and a rider testing together, a
+// family, an office) and it broke real flows: 225 requests were refused in one
+// 40-minute session, including a payment order, a ride creation, and the
+// driver's pending-request list. One person's open dashboard could starve
+// everyone behind the same router.
+//
+// The uid comes from the Authorization header rather than request.user,
+// because rate limiting runs before authentication. It is only a bucket key,
+// never a trust decision -- a forged token yields a nonsense bucket, which is
+// no better for an attacker than the IP they would otherwise get.
 fastify.register(rateLimit, {
-  max: Number(process.env.RATE_LIMIT_MAX || 200),
+  max: Number(process.env.RATE_LIMIT_MAX || 300),
   timeWindow: process.env.RATE_LIMIT_WINDOW || '1 minute',
-  allowList: ['127.0.0.1'],
+  // The scheduled sweeps are what SEND departure and boarding reminders, and
+  // they were being refused -- one 429 on /notify-upcoming and one on
+  // /notify-boarding in a single session, meaning neither reminder went out at
+  // all. They carry CRON_SECRET, run a handful of times an hour, and cannot be
+  // triggered by a user, so they have no business sharing a user's budget.
+  allowList: (request) => {
+    if (request.ip === '127.0.0.1') return true;
+    const secret = process.env.CRON_SECRET;
+    if (!secret) return false;
+    const header = request.headers['x-cron-key'];
+    return typeof header === 'string' && header === secret;
+  },
+  keyGenerator: (request) => {
+    const auth = request.headers.authorization;
+    if (auth?.startsWith('Bearer ')) {
+      try {
+        const payload = JSON.parse(
+          Buffer.from(auth.split('.')[1] ?? '', 'base64url').toString('utf8')
+        );
+        if (payload?.user_id || payload?.sub) return `uid:${payload.user_id ?? payload.sub}`;
+      } catch { /* fall through to IP */ }
+    }
+    return request.ip;
+  },
 });
 
 // Forward unhandled route errors to Sentry, then fall through to the default
