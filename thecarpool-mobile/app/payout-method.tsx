@@ -436,8 +436,9 @@ export default function PayoutMethodScreen() {
                 </View>
               </View>
 
-              {/* Withdraw Button */}
-              {current.payouts_available !== false ? (
+              {/* Withdraw Button. The surrounding section only renders when
+                  payouts are available, so this needs no second check. */}
+              {(
                 <HapticPressable
                   haptic="press"
                   style={[styles.withdrawActionBtn, (!isAmountValid || withdrawing) && styles.disabled]}
@@ -455,7 +456,7 @@ export default function PayoutMethodScreen() {
                     </View>
                   )}
                 </HapticPressable>
-              ) : null}
+              )}
             </View>
           )}
 

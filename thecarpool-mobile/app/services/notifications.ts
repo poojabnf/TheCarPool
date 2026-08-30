@@ -16,6 +16,7 @@ import { Platform } from 'react-native';
 import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
 import messaging from '@react-native-firebase/messaging';
+import { router } from 'expo-router';
 import { apiFetch } from './api';
 
 Notifications.setNotificationHandler({
@@ -92,7 +93,7 @@ export async function registerForPushNotifications(): Promise<string | null> {
     console.warn('Push notification registration warning:', err);
     return null;
   }
-import { router } from 'expo-router';
+}
 
 export function handleNotificationNavigation(data?: Record<string, any>) {
   if (!data) return;
