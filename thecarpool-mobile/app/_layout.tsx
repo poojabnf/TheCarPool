@@ -21,6 +21,7 @@ import {
 } from './services/notifications';
 import { apiFetch } from './services/api';
 import { warmUp } from './services/geo';
+import { applyPendingUpdate } from './services/updates';
 
 // Cap Dynamic Type scaling app-wide. Text still scales for accessibility, but
 // is bounded to 1.3x so very large system-font settings can't overflow the
@@ -47,6 +48,17 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
   // screen buys the container the whole of launch and sign-in to warm up,
   // instead of racing the user's first keystroke.
   useEffect(() => { warmUp(); }, []);
+
+  // Apply a pending over-the-air update at launch.
+  //
+  // fallbackToCacheTimeout: 0 makes the app start instantly from cache and
+  // download updates in the background, but it only APPLIES them on the next
+  // cold start — and most people background an app rather than quitting it, so
+  // a downloaded update could sit unapplied indefinitely. This closes that gap
+  // without giving back the instant launch. Runs once, at start, where a
+  // reload costs a blink; never mid-session, where it could interrupt someone
+  // paying for a seat.
+  useEffect(() => { applyPendingUpdate().catch(() => { /* non-fatal */ }); }, []);
 
   // Listen to Firebase auth state changes
   useEffect(() => {
