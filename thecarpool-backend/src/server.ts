@@ -16,6 +16,7 @@ import { classifiedRoutes } from './routes/classifieds';
 import { geoRoutes } from './routes/geo';
 import { userRoutes } from './routes/users';
 import { chatRoutes } from './routes/chat';
+import { notificationRoutes } from './routes/notifications';
 import { setupTelemetrySocket } from './sockets/telemetry';
 import { initSentry, captureError } from './lib/sentry';
 
@@ -126,6 +127,7 @@ fastify.register(classifiedRoutes, { prefix: '/api/classifieds' });
 fastify.register(geoRoutes, { prefix: '/api/geo' });
 fastify.register(userRoutes, { prefix: '/api/users' });
 fastify.register(chatRoutes, { prefix: '/api/chat' });
+fastify.register(notificationRoutes, { prefix: '/api/notifications' });
 
 // Health check endpoint
 fastify.get('/health', async () => {

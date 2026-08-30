@@ -5,7 +5,7 @@ import {
 import { useRouter, useFocusEffect } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import auth from '@react-native-firebase/auth';
-import { MapPin, Circle, Search, Wind, Venus, Users, Leaf, Clock } from 'lucide-react-native';
+import { MapPin, Circle, Search, Wind, Venus, Users, Leaf, Clock, Bell } from 'lucide-react-native';
 import { apiFetch } from '../services/api';
 import { useAuthStore } from '../store/authStore';
 import { useI18n } from '../services/i18n';
@@ -398,17 +398,26 @@ export default function HomeScreen() {
       contentContainerStyle={{ paddingHorizontal: space.xl, paddingTop: insets.top + space.sm, paddingBottom: 40 }}
       keyboardShouldPersistTaps="handled"
     >
-      {/* Greeting */}
+      {/* Greeting & Quick Actions */}
       <View style={styles.header}>
         <View>
           <Text style={styles.greeting}>{t(greetingKey())}</Text>
           <Text style={styles.name}>{name}</Text>
         </View>
-        <HapticPressable style={styles.avatar} onPress={() => router.push('/(tabs)/account')} activeOpacity={0.8}>
-          {userProfile?.photoUrl
-            ? <Image source={{ uri: userProfile.photoUrl }} style={styles.avatarImg} />
-            : <Text style={styles.avatarText}>{initials(userProfile?.name)}</Text>}
-        </HapticPressable>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+          <HapticPressable
+            style={styles.bellBtn}
+            onPress={() => router.push('/notifications')}
+            activeOpacity={0.8}
+          >
+            <Bell color={c.textPrimary} size={20} strokeWidth={2.2} />
+          </HapticPressable>
+          <HapticPressable style={styles.avatar} onPress={() => router.push('/(tabs)/account')} activeOpacity={0.8}>
+            {userProfile?.photoUrl
+              ? <Image source={{ uri: userProfile.photoUrl }} style={styles.avatarImg} />
+              : <Text style={styles.avatarText}>{initials(userProfile?.name)}</Text>}
+          </HapticPressable>
+        </View>
       </View>
 
       {/* Search card */}
@@ -658,6 +667,17 @@ const styles = StyleSheet.create({
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: space.lg },
   greeting: { fontFamily: font.sansMedium, fontSize: 13, color: c.textTertiary },
   name: { fontFamily: font.sansExtrabold, fontSize: 22, color: c.textPrimary, letterSpacing: -0.4 },
+  bellBtn: {
+    width: 42,
+    height: 42,
+    borderRadius: radius.pill,
+    backgroundColor: c.bgSurface,
+    borderWidth: 1,
+    borderColor: c.borderSubtle,
+    alignItems: 'center',
+    justifyContent: 'center',
+    ...shadowSm,
+  },
   avatar: { width: 42, height: 42, borderRadius: radius.pill, backgroundColor: c.textPrimary, alignItems: 'center', justifyContent: 'center' },
   avatarImg: { width: 42, height: 42, borderRadius: radius.pill },
   avatarText: { fontFamily: font.sansBold, fontSize: 14, color: '#fff' },

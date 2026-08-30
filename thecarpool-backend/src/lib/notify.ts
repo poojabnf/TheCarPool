@@ -19,6 +19,7 @@
  */
 import { sendPushToUser } from './fcm';
 import { BuiltMessage } from './rideMessages';
+import { db } from './firestore';
 
 export function isSmsConfigured(): boolean {
   return Boolean(
@@ -88,6 +89,26 @@ export async function notifyUser(
 ): Promise<NotifyResult> {
   const result: NotifyResult = { push: false, sms: false, whatsapp: false };
 
+  // 1. Always record in user's in-app Notification Center (even if push permissions are disabled)
+  try {
+    if (target.uid) {
+      await db.collection('notifications').add({
+        user_id: target.uid,
+        title: message.title,
+        body: message.body,
+        data: data || {},
+        type: data?.type || 'GENERAL',
+        ride_id: data?.ride_id || null,
+        booking_id: data?.booking_id || null,
+        read: false,
+        created_at: new Date().toISOString(),
+      });
+    }
+  } catch (err) {
+    log?.error({ err, uid: target.uid }, 'Failed to persist in-app notification inbox item');
+  }
+
+  // 2. Dispatch push notification via FCM
   try {
     await sendPushToUser(target.uid, message.title, message.body, data);
     result.push = true;

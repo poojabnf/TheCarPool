@@ -4,7 +4,7 @@ import { useRouter, useFocusEffect } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   CreditCard, Settings, HelpCircle, ChevronRight, LogOut, ShieldCheck, Leaf, Receipt, Camera,
-  Landmark, Car,
+  Landmark, Car, Bell,
 } from 'lucide-react-native';
 import { auth } from '../services/firebase';
 import { apiFetch } from '../services/api';
@@ -528,6 +528,7 @@ export default function AccountInterface() {
       </View>
 
       <View style={styles.group}>
+        <MenuRow icon={<Bell color={c.textSecondary} size={20} />} title="Notification Center" sub="View all updates, OTPs & alerts" onPress={() => router.push('/notifications')} />
         <MenuRow icon={<CreditCard color={c.textSecondary} size={20} />} title={t('wallet_and_payments')} sub={t('wallet_and_payments_sub')} onPress={() => router.push('/(tabs)/wallet')} />
         {/* Withdrawals were only reachable from inside the Wallet, which made
             them hard to find for anyone looking under their account. The
