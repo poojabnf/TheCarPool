@@ -1693,6 +1693,11 @@ export async function bookingRoutes(fastify: FastifyInstance) {
         ? 'Free cancellation — you get a full refund.'
         : `A ${outcome.fee_pct}% cancellation charge applies.`;
 
+      const toSource = b.payment_method === 'RAZORPAY' && Boolean(b.razorpay_payment_id);
+      const destinationPhrase = toSource
+        ? ' to the card or UPI you paid with, usually within 5-7 working days'
+        : ' in your TheCarPool wallet';
+
       return reply.send({
         booking_id: id,
         tier: outcome.tier,
@@ -1704,12 +1709,17 @@ export async function bookingRoutes(fastify: FastifyInstance) {
         cancellation_fee: outcome.fee,
         cancellation_fee_pct: outcome.fee_pct,
         refund_amount: round2(outcome.refund + outcome.insurance_refund),
-        refund_destination: 'WALLET',
+        // Say where it is actually going. This was hardcoded to WALLET and
+        // told every rider their money would arrive as credit, which is not
+        // what happens for anyone who paid by card or UPI.
+        refund_destination: toSource ? 'SOURCE' : 'WALLET',
         headline,
-        // What the rider needs to read before deciding.
+        // What the rider needs to read before deciding. A card refund is not
+        // instant and saying so up front avoids a support message three days
+        // later asking where the money went.
         detail: outcome.fee === 0
-          ? `You'll get the full ₹${round2(fare + premium)} back in your TheCarPool wallet.`
-          : `₹${outcome.fee} will be charged and ₹${round2(outcome.refund + outcome.insurance_refund)} returned to your TheCarPool wallet.`
+          ? `You'll get the full ₹${round2(fare + premium)} back${destinationPhrase}.`
+          : `₹${outcome.fee} will be charged and ₹${round2(outcome.refund + outcome.insurance_refund)} returned${destinationPhrase}.`
           + (premium > 0 ? ' Your insurance premium is refunded in full.' : ''),
       });
     } catch (err: any) {
@@ -1761,6 +1771,42 @@ export async function bookingRoutes(fastify: FastifyInstance) {
         ? db.collection('wallets').doc(driverUid)
         : null;
 
+      // Send the money back the way it came.
+      //
+      // A cancelled seat returns the rider's own money, so it belongs on the
+      // card or UPI they paid with rather than as credit they can only spend
+      // here. This is a partial refund whenever a cancellation fee applies --
+      // Razorpay handles that natively, so the fee stays with us and only the
+      // refundable part travels.
+      //
+      // Attempted BEFORE the transaction, deliberately: Firestore retries a
+      // transaction body, and an outbound refund inside one would be repeated.
+      // The idempotency key makes a retry safe at Razorpay's end.
+      //
+      // Falls back to the wallet rather than aborting, which is the opposite
+      // of the decline path and for a good reason: a decline can simply stay
+      // pending and be retried, but a rider who asked to cancel must not be
+      // trapped in a booking because a payment provider had a bad minute. The
+      // money reaches them either way; only the route differs.
+      const refundTotal = round2(outcome.refund + outcome.insurance_refund);
+      const cancelPaidByRazorpay = b.payment_method === 'RAZORPAY' && b.razorpay_payment_id;
+      let cancelSourceRefund: { refund_id: string; status: string } | null = null;
+      if (cancelPaidByRazorpay && refundTotal > 0) {
+        try {
+          cancelSourceRefund = await refundPaymentToSource({
+            paymentId: String(b.razorpay_payment_id),
+            amountRupees: refundTotal,
+            referenceId: `cancel_${id}`,
+            notes: { reason: 'RIDER_CANCELLED', ride_id: String(b.ride_id) },
+          });
+        } catch (refundErr) {
+          fastify.log.error(
+            { err: refundErr, booking: id, payment_id: b.razorpay_payment_id },
+            'Cancellation refund to source failed — falling back to wallet credit'
+          );
+        }
+      }
+
       await db.runTransaction(async (tx) => {
         // Firestore requires ALL reads before ANY writes — read booking, ride
         // and wallets up front, then perform every write.
@@ -1791,18 +1837,25 @@ export async function bookingRoutes(fastify: FastifyInstance) {
           cancellation_fee: outcome.fee,
           cancellation_fee_pct: outcome.fee_pct,
           refunded_amount: outcome.refund + outcome.insurance_refund,
+          refund_destination: cancelSourceRefund ? 'SOURCE' : 'WALLET',
+          refund_id: cancelSourceRefund?.refund_id ?? null,
           driver_compensation: outcome.driver_share,
           platform_share: outcome.platform_share,
           cancelled_at: new Date().toISOString(),
         });
 
-        // 3. Refund fare-minus-fee plus the full insurance premium to the wallet
-        tx.set(walletRef, {
-          ...cur,
-          available_wallet_balance: round2(
-            (cur.available_wallet_balance || 0) + outcome.refund + outcome.insurance_refund
-          ),
-        }, { merge: true });
+        // 3. Refund fare-minus-fee plus the full insurance premium.
+        //
+        // Only when it did NOT go back to source -- crediting the wallet as
+        // well as refunding the card would pay the rider twice.
+        if (!cancelSourceRefund) {
+          tx.set(walletRef, {
+            ...cur,
+            available_wallet_balance: round2(
+              (cur.available_wallet_balance || 0) + outcome.refund + outcome.insurance_refund
+            ),
+          }, { merge: true });
+        }
 
         // 4. Compensate the driver when the rider bailed at the last minute
         if (driverWalletRef && driverWalletDoc) {
