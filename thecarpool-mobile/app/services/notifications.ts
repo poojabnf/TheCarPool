@@ -60,14 +60,36 @@ export async function registerForPushNotifications(): Promise<string | null> {
       if (!enabled) return null;
     }
 
-    // 3. Android High-Importance Channel
+    // 3. Android notification channels, one per kind of news.
+    //
+    // A channel's sound is fixed at creation and cannot be changed afterwards
+    // -- Android deliberately hands that control to the user once a channel
+    // exists. So these carry new ids rather than reusing 'default', which was
+    // already created with the system sound on every existing install and
+    // would silently keep it forever.
+    //
+    // Two channels, because the two kinds of message deserve different
+    // urgency: a seat request is something the driver must act on, everything
+    // else is news. Splitting them also lets someone mute trip updates while
+    // keeping requests audible, which one channel cannot express.
     if (Platform.OS === 'android') {
-      await Notifications.setNotificationChannelAsync('default', {
-        name: 'General Notifications',
+      await Notifications.setNotificationChannelAsync('carpool_requests', {
+        name: 'Seat requests',
+        description: 'Someone wants a seat on a ride you are offering.',
         importance: Notifications.AndroidImportance.MAX,
-        vibrationPattern: [0, 250, 250, 250],
+        vibrationPattern: [0, 200, 120, 200],
         lightColor: '#16A34A',
-        sound: 'default',
+        sound: 'request.wav',
+        enableLights: true,
+        enableVibrate: true,
+      });
+      await Notifications.setNotificationChannelAsync('carpool_updates', {
+        name: 'Ride updates',
+        description: 'Confirmations, boarding reminders, trip and payment updates.',
+        importance: Notifications.AndroidImportance.HIGH,
+        vibrationPattern: [0, 180],
+        lightColor: '#16A34A',
+        sound: 'chime.wav',
         enableLights: true,
         enableVibrate: true,
       });
@@ -166,16 +188,30 @@ export function setupForegroundNotifications(): () => void {
       useAuthStore.getState().triggerActivityRefresh();
     } catch { /* store not ready; the poll still covers it */ }
 
+    // Re-post it locally so it is actually visible.
+    //
+    // Both platforms suppress the system banner for whichever app is currently
+    // open, so a push that arrives while the user is looking at the app draws
+    // nothing on its own -- it lands in the notification list and that is all.
+    // This is the only thing that can surface it, which makes a silent failure
+    // here indistinguishable from "push is broken". It was unguarded, so a
+    // throw disappeared into this async callback with nothing logged.
     if (remoteMessage.notification) {
-      await Notifications.scheduleNotificationAsync({
-        content: {
-          title: remoteMessage.notification.title || 'TheCarPool',
-          body: remoteMessage.notification.body || '',
-          data: remoteMessage.data || {},
-          sound: 'default',
-        },
-        trigger: null,
-      });
+      try {
+        await Notifications.scheduleNotificationAsync({
+          content: {
+            title: remoteMessage.notification.title || 'TheCarPool',
+            body: remoteMessage.notification.body || '',
+            data: remoteMessage.data || {},
+            // Match the channel the server chose, so a notification does not
+            // sound different purely because the app happened to be open.
+            sound: remoteMessage.data?.type === 'BOOKING_REQUESTED' ? 'request.wav' : 'chime.wav',
+          },
+          trigger: null,
+        });
+      } catch (err) {
+        console.warn('Foreground notification could not be presented:', err);
+      }
     }
   });
 }

@@ -31,6 +31,24 @@ export async function sendPushToUser(
       return;
     }
 
+    // Which tone, and on Android which channel.
+    //
+    // A seat request is the one message a driver has to act on, so it gets a
+    // more insistent rising tone; everything else is news and gets a soft
+    // chime. The two are separate Android channels rather than one, because a
+    // channel is also the unit a user can mute -- someone who wants trip
+    // updates quiet but requests audible can only express that if they are
+    // split.
+    //
+    // The iOS filename carries its extension and the Android sound does not,
+    // because Android resolves it as a res/raw resource name. Both are bundled
+    // by the expo-notifications config plugin; without that plugin the name is
+    // just a string the OS cannot resolve and it falls back to the default.
+    const isRequest = data?.type === 'BOOKING_REQUESTED';
+    const iosSound = isRequest ? 'request.wav' : 'chime.wav';
+    const androidSound = isRequest ? 'request' : 'chime';
+    const channelId = isRequest ? 'carpool_requests' : 'carpool_updates';
+
     // Send to all registered device tokens for this user
     const messages: admin.messaging.Message[] = tokens.map((token) => ({
       token,
@@ -39,7 +57,7 @@ export async function sendPushToUser(
       apns: {
         payload: {
           aps: {
-            sound: 'default',
+            sound: iosSound,
             badge: 1,
             contentAvailable: true,
           },
@@ -52,10 +70,13 @@ export async function sendPushToUser(
       android: {
         priority: 'high' as const,
         notification: {
-          channelId: 'default',
-          sound: 'default',
+          channelId,
+          sound: androidSound,
           priority: 'high' as const,
-          defaultSound: true,
+          // Explicitly NOT defaultSound: that flag overrides the custom sound
+          // above and is why a bundled tone can look correct in the payload
+          // and still play the system default on the device.
+          defaultSound: false,
           defaultVibrateTimings: true,
           visibility: 'public' as const,
         },
