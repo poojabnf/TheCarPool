@@ -20,6 +20,7 @@ import { noShowOutcome } from './fees';
 import { planPayout, maskPayoutMethod } from './payouts';
 import { isSettlementDue } from './settlement';
 import { releaseTransfer } from './route';
+import { notifySettlement } from './bookingNotifications';
 import { isRazorpayXConfigured } from './razorpay';
 import { round2 } from './money';
 
@@ -138,7 +139,7 @@ export async function settleDueBookingsForRide(
     }
 
     if (bookingWrites.length === 0) {
-      return { paid: 0, no_shows: 0, driver_credited: 0, skipped, routeReleases: [] };
+      return { paid: 0, no_shows: 0, driver_credited: 0, skipped, routeReleases: [], refunds: [] as Array<[string, number]>, paidToBank: false };
     }
 
     for (const w of bookingWrites) tx.update(w.ref, w.data);
@@ -198,7 +199,16 @@ export async function settleDueBookingsForRide(
       }, { merge: true });
     }
 
-    return { paid: paidCount, no_shows: noShowCount, driver_credited: round2(driverTotal), skipped, routeReleases };
+    return {
+      paid: paidCount, no_shows: noShowCount, driver_credited: round2(driverTotal),
+      skipped, routeReleases,
+      refunds: [...riderCredits.entries()] as Array<[string, number]>,
+      paidToBank: driverTotal > 0 && planPayout({
+        method: driverPayoutMethod,
+        completedAt: new Date(settledAt),
+        railAvailable: isRazorpayXConfigured(),
+      }).destination === 'BANK',
+    };
   }).then(async (outcome) => {
     // Committed. Release the Route holds now, outside the transaction: each is
     // an outbound API call, and Firestore retries a transaction body — which
@@ -216,7 +226,30 @@ export async function settleDueBookingsForRide(
         );
       }
     }
-    const { routeReleases: _released, ...rest } = outcome;
+    // Money has moved. Say so.
+    //
+    // Settlement was the one stage in the whole flow that changed a balance and
+    // notified nobody: a driver's earnings appeared in their wallet and a
+    // rider's no-show refund came back, both silently. Silence there reads as
+    // having been charged for a ride that did not happen.
+    //
+    // After the commit, never inside it — Firestore retries a transaction body,
+    // and a retried notification is a duplicate push.
+    try {
+      await notifySettlement(rideId, {
+        driverUid,
+        driverAmount: outcome.driver_credited,
+        toBank: outcome.paidToBank,
+        destination: maskPayoutMethod(driverPayoutMethod),
+        riderRefunds: outcome.refunds,
+        currency: defaultCurrency() === 'INR' ? '₹' : '',
+      }, log);
+    } catch (err) {
+      // Never fail a settlement that already succeeded because a push did not.
+      log?.error({ err, ride_id: rideId }, 'Settlement notification failed');
+    }
+
+    const { routeReleases: _released, refunds: _refunds, paidToBank: _bank, ...rest } = outcome;
     return rest as SettleOutcome;
   }).catch((err) => {
     log?.error({ err, ride_id: rideId }, 'Ride settlement failed');

@@ -279,3 +279,49 @@ export function rideOfferedSuccess(ctx: RideMessageContext): BuiltMessage {
 }
 
 
+
+/**
+ * Sent to the DRIVER when a completed ride's escrow settles into their wallet.
+ *
+ * Settlement was the one stage that moved real money and told nobody. A driver
+ * finished a trip, the hold matured, the balance changed — and the only way to
+ * find out was to open the app and notice a different number.
+ *
+ * `destination` is a masked description ("A/C ****9103", "UPI"), never the
+ * account itself. Where the money went is stated plainly because "paid" and
+ * "spendable in your wallet" are different promises, and a driver who is told
+ * the wrong one goes looking for money in the wrong place.
+ */
+export function driverEarningsSettled(
+  ctx: RideMessageContext,
+  amount: string,
+  toBank: boolean,
+  destination?: string | null
+): BuiltMessage {
+  const body = joinLines([
+    `${amount} from your completed ride has been released.`,
+    ctx.origin && ctx.destination ? `${ctx.origin} → ${ctx.destination}` : null,
+    toBank && destination
+      ? `On its way to ${destination}. Bank transfers usually land within a day.`
+      : 'It is in your wallet and available now.',
+  ]);
+  return { title: 'Earnings released', body: scrubContact(body) };
+}
+
+/**
+ * Sent to the RIDER when money comes back to them at settlement — a no-show
+ * partial refund, or a dispute resolved in their favour.
+ *
+ * Silence here reads as being quietly charged for a ride that did not happen.
+ */
+export function riderRefundCredited(
+  ctx: RideMessageContext,
+  amount: string
+): BuiltMessage {
+  const body = joinLines([
+    `${amount} has been credited back to your wallet.`,
+    ctx.origin && ctx.destination ? `${ctx.origin} → ${ctx.destination}` : null,
+    'You can spend it on your next ride or withdraw it.',
+  ]);
+  return { title: 'Refund credited', body: scrubContact(body) };
+}

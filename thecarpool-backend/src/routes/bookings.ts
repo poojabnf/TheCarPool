@@ -5,7 +5,7 @@ import { randomUUID, randomInt, timingSafeEqual } from 'crypto';
 import { db } from '../server';
 import { requireAuth, requireAdmin } from '../middleware/auth';
 import { parseOrReply } from '../lib/validate';
-import { sendPushToUser } from '../lib/fcm';
+import { notifyUser } from '../lib/notify';
 import {
   notifyBookingRequested, notifyBookingConfirmed, notifyBookingDeclined, deliver,
   notifyRideCompletedForBooking, notifyRiderCancelledBooking,
@@ -724,9 +724,12 @@ export async function bookingRoutes(fastify: FastifyInstance) {
       return reply.code(500).send({ error: 'Could not decline that request.' });
     }
 
-    notifyBookingDeclined(
-      { rideId: String(booking.ride_id), riderUid, driverUid: uid },
-      { ...booking, id },
+    await deliver(
+      notifyBookingDeclined(
+        { rideId: String(booking.ride_id), riderUid, driverUid: uid },
+        { ...booking, id },
+        fastify.log
+      ),
       fastify.log
     );
     return reply.send({
@@ -786,9 +789,12 @@ export async function bookingRoutes(fastify: FastifyInstance) {
       completed_by: lat !== undefined ? 'ARRIVAL' : 'RIDER',
     });
 
-    notifyRideCompletedForBooking(
-      { rideId: String(booking.ride_id), riderUid: uid },
-      { ...booking, id },
+    await deliver(
+      notifyRideCompletedForBooking(
+        { rideId: String(booking.ride_id), riderUid: uid },
+        { ...booking, id },
+        fastify.log
+      ),
       fastify.log
     );
 
@@ -1086,11 +1092,17 @@ export async function bookingRoutes(fastify: FastifyInstance) {
         });
       }
 
-      sendPushToUser(
-        booking.rider_id,
-        '🛡️ Boarding Verified!',
-        'Your driver verified your boarding code. Have a safe trip!',
-        { booking_id: id, type: 'BOARDING_VERIFIED' }
+      await deliver(
+        notifyUser(
+          { uid: String(booking.rider_id), phone: null },
+          {
+            title: 'Boarding confirmed',
+            body: 'Your driver verified your boarding code. Have a safe trip!',
+          },
+          { booking_id: id, type: 'BOARDING_VERIFIED' },
+          fastify.log
+        ).then(() => undefined),
+        fastify.log
       );
 
       return reply.send({ status: 'VERIFIED', message: 'Rider identity verified successfully!' });
@@ -1734,11 +1746,14 @@ export async function bookingRoutes(fastify: FastifyInstance) {
       });
 
       // Notify the driver that the rider cancelled their seat
-      notifyRiderCancelledBooking(
-        { rideId: String(b.ride_id), riderUid: uid, driverUid: String(ride.driver_uid ?? ride.driver_id) },
-        { ...b, id },
+      await deliver(
+        notifyRiderCancelledBooking(
+          { rideId: String(b.ride_id), riderUid: uid, driverUid: String(ride.driver_uid ?? ride.driver_id) },
+          { ...b, id },
+          fastify.log
+        ),
         fastify.log
-      ).catch(() => { /* best-effort */ });
+      );
 
       return reply.send({
         status: 'BOOKING_CANCELLED',

@@ -18,6 +18,7 @@ import {
   riderBookingConfirmed, riderRequestSubmitted, driverBookingRequested,
   driverBookingConfirmed, riderRequestDeclined, riderBoardingSoon, riderRideCompleted,
   riderCancelledBooking, driverCancelledRide, rideStarted, rideOfferedSuccess,
+  driverEarningsSettled, riderRefundCredited,
 } from './rideMessages';
 
 type Log = { error: (...args: any[]) => void };
@@ -399,4 +400,57 @@ export function deliver(work: Promise<unknown>, log?: Log, ms = 4000): Promise<v
     work.catch((err) => { log?.error({ err }, 'Notification dispatch failed'); }),
     new Promise<void>((resolve) => setTimeout(resolve, ms).unref?.()),
   ]).then(() => undefined);
+}
+
+/**
+ * Settlement: tell the driver their earnings were released, and any rider who
+ * got money back that it landed.
+ *
+ * Called after the settlement transaction commits, never inside it — Firestore
+ * retries a transaction body, and a retried notification is a duplicate push.
+ *
+ * `riderRefunds` is keyed by rider uid. Riders with nothing coming back are
+ * simply absent, so no one is told about a zero.
+ */
+export async function notifySettlement(
+  rideId: string,
+  opts: {
+    driverUid?: string | null;
+    driverAmount: number;
+    toBank: boolean;
+    destination?: string | null;
+    riderRefunds?: Map<string, number> | Array<[string, number]>;
+    currency?: string;
+  },
+  log?: Log
+): Promise<void> {
+  const money = (n: number) =>
+    `${opts.currency ?? '₹'}${n.toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
+
+  const jobs: Promise<void>[] = [];
+
+  if (opts.driverUid && opts.driverAmount > 0) {
+    const { ctx, driverPhone } = await resolve({ rideId, riderUid: '', driverUid: opts.driverUid });
+    jobs.push(dispatch(
+      String(opts.driverUid),
+      driverPhone,
+      driverEarningsSettled(ctx, money(opts.driverAmount), opts.toBank, opts.destination),
+      { type: 'EARNINGS_SETTLED', ride_id: rideId },
+      log
+    ));
+  }
+
+  for (const [riderUid, amount] of opts.riderRefunds ?? []) {
+    if (!riderUid || !(amount > 0)) continue;
+    const { ctx, riderPhone } = await resolve({ rideId, riderUid });
+    jobs.push(dispatch(
+      riderUid,
+      riderPhone,
+      riderRefundCredited(ctx, money(amount)),
+      { type: 'REFUND_CREDITED', ride_id: rideId },
+      log
+    ));
+  }
+
+  await Promise.all(jobs);
 }

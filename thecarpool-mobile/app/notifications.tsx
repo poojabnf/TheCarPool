@@ -2,7 +2,7 @@ import React, { useState, useCallback } from 'react';
 import { StyleSheet, View, Text, FlatList, RefreshControl, ActivityIndicator } from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Bell, ArrowLeft, CheckCheck, Clock, MapPin, ShieldAlert, CheckCircle2, XCircle } from 'lucide-react-native';
+import { Bell, ArrowLeft, CheckCheck, Clock, MapPin, ShieldAlert, ShieldCheck, CheckCircle2, XCircle, Wallet, Car, MessageCircle, Navigation, Info } from 'lucide-react-native';
 import { c, font, radius, space, shadowSm } from '../theme/tokens';
 import { apiFetch } from './services/api';
 import { AppCache } from './services/cache';
@@ -89,17 +89,46 @@ export default function NotificationsScreen() {
     }
   };
 
+  /**
+   * One icon per stage of a ride.
+   *
+   * The names here must match what the backend actually puts in `type` — this
+   * previously looked for 'RIDER_REQUEST_DECLINED' and 'BOOKING_CANCELLED',
+   * neither of which is ever sent ('BOOKING_DECLINED' and
+   * 'BOOKING_CANCELLED_BY_RIDER' are), so the two events a rider most needs to
+   * spot both rendered as an anonymous bell.
+   */
   const getIcon = (type?: string) => {
     switch (type) {
       case 'BOOKING_REQUESTED':
         return <Clock color="#EAB308" size={20} strokeWidth={2.4} />;
       case 'BOOKING_CONFIRMED':
+      case 'RIDE_COMPLETED':
         return <CheckCircle2 color={c.go} size={20} strokeWidth={2.4} />;
-      case 'RIDER_REQUEST_DECLINED':
-      case 'BOOKING_CANCELLED':
+      case 'BOOKING_DECLINED':
+      case 'BOOKING_CANCELLED_BY_RIDER':
+      case 'RIDE_CANCELLED_BY_DRIVER':
         return <XCircle color={c.danger} size={20} strokeWidth={2.4} />;
       case 'BOARDING_SOON':
         return <MapPin color={c.accent} size={20} strokeWidth={2.4} />;
+      case 'BOARDING_VERIFIED':
+        return <ShieldCheck color={c.go} size={20} strokeWidth={2.4} />;
+      case 'RIDE_STARTED':
+        return <Navigation color={c.go} size={20} strokeWidth={2.4} />;
+      case 'RIDE_REMINDER':
+        return <Clock color={c.accent} size={20} strokeWidth={2.4} />;
+      case 'RIDE_OFFERED':
+        return <Car color={c.textAccent} size={20} strokeWidth={2.4} />;
+      case 'RIDE_UPDATED':
+        return <Info color={c.info} size={20} strokeWidth={2.4} />;
+      case 'EARNINGS_SETTLED':
+        return <Wallet color={c.go} size={20} strokeWidth={2.4} />;
+      case 'REFUND_CREDITED':
+        return <Wallet color={c.textAccent} size={20} strokeWidth={2.4} />;
+      case 'CHAT_MESSAGE':
+        return <MessageCircle color={c.textAccent} size={20} strokeWidth={2.4} />;
+      case 'EMERGENCY_SOS':
+        return <ShieldAlert color={c.danger} size={20} strokeWidth={2.4} />;
       default:
         return <Bell color={c.textAccent} size={20} strokeWidth={2.4} />;
     }

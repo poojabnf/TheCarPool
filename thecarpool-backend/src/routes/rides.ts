@@ -10,12 +10,12 @@ import { classifyVehicle, listMakes, listModels, VEHICLE_CLASSES } from '../lib/
 import { needsDepartureReminder, minutesUntil } from '../lib/rideNotifications';
 import { needsBoardingReminder, minutesUntil as etaMinutesUntil, BOARDING_REMINDER_MINUTES } from '../lib/eta';
 import {
-  notifyBoardingSoon, resolveStopEtasForRide, notifyRideCompleted,
+  notifyBoardingSoon, resolveStopEtasForRide, notifyRideCompleted, deliver,
   notifyRideStarted, notifyDriverCancelledRide, notifyRideOffered,
 } from '../lib/bookingNotifications';
 import { settlementDueAt, DISPUTE_WINDOW_MINUTES } from '../lib/settlement';
 import { settleDueBookingsForRide } from '../lib/rideSettlement';
-import { sendPushToUser } from '../lib/fcm';
+import { notifyUser } from '../lib/notify';
 import { getUserEmail, buildRideOfferedEmail, sendEmail } from '../lib/email';
 import { round2 } from '../lib/money';
 import { refundPaymentToSource } from '../lib/razorpay';
@@ -283,6 +283,10 @@ export async function rideRoutes(fastify: FastifyInstance) {
       .get();
 
     let notified = 0;
+    // Awaited before the handler returns: under Cloud Run CPU throttling a
+    // push left running past the response is frozen where it stands, and the
+    // ride has already been marked as reminded.
+    const pendingReminderPushes: Promise<void>[] = [];
     for (const doc of snap.docs) {
       const ride = doc.data();
       if (!needsDepartureReminder(ride, now)) continue;
@@ -299,13 +303,23 @@ export async function rideRoutes(fastify: FastifyInstance) {
       const mins = minutesUntil(String(ride.departure_time), now);
       const riders = await activeRiderUids(doc.id);
       for (const rider of riders) {
-        sendPushToUser(rider, `⏰ Your ride leaves in ${mins} minutes`,
-          'Be ready at your pickup point. Your boarding code is on the trip screen.',
-          { type: 'RIDE_REMINDER', ride_id: doc.id });
+        pendingReminderPushes.push(deliver(
+          notifyUser(
+            { uid: rider, phone: null },
+            {
+              title: `Your ride leaves in ${mins} minutes`,
+              body: 'Be ready at your pickup point. Your boarding code is on the trip screen.',
+            },
+            { type: 'RIDE_REMINDER', ride_id: doc.id },
+            fastify.log
+          ).then(() => undefined),
+          fastify.log
+        ));
       }
       if (riders.length) notified += 1;
     }
 
+    await Promise.all(pendingReminderPushes);
     return reply.send({ scanned: snap.size, rides_notified: notified });
   });
 
@@ -330,6 +344,12 @@ export async function rideRoutes(fastify: FastifyInstance) {
       .get();
 
     let notified = 0;
+    // Collected, not awaited inside the loop: every reminder in this sweep
+    // shares one ceiling rather than paying it each. They must still be
+    // awaited before the handler returns -- under Cloud Run CPU throttling a
+    // push left running past the response is frozen where it stands, which is
+    // why boarding reminders were being recorded as sent and never arriving.
+    const pendingBoardingPushes: Promise<void>[] = [];
     for (const rideDoc of snap.docs) {
       const ride = rideDoc.data();
       const stops = Array.isArray(ride.pickup_points) ? ride.pickup_points : [];
@@ -370,16 +390,20 @@ export async function rideRoutes(fastify: FastifyInstance) {
         if (!claimed) continue;
 
         const mins = etaMinutesUntil(eta, now) ?? BOARDING_REMINDER_MINUTES;
-        notifyBoardingSoon(
-          { rideId: rideDoc.id, riderUid: String(booking.rider_id ?? booking.rider_uid) },
-          { ...booking, id: bookingDoc.id, pickup_label: match?.label ?? null },
-          mins,
+        pendingBoardingPushes.push(deliver(
+          notifyBoardingSoon(
+            { rideId: rideDoc.id, riderUid: String(booking.rider_id ?? booking.rider_uid) },
+            { ...booking, id: bookingDoc.id, pickup_label: match?.label ?? null },
+            mins,
+            fastify.log
+          ),
           fastify.log
-        );
+        ));
         notified += 1;
       }
     }
 
+    await Promise.all(pendingBoardingPushes);
     return reply.send({ scanned: snap.size, riders_notified: notified });
   });
 
@@ -656,7 +680,7 @@ export async function rideRoutes(fastify: FastifyInstance) {
         }
 
         // Push confirmation to driver
-        notifyRideOffered(rideId, uid, newRide, fastify.log).catch(() => { /* best-effort */ });
+        await deliver(notifyRideOffered(rideId, uid, newRide, fastify.log), fastify.log);
       })();
 
       return reply.code(201).send(newRide);
@@ -1304,13 +1328,19 @@ export async function rideRoutes(fastify: FastifyInstance) {
     // Riders who already booked chose this ride on its old terms, so tell them
     // it moved. Best-effort: a push failure must not fail the edit.
     if (updates.price_split !== undefined || updates.pickup_points !== undefined) {
-      activeRiderUids(id).then((riders) => {
-        for (const rider of riders) {
-          sendPushToUser(rider, 'Ride updated',
-            'The driver changed the details of a ride you booked. Your fare is unchanged.',
-            { type: 'RIDE_UPDATED', ride_id: id });
-        }
-      }).catch(() => { /* notifications are best-effort */ });
+      const riders = await activeRiderUids(id).catch(() => [] as string[]);
+      await Promise.all(riders.map((rider) => deliver(
+        notifyUser(
+          { uid: rider, phone: null },
+          {
+            title: 'Ride updated',
+            body: 'The driver changed the details of a ride you booked. Your fare is unchanged.',
+          },
+          { type: 'RIDE_UPDATED', ride_id: id },
+          fastify.log
+        ).then(() => undefined),
+        fastify.log
+      )));
     }
 
     const fresh = await rideRef.get();
@@ -1412,12 +1442,14 @@ export async function rideRoutes(fastify: FastifyInstance) {
           }
         }
 
-        // Tell the riders. Fire-and-forget: a push failure must never stop a
-        // driver starting or cancelling their trip.
+        // Tell the riders. Awaited with a ceiling rather than fired and
+        // forgotten: a push failure still must never stop a driver starting or
+        // cancelling, which deliver() guarantees by swallowing the error and
+        // capping the wait -- but un-awaited it simply never left the box.
         if (status === 'STARTED') {
-          notifyRideStarted(id, fastify.log).catch(() => { /* notifications are best-effort */ });
+          await deliver(notifyRideStarted(id, fastify.log), fastify.log);
         } else if (status === 'CANCELLED') {
-          notifyDriverCancelledRide(id, fastify.log).catch(() => { /* notifications are best-effort */ });
+          await deliver(notifyDriverCancelledRide(id, fastify.log), fastify.log);
         }
         return reply.send({ id, status, updated: true });
       }
@@ -1525,7 +1557,7 @@ export async function rideRoutes(fastify: FastifyInstance) {
       }
       await batch.commit();
 
-      notifyRideCompleted(id, fastify.log).catch(() => { /* best-effort */ });
+      await deliver(notifyRideCompleted(id, fastify.log), fastify.log);
 
       return reply.send({
         id,
