@@ -370,3 +370,33 @@ export async function notifyRideOffered(
   }
 }
 
+
+/**
+ * Wait for a notification to actually go out, but never longer than it is
+ * worth holding the response for.
+ *
+ * These were all fired without `await`, on the reasoning that a booking has
+ * already taken money by the time anyone is notified, so a failed push must
+ * not fail the booking. That reasoning is still right. The problem is where it
+ * runs: Cloud Run has `cpu-throttling: true`, which cuts the container's CPU
+ * to near zero the instant the HTTP response is flushed. Work that has been
+ * started but not awaited is simply frozen mid-flight — and resumes only if
+ * another request happens to arrive and wake the instance up.
+ *
+ * That is the whole explanation for "sometimes I get a push, sometimes not".
+ * It was never random: notifyUser() writes the Firestore inbox record first
+ * and calls FCM second, so on a quiet instance the record lands and the push
+ * never leaves. Which is exactly what production shows — an unbroken run of
+ * notification documents for every booking, and pushes that only sometimes
+ * arrive.
+ *
+ * Awaiting with a ceiling fixes it without a platform change: the send gets
+ * the CPU it needs because the request is still open, and a slow provider
+ * costs the caller at most `ms` rather than hanging the booking.
+ */
+export function deliver(work: Promise<unknown>, log?: Log, ms = 4000): Promise<void> {
+  return Promise.race([
+    work.catch((err) => { log?.error({ err }, 'Notification dispatch failed'); }),
+    new Promise<void>((resolve) => setTimeout(resolve, ms).unref?.()),
+  ]).then(() => undefined);
+}

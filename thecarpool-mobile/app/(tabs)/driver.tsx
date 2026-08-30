@@ -16,6 +16,7 @@ import { useAuthStore } from '../store/authStore';
 import { rideStatusColors } from '../../theme/tokens';
 import HapticSwitch from '../components/HapticSwitch';
 import { AppCache } from '../services/cache';
+import { formatPostedAgo } from '../services/datetime';
 
 // Departure is picked as a real date AND time. Deliberately built from plain
 // chips rather than @react-native-community/datetimepicker: that is a native
@@ -501,7 +502,16 @@ export default function DriverInterface() {
           Alert.alert('Could not update', data.message || data.error || 'Please try again.');
           return;
         }
-        await loadMyRides();
+        // Drop the row immediately. loadPendingRequests() confirms it, but the
+        // request must leave the screen the moment the server says yes — this
+        // is the whole bug: the accept returned 200 and the card stayed, so
+        // the driver pressed again and got 409, repeatedly.
+        setPendingRequests((prev) => prev.filter((p) => p.booking_id !== bookingId));
+        await loadPendingRequests();
+        // Not awaited: this fans out a manifest fetch per ride (up to 15), and
+        // holding the spinner through all of them is why Accept appeared to
+        // hang long after the decision had actually been made.
+        loadMyRides();
         Alert.alert(
           decision === 'ACCEPT' ? 'Seat confirmed' : 'Request declined',
           decision === 'ACCEPT'
@@ -1043,29 +1053,19 @@ export default function DriverInterface() {
                 return (
                   <View key={r.id} style={styles.upcomingCard}>
                     <View style={styles.routeBox}>
-                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <View>
+                      <View style={styles.cardHeaderRow}>
+                        <View style={{ flexShrink: 1 }}>
                           <Text style={styles.routeTime}>
                             {dep.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })} · {dep.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
                           </Text>
                           {r.created_at && (
-                            <Text style={{ fontSize: 11, color: colors.textMuted, marginTop: 2 }}>
-                              Posted {new Date(r.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })} ({Math.max(1, Math.round((Date.now() - new Date(r.created_at).getTime()) / 60000))}m ago)
-                            </Text>
+                            <Text style={styles.routePosted}>Posted {formatPostedAgo(r.created_at)}</Text>
                           )}
                         </View>
-                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                        <View style={styles.cardChipRow}>
                           <Text style={styles.miniBadge}>{r.vehicle_type || 'CAR'}</Text>
-                          {/* Color-Coded Status Badge */}
-                          <View style={{
-                            paddingHorizontal: 8,
-                            paddingVertical: 3,
-                            borderRadius: 9999,
-                            backgroundColor: statusBg,
-                            borderWidth: 1,
-                            borderColor: statusBorder,
-                          }}>
-                            <Text style={{ fontSize: 11, fontWeight: '700', color: statusColor }}>
+                          <View style={[styles.statusChip, { backgroundColor: statusBg, borderColor: statusBorder }]}>
+                            <Text style={[styles.statusChipText, { color: statusColor }]} numberOfLines={1}>
                               {statusLabel}
                             </Text>
                           </View>
@@ -1079,7 +1079,9 @@ export default function DriverInterface() {
                         {r.source && r.destination
                           ? `${r.source} → ${r.destination}`
                           : `Ride #${String(r.id).replace('ride_', '').slice(0, 8)}`}
-                        {' · '}{formatMoney(Number(r.price_split), { decimals: 0 })}/seat
+                      </Text>
+                      <Text style={styles.routeFare}>
+                        {formatMoney(Number(r.price_split), { decimals: 0 })} per seat
                       </Text>
                     </View>
 
@@ -1244,23 +1246,23 @@ export default function DriverInterface() {
                         </HapticPressable>
                       </View>
                     ) : (
-                      <View style={{ flexDirection: 'row', gap: 8, marginTop: 12 }}>
+                      <View style={styles.lifecycleRow}>
                         {r.status === 'SCHEDULED' && (
                           <>
                             <HapticPressable haptic="press" style={styles.startBtn} onPress={() => updateRideStatus(r.id, 'STARTED')} activeOpacity={0.9}>
-                              <Text style={styles.startBtnText}>▶ Start trip</Text>
+                              <Text style={styles.startBtnText} numberOfLines={1}>▶  Start trip</Text>
                             </HapticPressable>
                             <HapticPressable haptic="press" style={styles.editRideBtn} onPress={() => openEdit(r)} activeOpacity={0.9}>
-                              <Text style={styles.editRideBtnText}>✎ Edit</Text>
+                              <Text style={styles.editRideBtnText} numberOfLines={1}>Edit</Text>
                             </HapticPressable>
                             <HapticPressable haptic="warning" style={styles.cancelRideBtn} onPress={() => updateRideStatus(r.id, 'CANCELLED')} activeOpacity={0.9}>
-                              <Text style={styles.cancelRideBtnText}>✕ Cancel</Text>
+                              <Text style={styles.cancelRideBtnText} numberOfLines={1}>Cancel</Text>
                             </HapticPressable>
                           </>
                         )}
                         {r.status === 'STARTED' && (
                           <HapticPressable haptic="press" style={styles.completeBtn} onPress={() => updateRideStatus(r.id, 'COMPLETED')} activeOpacity={0.9}>
-                            <Text style={styles.startBtnText}>✓ Complete trip · release escrow</Text>
+                            <Text style={styles.startBtnText} numberOfLines={1}>✓  Complete trip</Text>
                           </HapticPressable>
                         )}
                         <HapticPressable style={styles.chatMiniBtn} onPress={() => router.push(`/chat/${r.id}`)} activeOpacity={0.9}>
@@ -1330,7 +1332,7 @@ export default function DriverInterface() {
               </Text>
 
               {pickupPoints.map((pt, i) => (
-                <View key={`${pt.lat},${pt.lng},${i}`}>
+                <View key={`${pt.lat},${pt.lng},${i}`} style={styles.stopCard}>
                   <View style={styles.pickupRow}>
                     <MapPin color={colors.primary} size={16} />
                     <Text style={styles.pickupLabel} numberOfLines={1}>{pt.label}</Text>
@@ -1884,11 +1886,29 @@ export default function DriverInterface() {
             ) : pendingRequests.map((p) => (
               <View key={p.booking_id} style={styles.requestCard}>
                 <View style={styles.reqHeader}>
-                  <View style={styles.reqAvatar} />
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.reqName}>{p.rider_name}</Text>
-                    {p.rider_rating ? <Text style={styles.reqRating}>★ {p.rider_rating}</Text> : null}
+                  {/* Was an empty grey disc on every request — the one place a
+                      driver looks to decide who is getting in their car. */}
+                  <View style={styles.reqAvatar}>
+                    <Text style={styles.reqAvatarText}>
+                      {String(p.rider_name || '?').trim().split(/\s+/).filter(Boolean)
+                        .slice(0, 2).map((w: string) => w[0]).join('').toUpperCase() || '?'}
+                    </Text>
                   </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.reqName} numberOfLines={1}>{p.rider_name}</Text>
+                    <Text style={styles.reqRating}>
+                      {p.rider_rating ? `★ ${p.rider_rating}` : 'New rider'}
+                      {p.created_at ? ` · asked ${formatPostedAgo(p.created_at)}` : ""}
+                    </Text>
+                  </View>
+                  {/* What the seat is worth. A driver was being asked to accept
+                      or decline without being shown the fare. */}
+                  {p.fare_amount != null && (
+                    <View style={{ alignItems: 'flex-end' }}>
+                      <Text style={styles.reqFare}>{formatMoney(Number(p.fare_amount), { decimals: 0 })}</Text>
+                      <Text style={styles.reqFareNote}>you earn</Text>
+                    </View>
+                  )}
                 </View>
 
                 <View style={styles.reqRoute}>
@@ -1916,7 +1936,8 @@ export default function DriverInterface() {
                     disabled={decidingBooking === p.booking_id}
                     onPress={() => decideBooking(p.booking_id, 'DECLINE', p.ride_id)}
                   >
-                    <X color="#ef4444" size={24} />
+                    <X color="#DC2626" size={16} />
+                    <Text style={styles.declineText}>Decline</Text>
                   </HapticPressable>
                   <HapticPressable
                     haptic="press"
@@ -1926,7 +1947,7 @@ export default function DriverInterface() {
                   >
                     {decidingBooking === p.booking_id
                       ? <ActivityIndicator color="#fff" />
-                      : <><Check color="#fff" size={24} /><Text style={styles.acceptText}>Accept Rider</Text></>}
+                      : <><Check color="#fff" size={17} strokeWidth={3} /><Text style={styles.acceptText}>Accept</Text></>}
                   </HapticPressable>
                 </View>
               </View>
@@ -2278,7 +2299,7 @@ export default function DriverInterface() {
                 <Text style={styles.formHint}>No stops yet. Riders near a stop can find your ride.</Text>
               )}
               {editStops.map((pt, i) => (
-                <View key={`${pt.lat},${pt.lng},${i}`} style={styles.pickupRow}>
+                <View key={`${pt.lat},${pt.lng},${i}`} style={[styles.stopCard, styles.pickupRow, { marginBottom: 8 }]}>
                   <Text style={styles.pickupLabel} numberOfLines={1}>{pt.label}</Text>
                   <HapticPressable
                     onPress={() => setEditStops((prev) => prev.filter((_, idx) => idx !== i))}
@@ -2368,10 +2389,18 @@ const styles = StyleSheet.create({
   postRideText: { color: 'white', fontWeight: 'bold', fontSize: 16 },
 
   sectionTitle: { fontSize: 16, fontWeight: 'bold', color: colors.text, marginBottom: 16, textTransform: 'uppercase', letterSpacing: 0.5 },
-  upcomingCard: { backgroundColor: colors.inputBackground, borderRadius: 20, padding: 16, borderLeftWidth: 4, borderLeftColor: colors.primary, borderWidth: 1, borderColor: colors.cardBorder },
-  routeBox: { marginBottom: 16 },
-  routeTime: { color: colors.primary, fontWeight: 'bold', marginBottom: 4 },
-  routeDest: { fontSize: 18, fontWeight: 'bold', color: colors.text },
+  upcomingCard: { backgroundColor: colors.card, borderRadius: 16, padding: 14, borderLeftWidth: 3, borderLeftColor: colors.primary, borderWidth: 1, borderColor: colors.cardBorder },
+  routeBox: { marginBottom: 12 },
+  // The chips need room to give; before this the left column was rigid and
+  // the status chip ran off the right edge of the card.
+  cardHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 },
+  cardChipRow: { flexDirection: 'row', alignItems: 'center', gap: 5, flexShrink: 0, flexWrap: 'wrap', justifyContent: 'flex-end' },
+  statusChip: { paddingHorizontal: 7, paddingVertical: 2.5, borderRadius: 9999, borderWidth: 1 },
+  statusChipText: { fontSize: 10.5, fontWeight: '700' },
+  routePosted: { fontSize: 11, color: colors.textMuted, marginTop: 2 },
+  routeFare: { fontSize: 13, fontWeight: '700', color: colors.primary, marginTop: 3 },
+  routeTime: { fontSize: 13, color: colors.primary, fontWeight: '700', marginBottom: 2, letterSpacing: -0.1 },
+  routeDest: { fontSize: 15, fontWeight: '700', color: colors.text, marginTop: 8, lineHeight: 20 },
   noRidesText: { color: colors.textMuted, fontSize: 13, marginTop: 8 },
   manifestRow: { color: colors.textMuted, fontSize: 12, marginBottom: 2 },
   decisionRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 6, marginBottom: 4, flexWrap: 'wrap' },
@@ -2407,25 +2436,26 @@ const styles = StyleSheet.create({
   otpPrimaryText: { color: '#fff', fontSize: 15, fontWeight: '700' },
   otpGhostBtn: { backgroundColor: colors.background, borderWidth: 1, borderColor: colors.cardBorder, borderRadius: 10, paddingVertical: 14, alignItems: 'center' },
   otpGhostText: { color: colors.textMuted, fontSize: 15, fontWeight: '600' },
-  startBtn: { flex: 1, backgroundColor: colors.success, borderRadius: 8, height: 42, alignItems: 'center', justifyContent: 'center' },
-  cancelRideBtn: { paddingHorizontal: 14, backgroundColor: 'rgba(239,68,68,0.12)', borderWidth: 1, borderColor: '#ef4444', borderRadius: 8, height: 42, alignItems: 'center', justifyContent: 'center' },
-  cancelRideBtnText: { color: '#ef4444', fontSize: 13, fontWeight: '700' },
-  editRideBtn: { paddingHorizontal: 14, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.cardBorder, borderRadius: 8, height: 42, alignItems: 'center', justifyContent: 'center' },
-  editRideBtnText: { color: colors.text, fontSize: 13, fontWeight: '700' },
+  lifecycleRow: { flexDirection: 'row', gap: 7, marginTop: 12, alignItems: 'center' },
+  startBtn: { flex: 1, minWidth: 0, backgroundColor: colors.success, borderRadius: 10, height: 40, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 6 },
+  cancelRideBtn: { width: 66, backgroundColor: '#FEF2F2', borderWidth: 1, borderColor: '#FECACA', borderRadius: 10, height: 40, alignItems: 'center', justifyContent: 'center' },
+  cancelRideBtnText: { color: '#DC2626', fontSize: 12.5, fontWeight: '700' },
+  editRideBtn: { width: 54, backgroundColor: colors.inputBackground, borderWidth: 1, borderColor: colors.cardBorder, borderRadius: 10, height: 40, alignItems: 'center', justifyContent: 'center' },
+  editRideBtnText: { color: colors.text, fontSize: 12.5, fontWeight: '700' },
   editBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' },
   editSheet: { backgroundColor: colors.background, borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 20, maxHeight: '85%' },
   editHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 },
   editTitle: { fontSize: 20, fontWeight: '900', color: colors.text },
-  completeBtn: { flex: 1, backgroundColor: '#1E4E8C', borderRadius: 8, height: 42, alignItems: 'center', justifyContent: 'center' },
-  startBtnText: { color: '#fff', fontSize: 13, fontWeight: '700' },
-  chatMiniBtn: { width: 42, height: 42, borderRadius: 8, borderWidth: 1, borderColor: colors.cardBorder, alignItems: 'center', justifyContent: 'center' },
-  chatMiniText: { fontSize: 16 },
+  completeBtn: { flex: 1, minWidth: 0, backgroundColor: colors.success, borderRadius: 10, height: 40, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 6 },
+  startBtnText: { color: '#fff', fontSize: 13, fontWeight: '700', letterSpacing: 0.1 },
+  chatMiniBtn: { width: 40, height: 40, borderRadius: 10, backgroundColor: colors.inputBackground, borderWidth: 1, borderColor: colors.cardBorder, alignItems: 'center', justifyContent: 'center' },
+  chatMiniText: { fontSize: 15 },
   passengerBox: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingTop: 16, borderTopWidth: 1, borderTopColor: colors.cardBorder },
   passengerAvatars: { flexDirection: 'row' },
   avatarMini: { width: 28, height: 28, borderRadius: 14, borderWidth: 2, borderColor: colors.card },
   seatText: { color: colors.textMuted, fontWeight: '500', fontSize: 14 },
   badgeRow: { flexDirection: 'row', gap: 6 },
-  miniBadge: { fontSize: 9, color: colors.primary, backgroundColor: 'rgba(255,107,53,0.15)', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, fontWeight: 'bold' },
+  miniBadge: { fontSize: 9.5, color: colors.primary, backgroundColor: 'rgba(184,137,58,0.13)', paddingHorizontal: 6, paddingVertical: 3, borderRadius: 5, fontWeight: '700', overflow: 'hidden' },
 
 
   formContainer: { flex: 1, backgroundColor: colors.card, borderRadius: 20, padding: 16, borderWidth: 1, borderColor: colors.cardBorder },
@@ -2448,13 +2478,19 @@ const styles = StyleSheet.create({
   formLabel: { fontSize: 13, color: colors.text, fontWeight: 'bold', marginBottom: 8 },
   formHint: { fontSize: 11.5, color: colors.textMuted, marginTop: -4, marginBottom: 8, lineHeight: 16 },
   vehicleDetailRow: { flexDirection: 'row', gap: 8, marginBottom: 8 },
-  pickupRow: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: colors.inputBackground, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 10, marginBottom: 8, borderWidth: 1, borderColor: colors.cardBorder },
+  // Each stop is one card: the place, then its two fields. Before this they
+  // were flat siblings, so with three stops it was guesswork which fare
+  // belonged to which place.
+  stopCard: { backgroundColor: colors.inputBackground, borderRadius: 8, borderWidth: 1, borderColor: colors.cardBorder, padding: 10, marginBottom: 10 },
+  pickupRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 10 },
   pickupLabel: { flex: 1, fontSize: 13, color: colors.text },
-  stopTimeRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: -4, marginBottom: 10, paddingLeft: 24 },
-  stopPriceHint: { color: colors.primary, fontSize: 12, marginTop: 4, marginLeft: 2, lineHeight: 16.5 },
-  stopPriceWarn: { color: '#ef4444', fontSize: 12, marginTop: 4, marginLeft: 2 },
-  stopTimeLabel: { fontSize: 12, color: colors.textMuted },
-  stopTimeInput: { flex: 1, backgroundColor: colors.inputBackground, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 8, fontSize: 13, color: colors.text, borderWidth: 1, borderColor: colors.cardBorder },
+  // paddingLeft 24 lines the fields up under the stop's label, which starts
+  // at icon (16) + gap (8) in the row above.
+  stopTimeRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8, paddingLeft: 24 },
+  stopPriceHint: { color: colors.primary, fontSize: 12, marginTop: 2, marginBottom: 4, marginLeft: 24, lineHeight: 16.5 },
+  stopPriceWarn: { color: '#ef4444', fontSize: 12, marginTop: 2, marginBottom: 4, marginLeft: 24, lineHeight: 16.5 },
+  stopTimeLabel: { width: 92, fontSize: 12, color: colors.textMuted },
+  stopTimeInput: { flex: 1, height: 40, backgroundColor: colors.card, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 0, fontSize: 13, color: colors.text, borderWidth: 1, borderColor: colors.cardBorder },
   depSummary: { fontSize: 12.5, color: colors.success, fontWeight: '600', marginTop: 4 },
   depSummaryBad: { color: '#C0392B' },
   derivedValue: { fontSize: 18, color: colors.text, fontWeight: '700' },
@@ -2530,20 +2566,24 @@ const styles = StyleSheet.create({
   submitBtn: { backgroundColor: colors.success, padding: 16, borderRadius: 12, alignItems: 'center', marginTop: 24, marginBottom: 40 },
   submitBtnText: { color: 'white', fontWeight: 'bold', fontSize: 16 },
 
-  requestCard: { backgroundColor: colors.inputBackground, padding: 18, borderRadius: 16, marginBottom: 16, borderWidth: 1, borderColor: colors.cardBorder },
-  reqHeader: { flexDirection: 'row', gap: 12, marginBottom: 12 },
-  reqAvatar: { width: 44, height: 44, borderRadius: 22, backgroundColor: colors.cardBorder },
-  reqName: { fontSize: 16, fontWeight: 'bold', color: colors.text },
-  reqRating: { color: '#f59e0b', fontSize: 12, fontWeight: 'bold', marginTop: 2 },
+  requestCard: { backgroundColor: colors.card, padding: 15, borderRadius: 16, marginBottom: 12, borderWidth: 1, borderColor: colors.cardBorder, borderLeftWidth: 3, borderLeftColor: colors.success },
+  reqHeader: { flexDirection: 'row', gap: 11, marginBottom: 11, alignItems: 'center' },
+  reqAvatar: { width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(184,137,58,0.13)', alignItems: 'center', justifyContent: 'center' },
+  reqAvatarText: { fontSize: 14, fontWeight: '700', color: colors.primary },
+  reqFare: { fontSize: 16, fontWeight: '700', color: colors.success },
+  reqFareNote: { fontSize: 10, color: colors.textMuted, marginTop: 1 },
+  reqName: { fontSize: 15, fontWeight: '700', color: colors.text },
+  reqRating: { color: colors.textMuted, fontSize: 11.5, fontWeight: '600', marginTop: 2 },
   
   
-  reqRoute: { backgroundColor: colors.card, padding: 10, borderRadius: 8, marginBottom: 14, borderWidth: 1, borderColor: colors.cardBorder },
+  reqRoute: { backgroundColor: colors.inputBackground, padding: 11, borderRadius: 10, marginBottom: 12, borderWidth: 1, borderColor: colors.cardBorder },
   reqSeatsText: { color: colors.textMuted, fontSize: 12.5, marginTop: 3 },
   reqLuggageText: { color: colors.text, fontSize: 12.5, marginTop: 6, fontWeight: '600' },
-  reqRouteText: { color: colors.textMuted, fontSize: 13 },
-  actionRow: { flexDirection: 'row', gap: 12 },
-  declineBtn: { width: 50, height: 44, borderRadius: 10, borderWidth: 1.5, borderColor: '#ef4444', alignItems: 'center', justifyContent: 'center' },
-  acceptBtn: { flex: 1, height: 44, backgroundColor: colors.success, borderRadius: 10, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 },
-  acceptText: { color: 'white', fontWeight: 'bold', fontSize: 15 },
+  reqRouteText: { color: colors.text, fontSize: 13, fontWeight: '600', lineHeight: 18 },
+  actionRow: { flexDirection: 'row', gap: 9 },
+  declineBtn: { flexDirection: 'row', gap: 5, paddingHorizontal: 16, height: 44, borderRadius: 11, backgroundColor: '#FEF2F2', borderWidth: 1, borderColor: '#FECACA', alignItems: 'center', justifyContent: 'center' },
+  declineText: { color: '#DC2626', fontSize: 13.5, fontWeight: '700' },
+  acceptBtn: { flex: 1, height: 44, backgroundColor: colors.success, borderRadius: 11, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7 },
+  acceptText: { color: '#fff', fontWeight: '700', fontSize: 14.5, letterSpacing: 0.1 },
 
 });

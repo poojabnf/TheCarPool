@@ -7,7 +7,7 @@ import { requireAuth, requireAdmin } from '../middleware/auth';
 import { parseOrReply } from '../lib/validate';
 import { sendPushToUser } from '../lib/fcm';
 import {
-  notifyBookingRequested, notifyBookingConfirmed, notifyBookingDeclined,
+  notifyBookingRequested, notifyBookingConfirmed, notifyBookingDeclined, deliver,
   notifyRideCompletedForBooking, notifyRiderCancelledBooking,
 } from '../lib/bookingNotifications';
 import {
@@ -415,11 +415,15 @@ export async function bookingRoutes(fastify: FastifyInstance) {
 
       const notifyIds = { rideId: String(ride_id), riderUid: String(rider_id), driverUid };
       const notifyBooking = { ...result, seats_booked, pickup_label: pickupLabelFor(rideSnap, pickup_lat, pickup_lng) };
-      if (result.booking_status === 'REQUESTED') {
-        notifyBookingRequested(notifyIds, notifyBooking, fastify.log);
-      } else {
-        notifyBookingConfirmed(notifyIds, notifyBooking, fastify.log);
-      }
+      // Awaited (with a ceiling) rather than fired and forgotten — see
+      // deliver(). Under Cloud Run CPU throttling an un-awaited push is
+      // frozen the moment this response is sent.
+      await deliver(
+        result.booking_status === 'REQUESTED'
+          ? notifyBookingRequested(notifyIds, notifyBooking, fastify.log)
+          : notifyBookingConfirmed(notifyIds, notifyBooking, fastify.log),
+        fastify.log
+      );
 
       // Fire-and-forget email notifications to Rider & Driver
       (async () => {
@@ -600,9 +604,12 @@ export async function bookingRoutes(fastify: FastifyInstance) {
         booking_status: 'CONFIRMED',
         decided_at: new Date().toISOString(),
       });
-      notifyBookingConfirmed(
-        { rideId: String(booking.ride_id), riderUid, driverUid: uid },
-        { ...booking, id },
+      await deliver(
+        notifyBookingConfirmed(
+          { rideId: String(booking.ride_id), riderUid, driverUid: uid },
+          { ...booking, id },
+          fastify.log
+        ),
         fastify.log
       );
       return reply.send({ id, booking_status: 'CONFIRMED' });
@@ -1387,6 +1394,10 @@ export async function bookingRoutes(fastify: FastifyInstance) {
             ride_destination: ride.destination ?? null,
             ride_status: ride.status ?? null,
             departure_time: ride.departure_time ?? null,
+            // What the driver earns by accepting. They were being asked to
+            // approve or refuse a seat without being shown its fare.
+            fare_amount: b.fare_amount
+              ?? ((Number(ride.price_split || 0) * Number(b.seats_booked || 1)) || null),
             created_at: b.created_at ?? null,
           });
         }

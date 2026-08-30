@@ -199,6 +199,7 @@ export default function RootLayout() {
           <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
           <Stack.Screen name="onboarding" options={{ headerShown: false }} />
           <Stack.Screen name="trip/[id]" options={{ headerShown: false }} />
+          <Stack.Screen name="ride/[id]" options={{ headerShown: false }} />
           <Stack.Screen name="confirm" options={{ headerShown: false }} />
           <Stack.Screen name="payout-method" options={{ headerShown: false }} />
           <Stack.Screen name="components/AiVoiceModal" options={{ presentation: 'modal' }} />

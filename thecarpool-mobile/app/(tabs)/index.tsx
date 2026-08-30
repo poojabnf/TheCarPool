@@ -354,6 +354,30 @@ export default function HomeScreen() {
     } finally { setSearching(false); }
   };
 
+  /**
+   * Open the full ride before committing to it.
+   *
+   * The search context travels with it. /ride/[id] renders from the ride
+   * itself, but its Book button hands off to /confirm, which needs the pickup
+   * and drop coordinates the rider searched with — the ride document has the
+   * driver's route, not the rider's.
+   */
+  const openRide = (ride: Ride) => {
+    haptics.tap();
+    router.push({
+      pathname: '/ride/[id]',
+      params: {
+        id: String(ride.id),
+        seats: String(seats),
+        pickup_lat: originCoords ? String(originCoords.lat) : '',
+        pickup_lng: originCoords ? String(originCoords.lng) : '',
+        drop_lat: destCoords ? String(destCoords.lat) : '',
+        drop_lng: destCoords ? String(destCoords.lng) : '',
+        origin, destination,
+      },
+    });
+  };
+
   // Open Confirm & pay (confirm screen books).
   const bookRide = (ride: Ride) => {
     haptics.press();
@@ -506,7 +530,13 @@ export default function HomeScreen() {
           </Text>
           {rides.length === 0 && <Text style={styles.muted}>{t('no_matches_hint')}</Text>}
           {rides.map((ride) => (
-            <View key={String(ride.id)} style={styles.rideCard}>
+            <HapticPressable
+              key={String(ride.id)}
+              style={styles.rideCard}
+              onPress={() => (bookedRideIds[String(ride.id)] ? router.push(`/trip/${ride.id}`) : openRide(ride))}
+              activeOpacity={0.92}
+              accessibilityLabel={`View ride details from ${ride.driver_name}`}
+            >
               <View style={styles.rideTop}>
                 <View style={styles.driverDisc}><Text style={styles.driverDiscText}>{initials(ride.driver_name)}</Text></View>
                 <View style={{ flex: 1 }}>
@@ -607,7 +637,13 @@ export default function HomeScreen() {
                   <Text style={styles.bookBtnText}>{t('book_ride')} · {formatMoney(Number(ride.price_split), { decimals: 0 })}</Text>
                 </HapticPressable>
               )}
-            </View>
+
+              {/* Make the tap target discoverable. A card that silently
+                  responds to a tap is a card nobody taps. */}
+              {!bookedRideIds[String(ride.id)] && (
+                <Text style={styles.viewDetails}>Tap for stops, fares and route details →</Text>
+              )}
+            </HapticPressable>
           ))}
         </View>
       )}
@@ -733,6 +769,7 @@ const styles = StyleSheet.create({
   detour: { fontFamily: font.mono, fontSize: 11, color: c.textTertiary, marginLeft: 'auto' },
   vehicleRow: { flexDirection: 'row', alignItems: 'center', gap: 2, marginTop: 1 },
   bookBtn: { backgroundColor: c.go, height: 46, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center', marginTop: space.md },
+  viewDetails: { fontFamily: font.sans, fontSize: 11.5, color: c.textTertiary, textAlign: 'center', marginTop: space.sm },
   bookBtnText: { fontFamily: font.sansBold, fontSize: 14.5, color: '#fff' },
 
   routeRow: { flexDirection: 'row', alignItems: 'center', gap: space.md, backgroundColor: c.surfaceCard, borderRadius: radius.md, padding: space.md, borderWidth: 1, borderColor: c.borderSubtle, marginBottom: space.sm },
