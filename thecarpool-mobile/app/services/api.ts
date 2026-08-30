@@ -10,8 +10,30 @@
  */
 import { auth } from './firebase';
 
+/**
+ * Backend base URL.
+ *
+ * The fallback is the PRODUCTION url, not localhost, and that distinction is
+ * the difference between a working app and a dead one.
+ *
+ * EXPO_PUBLIC_* variables are inlined at bundle time from the eas.json build
+ * profile — but only by `eas build`. `eas update` does not read that profile,
+ * so every over-the-air bundle was built with EXPO_PUBLIC_API_URL undefined
+ * and fell through to http://localhost:5000. Every authenticated request then
+ * failed instantly against a server that does not exist on the phone, the
+ * callers swallowed the network error, and the app rendered empty everywhere:
+ * no name, no rides, no trips, zero earnings. A store build worked; the next
+ * OTA broke it. That was the pattern all along.
+ *
+ * Keying the fallback off __DEV__ removes the whole class of failure: a
+ * development bundle still talks to localhost, and a shipped bundle can never
+ * point anywhere but production, whether it arrived in a binary or over the
+ * air. EXPO_PUBLIC_API_URL still overrides both when it is actually set.
+ */
+const PRODUCTION_API_URL = 'https://thecarpool-backend-953521578640.asia-south1.run.app';
+
 export const API_URL =
-  process.env.EXPO_PUBLIC_API_URL || 'http://localhost:5000';
+  process.env.EXPO_PUBLIC_API_URL || (__DEV__ ? 'http://localhost:5000' : PRODUCTION_API_URL);
 
 /**
  * fetch wrapper that attaches the current user's Firebase ID token so the

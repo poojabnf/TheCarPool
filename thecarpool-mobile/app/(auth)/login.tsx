@@ -16,8 +16,15 @@ import {
   COUNTRIES, DEFAULT_COUNTRY, Country, maxDigits, isValidNsn, toE164,
 } from '../services/countries';
 
-const GOOGLE_WEB_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID || '';
-const GOOGLE_IOS_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID || '';
+// Same trap as API_URL: `eas update` does not inline EXPO_PUBLIC_* from the
+// eas.json build profile, so over-the-air bundles saw empty strings here and
+// Google sign-in silently stopped working. These are public client
+// identifiers — they already sit in committed config — so a literal fallback
+// costs nothing and cannot go missing.
+const GOOGLE_WEB_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID
+  || '953521578640-rl68r8pde1odshskmaguaokjht4qbqic.apps.googleusercontent.com';
+const GOOGLE_IOS_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID
+  || '953521578640-khu8idmh7f9bmqli6pps2a2bjfmn8p9g.apps.googleusercontent.com';
 const TERMS_URL = 'https://thecarpool.in/terms';
 const PRIVACY_URL = 'https://thecarpool.in/privacy';
 
