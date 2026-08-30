@@ -61,43 +61,52 @@ describe('bookingTotal', () => {
 });
 
 describe('cancellationOutcome', () => {
-  it('refunds in full more than 2 hours out', () => {
-    const r = cancellationOutcome(500, 180);
+  // The published rate card: 4h+ 100%, 2-4h 80%, 1-2h 50%, under 1h 40%.
+  it('refunds in full 4 hours or more out', () => {
+    const r = cancellationOutcome(500, 300);
     expect(r.tier).toBe('FREE');
     expect(r.fee).toBe(0);
     expect(r.refund).toBe(500);
     expect(r.driver_share).toBe(0);
   });
 
-  it('treats exactly 2 hours as still free', () => {
-    expect(cancellationOutcome(500, 120).tier).toBe('FREE');
+  it('treats exactly 4 hours as still free', () => {
+    expect(cancellationOutcome(500, 240).tier).toBe('FREE');
   });
 
-  it('charges 10% between 1 and 2 hours', () => {
-    const r = cancellationOutcome(500, 90);
+  it('refunds 80% between 2 and 4 hours', () => {
+    const r = cancellationOutcome(500, 180);
     expect(r.tier).toBe('STANDARD');
-    expect(r.fee).toBe(50);
-    expect(r.refund).toBe(450);
-    // Driver is only compensated on an imminent cancel.
-    expect(r.driver_share).toBe(0);
-    expect(r.platform_share).toBe(50);
-  });
-
-  it('charges 20% under an hour', () => {
-    const r = cancellationOutcome(500, 30);
-    expect(r.tier).toBe('LATE');
     expect(r.fee).toBe(100);
     expect(r.refund).toBe(400);
+    // Driver is only compensated on an imminent cancel.
+    expect(r.driver_share).toBe(0);
+    expect(r.platform_share).toBe(100);
+  });
+
+  it('refunds 50% between 1 and 2 hours', () => {
+    const r = cancellationOutcome(500, 90);
+    expect(r.tier).toBe('LATE');
+    expect(r.fee).toBe(250);
+    expect(r.refund).toBe(250);
+    expect(r.driver_share).toBe(0);
+  });
+
+  it('refunds 40% under an hour', () => {
+    const r = cancellationOutcome(500, 30);
+    expect(r.tier).toBe('LATE_HOUR');
+    expect(r.fee).toBe(300);
+    expect(r.refund).toBe(200);
     expect(r.driver_share).toBe(0);
   });
 
   it('pays the driver 5% of the fare when cancelled under 15 minutes out', () => {
     const r = cancellationOutcome(500, 10);
     expect(r.tier).toBe('IMMINENT');
-    expect(r.fee).toBe(100);          // still 20%
-    expect(r.refund).toBe(400);
+    expect(r.fee).toBe(300);          // same 60% as the rest of the last hour
+    expect(r.refund).toBe(200);
     expect(r.driver_share).toBe(25);  // 5% of 500
-    expect(r.platform_share).toBe(75);
+    expect(r.platform_share).toBe(275);
   });
 
   it('keeps fee = driver + platform share at every tier', () => {
@@ -123,11 +132,13 @@ describe('cancellationOutcome', () => {
 });
 
 describe('noShowOutcome', () => {
-  it('splits 80 / 5 / 15 between rider, driver and platform', () => {
+  // Deliberately the same 40% a rider gets for cancelling inside the hour:
+  // simply not turning up should not be cheaper than saying so.
+  it('splits 40 / 5 / 55 between rider, driver and platform', () => {
     const r = noShowOutcome(500);
-    expect(r.refund).toBe(400);
+    expect(r.refund).toBe(200);
     expect(r.driver_share).toBe(25);
-    expect(r.platform_share).toBe(75);
+    expect(r.platform_share).toBe(275);
   });
 
   it('never creates or destroys money', () => {

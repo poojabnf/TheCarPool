@@ -42,11 +42,11 @@ export function insurancePremium(distanceKm: number): number {
 }
 
 // ── Cancellation ───────────────────────────────────────────────────────────
-export type CancellationTier = 'FREE' | 'STANDARD' | 'LATE' | 'IMMINENT';
+export type CancellationTier = 'FREE' | 'STANDARD' | 'LATE' | 'LATE_HOUR' | 'IMMINENT';
 
 export interface CancellationOutcome {
   tier: CancellationTier;
-  /** Percentage of the fare charged as a cancellation fee (0, 10 or 20). */
+  /** Percentage of the fare charged as a cancellation fee (0, 20, 50 or 60). */
   fee_pct: number;
   /** Fee charged, in rupees. */
   fee: number;
@@ -60,9 +60,22 @@ export interface CancellationOutcome {
   insurance_refund: number;
 }
 
-export const FREE_CANCEL_MINUTES = 120;   // ≥2h before departure → full refund
-export const LATE_CANCEL_MINUTES = 60;    // 1–2h → 10%; under 1h → 20%
-export const IMMINENT_CANCEL_MINUTES = 15; // under 15m the driver is compensated
+// The rate card. Every tier is a refund percentage, expressed here as the fee
+// that produces it, because the fee is what the rest of the system splits.
+//
+//   4h or more before departure -> 100% back   (no fee)
+//   2h to 4h                    ->  80% back   (20% fee)
+//   1h to 2h                    ->  50% back   (50% fee)
+//   under 1h, or never cancelled ->  40% back  (60% fee)
+//
+// Steeper than what this replaced (free at 2h, 10% at 1-2h, 20% under 1h)
+// because the old card barely distinguished a rider who gave a day's notice
+// from one who vanished at the kerb, and the driver had already turned down
+// other riders for that seat.
+export const FREE_CANCEL_MINUTES = 240;    // >=4h before departure -> full refund
+export const STANDARD_CANCEL_MINUTES = 120; // 2-4h -> 20% fee
+export const LATE_CANCEL_MINUTES = 60;      // 1-2h -> 50% fee; under 1h -> 60%
+export const IMMINENT_CANCEL_MINUTES = 15;  // under 15m the driver is compensated
 /** Driver's cut of an imminent cancellation, as a % of the fare. */
 export const IMMINENT_DRIVER_PCT = 5;
 
@@ -88,15 +101,17 @@ export function cancellationOutcome(
   if (!Number.isFinite(mins) || mins >= FREE_CANCEL_MINUTES) {
     tier = 'FREE';
     fee_pct = 0;
-  } else if (mins >= LATE_CANCEL_MINUTES) {
+  } else if (mins >= STANDARD_CANCEL_MINUTES) {
     tier = 'STANDARD';
-    fee_pct = 10;
-  } else if (mins >= IMMINENT_CANCEL_MINUTES) {
+    fee_pct = 20;
+  } else if (mins >= LATE_CANCEL_MINUTES) {
     tier = 'LATE';
-    fee_pct = 20;
+    fee_pct = 50;
   } else {
-    tier = 'IMMINENT';
-    fee_pct = 20;
+    // Under an hour. IMMINENT is the same 60% but additionally compensates the
+    // driver, who at that point is already on their way.
+    tier = mins >= IMMINENT_CANCEL_MINUTES ? 'LATE_HOUR' : 'IMMINENT';
+    fee_pct = 60;
   }
 
   const fee = round2((amount * fee_pct) / 100);
@@ -116,7 +131,10 @@ export function cancellationOutcome(
 }
 
 // ── No-show ────────────────────────────────────────────────────────────────
-export const NO_SHOW_REFUND_PCT = 80;
+// Matches the under-an-hour cancellation tier deliberately: a rider who
+// simply does not turn up should not do better than one who at least told
+// somebody. It was 80%, which made silence the cheaper option.
+export const NO_SHOW_REFUND_PCT = 40;
 export const NO_SHOW_DRIVER_PCT = 5;
 
 export interface NoShowOutcome {

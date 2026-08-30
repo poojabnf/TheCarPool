@@ -138,11 +138,25 @@ function quoteCancellation(booking: any, ride: any) {
   const minutesToDeparture = Number.isFinite(departureMs)
     ? (departureMs - Date.now()) / 60000
     : NaN;
+  // A request the driver has not acted on yet costs nothing to withdraw.
+  //
+  // The tiers exist to compensate a driver who turned other riders away for a
+  // seat that is now empty. None of that has happened while a request is still
+  // REQUESTED: no seat was promised, no one was refused, and the rider may
+  // simply be tired of waiting. Charging for that would penalise them for the
+  // driver's silence.
+  //
+  // Passing Infinity rather than special-casing downstream keeps one code path
+  // computing every refund, so the quote and the charge cannot drift apart.
+  const pendingApproval = String(booking.booking_status) === 'REQUESTED';
+  const effectiveMinutes = pendingApproval ? Infinity : minutesToDeparture;
+
   return {
     fare: round2(fare),
     premium: round2(premium),
     minutesToDeparture,
-    outcome: cancellationOutcome(fare, minutesToDeparture, premium),
+    pendingApproval,
+    outcome: cancellationOutcome(fare, effectiveMinutes, premium),
   };
 }
 
@@ -1888,7 +1902,10 @@ export async function bookingRoutes(fastify: FastifyInstance) {
         cancellation_fee: outcome.fee,
         cancellation_fee_pct: outcome.fee_pct,
         refunded_amount: round2(outcome.refund + outcome.insurance_refund),
-        refunded_to: 'WALLET',
+        // Where it actually went. This was hardcoded to WALLET and said so to
+        // every rider, including the ones whose money went back to their card.
+        refund_destination: cancelSourceRefund ? 'SOURCE' : 'WALLET',
+        refund_id: cancelSourceRefund?.refund_id ?? null,
         driver_compensation: outcome.driver_share,
       });
     } catch (err: any) {

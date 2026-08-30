@@ -56,24 +56,41 @@ function disputeMinutesLeft(completedAt: string | null | undefined): number {
   return Math.max(0, Math.ceil(DISPUTE_WINDOW_MINUTES - (Date.now() - t) / 60000));
 }
 
-function statusColor(escrow: string, ride: string | null, completedAt?: string | null) {
+function statusColor(escrow: string, ride: string | null, completedAt?: string | null, booking?: string) {
   return rideStatusColors({
     completed: escrow === 'SETTLED' || ride === 'COMPLETED' || !!completedAt,
     ongoing: ride === 'STARTED' || ride === 'IN_PROGRESS',
-    cancelled: ride === 'CANCELLED',
+    // A declined or withdrawn seat is over for this rider even when the ride
+    // itself is still happily scheduled for everyone else.
+    cancelled: ride === 'CANCELLED' || escrow === 'CANCELLED'
+      || booking === 'DECLINED' || booking === 'CANCELLED',
   }).fg;
 }
 
 /**
  * The booking's own state comes first, then the ride's.
  */
-function statusLabel(escrow: string, ride: string | null, completedAt?: string | null, t?: any) {
+function statusLabel(
+  escrow: string,
+  ride: string | null,
+  completedAt?: string | null,
+  t?: any,
+  booking?: string
+) {
   const trans = t || ((k: string) => k);
+
+  // The booking's own fate first. The comment here always claimed this, but
+  // the function was never given the booking's status -- so a seat the driver
+  // had DECLINED still read "not started", and the rider went on waiting for
+  // an answer that had already arrived and been refunded.
+  if (booking === 'DECLINED') return 'Declined by driver';
+  if (booking === 'CANCELLED' || escrow === 'CANCELLED') return trans('status_cancelled');
+  if (booking === 'REQUESTED') return 'Awaiting approval';
+
   if (escrow === 'SETTLED' || ride === 'COMPLETED') return trans('status_completed');
   if (completedAt) return trans('status_completed');
   if (ride === 'STARTED' || ride === 'IN_PROGRESS') return trans('status_ongoing');
   if (ride === 'CANCELLED') return trans('status_cancelled');
-  if (ride === 'SCHEDULED') return trans('status_not_started');
   return trans('status_not_started');
 }
 
@@ -166,7 +183,11 @@ export default function TripsScreen() {
 
     Alert.alert(
       q.headline || 'Cancel this booking?',
-      `${q.detail}\n\nRefunds reach your TheCarPool wallet immediately and can be spent on your next ride.`,
+      // The server's `detail` already names the destination and the timing,
+      // and it is the only one that knows how the rider paid. A flat promise
+      // that refunds reach the wallet immediately is now wrong for anyone who
+      // paid by card or UPI, and contradicted the sentence right above it.
+      q.detail,
       [
         { text: 'Keep booking', style: 'cancel' },
         {
@@ -178,11 +199,18 @@ export default function TripsScreen() {
               if (res.ok) {
                 const d = await res.json().catch(() => ({}));
                 haptics.success();
+                // Where the money went, from the response rather than an
+                // assumption. Card refunds are not instant, and telling a rider
+                // it is already in their wallet earns a support message three
+                // days later asking where it is.
+                const where = d.refund_destination === 'SOURCE'
+                  ? 'to the card or UPI you paid with — allow 5-7 working days'
+                  : 'to your TheCarPool wallet';
                 Alert.alert(
-                  'Booking cancelled',
+                  b.booking_status === 'REQUESTED' ? 'Request withdrawn' : 'Booking cancelled',
                   d.cancellation_fee > 0
-                    ? `A ${formatMoney(Number(d.cancellation_fee))} cancellation charge (${d.cancellation_fee_pct}%) was applied. ${formatMoney(Number(d.refunded_amount))} has been refunded to your wallet.`
-                    : `${formatMoney(Number(d.refunded_amount))} has been refunded to your wallet in full.`
+                    ? `A ${formatMoney(Number(d.cancellation_fee))} cancellation charge (${d.cancellation_fee_pct}%) was applied. ${formatMoney(Number(d.refunded_amount))} is on its way ${where}.`
+                    : `${formatMoney(Number(d.refunded_amount))} has been refunded in full ${where}.`
                 );
                 load(true);
                 useAuthStore.getState().triggerActivityRefresh();
@@ -384,8 +412,8 @@ function BookingCard({ b, onPress, onCancel, onComplete, onDispute }: {
   onComplete?: () => void; onDispute?: () => void;
 }) {
   const { t } = useI18n();
-  const color = statusColor(b.escrow_status, b.ride_status, b.completed_at);
-  const label = statusLabel(b.escrow_status, b.ride_status, b.completed_at, t);
+  const color = statusColor(b.escrow_status, b.ride_status, b.completed_at, b.booking_status);
+  const label = statusLabel(b.escrow_status, b.ride_status, b.completed_at, t, b.booking_status);
   // Not "live" once the rider has ended their own trip.
   const isLive = b.ride_status === 'STARTED' && !b.completed_at;
 
@@ -449,7 +477,17 @@ function BookingCard({ b, onPress, onCancel, onComplete, onDispute }: {
 
       {b.booking_status === 'REQUESTED' && (
         <Text style={styles.awaitingNote}>
-          Waiting for the driver to accept. You'll be refunded in full if they can't take you.
+          Waiting for the driver to accept. You can withdraw this request at any
+          time before they do, at no charge.
+        </Text>
+      )}
+
+      {/* An answer that has already arrived. Without this the card kept saying
+          "waiting for the driver" long after the driver had said no. */}
+      {b.booking_status === 'DECLINED' && (
+        <Text style={styles.declinedNote}>
+          The driver couldn't take this request. Your payment has been refunded
+          to the card or UPI you paid with.
         </Text>
       )}
 
@@ -480,9 +518,14 @@ function BookingCard({ b, onPress, onCancel, onComplete, onDispute }: {
         </Text>
       )}
 
+      {/* Withdrawing a request the driver has not answered is a different act
+          from cancelling a seat you hold, and it is free -- so it should not
+          wear the same word or the same warning colour. */}
       {onCancel && (
         <HapticPressable style={styles.cancelBtn} onPress={onCancel} activeOpacity={0.85}>
-          <Text style={styles.cancelText}>Cancel booking</Text>
+          <Text style={styles.cancelText}>
+            {b.booking_status === 'REQUESTED' ? 'Withdraw request' : 'Cancel booking'}
+          </Text>
         </HapticPressable>
       )}
     </HapticPressable>
@@ -518,6 +561,7 @@ const styles = StyleSheet.create({
   cancelBtn: { marginTop: space.sm, height: 38, borderRadius: radius.sm, borderWidth: 1, borderColor: c.dangerSoft, backgroundColor: c.dangerSoft, alignItems: 'center', justifyContent: 'center' },
   cancelText: { fontFamily: font.sansSemibold, fontSize: 12.5, color: c.danger },
   awaitingNote: { fontFamily: font.sans, fontSize: 12, color: c.textTertiary, marginTop: 10, lineHeight: 17 },
+  declinedNote: { fontFamily: font.sans, fontSize: 12, color: c.danger, marginTop: 10, lineHeight: 17 },
   routeText: { flex: 1, fontFamily: font.sansSemibold, fontSize: 13, color: c.textPrimary, lineHeight: 18 },
   otpBox: {
     marginTop: 12, paddingVertical: 12, borderRadius: radius.md, alignItems: 'center',
