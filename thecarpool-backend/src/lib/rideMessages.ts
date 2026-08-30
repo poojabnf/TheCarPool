@@ -43,6 +43,18 @@ export interface RideMessageContext {
    * better answered before accepting than at the kerb.
    */
   luggage_note?: string | null;
+  /**
+   * This rider is on their new-user allowance and will pay in cash.
+   *
+   * The driver has to be told BEFORE deciding, not after. Nothing is held in
+   * escrow for this seat, so if the rider does not turn up the driver has no
+   * fare and no no-show penalty to fall back on. Accepting it is a different
+   * proposition from accepting a paid booking, and burying that would be
+   * dishonest about a risk they are the ones carrying.
+   */
+  pays_cash?: boolean;
+  /** What they will hand over, when paying in cash. */
+  cash_due?: number | null;
 }
 
 /** Patterns that must never survive into an outbound message. */
@@ -173,9 +185,16 @@ export function driverBookingRequested(ctx: RideMessageContext): BuiltMessage {
     ctx.pickup_point ? `Boarding at: ${ctx.pickup_point}` : null,
     when ? `Departs: ${when}` : null,
     ctx.luggage_note ? `Bringing: ${ctx.luggage_note}` : null,
+    ctx.pays_cash
+      ? `PAYS IN CASH: collect ${ctx.cash_due != null ? `₹${ctx.cash_due}` : 'the fare'} when they board. `
+        + 'Nothing is held for this seat, so accept only if you are happy to be paid in person.'
+      : null,
     'Open the app to accept or decline.',
   ]);
-  return { title: 'New seat request', body: scrubContact(body) };
+  return {
+    title: ctx.pays_cash ? 'New seat request (cash)' : 'New seat request',
+    body: scrubContact(body),
+  };
 }
 
 /** Sent to the DRIVER once a booking is confirmed (instant or on acceptance). */

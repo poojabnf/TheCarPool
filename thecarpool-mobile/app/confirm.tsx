@@ -159,10 +159,64 @@ function describeDistance(metres: number, minutes: number): string {
     })();
   }, [p.ride_id, seats, quotePickup.lat, quotePickup.lng]);
 
+  // Pay-the-driver rides a new rider has left.
+  //
+  // Asked before the option is shown, not after it is chosen: offering a
+  // choice and then refusing it at the last step of checkout is worse than
+  // never offering it. The server decides -- this only decides what to draw.
+  const [cashAllowance, setCashAllowance] = useState<{ remaining: number; limit: number } | null>(null);
+  const [payDriver, setPayDriver] = useState(false);
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await apiFetch('/api/bookings/cash-allowance');
+        if (res.ok) setCashAllowance(await res.json());
+      } catch { /* no offer shown, which is the safe direction */ }
+    })();
+  }, []);
+
+  // One seat only, per the server's rule.
+  const cashAvailable = (cashAllowance?.remaining ?? 0) > 0 && seats === 1;
+  useEffect(() => { if (!cashAvailable) setPayDriver(false); }, [cashAvailable]);
+
   const pay = async () => {
     haptics.press();
     setPaying(true);
     try {
+      // Paying the driver: no order, no gateway, no payment id. The booking is
+      // created directly and the server re-checks the allowance inside its
+      // transaction, so this path cannot be used to conjure a free seat.
+      if (payDriver) {
+        const res = await apiFetch('/api/bookings', {
+          method: 'POST',
+          body: JSON.stringify({
+            ride_id: p.ride_id, rider_id: uid, seats_booked: seats,
+            payment_method: 'PAY_DRIVER',
+            insurance_opted: false,
+            luggage_note: luggageNote.trim() || undefined,
+            restricted_items_ack: restrictedAck,
+            pickup_lng: (chosenMp !== null && allPickups[chosenMp]) ? allPickups[chosenMp].longitude : Number(p.pickup_lng),
+            pickup_lat: (chosenMp !== null && allPickups[chosenMp]) ? allPickups[chosenMp].latitude : Number(p.pickup_lat),
+            drop_lng: Number(p.drop_lng), drop_lat: Number(p.drop_lat),
+          }),
+        });
+        const b = await res.json().catch(() => ({} as any));
+        if (!res.ok) {
+          haptics.error();
+          Alert.alert('Could not book', b.message || b.error || `Server error (${res.status}).`);
+          return;
+        }
+        haptics.success();
+        useAuthStore.getState().triggerActivityRefresh();
+        Alert.alert(
+          'Seat requested',
+          `Your request has been sent to ${p.driver_name || 'the driver'}. `
+          + `Pay ₹${b.cash_due ?? seatFare} directly to them when you board.`,
+          [{ text: 'OK', onPress: () => router.replace(`/trip/${b.ride_id || p.ride_id}`) }]
+        );
+        return;
+      }
+
       // Step 1: Create a Razorpay order on the backend.
       const orderRes = await apiFetch('/api/payments/order', {
         method: 'POST',
@@ -475,6 +529,36 @@ function describeDistance(metres: number, minutes: number): string {
             Please confirm you're not carrying any restricted item to continue.
           </Text>
         )}
+        {/* Pay the driver instead.
+            Offered only while a new rider still has some left, and only for a
+            single seat -- both rules the server enforces, mirrored here so the
+            option is never shown and then refused at the last step.
+
+            Said plainly rather than dressed up: the driver has to agree, and
+            the money is handed over in person. Someone who taps this expecting
+            a locked seat and gets a pending request has been misled. */}
+        {cashAvailable && (
+          <HapticPressable
+            haptic="tap"
+            style={[styles.cashOption, payDriver && styles.cashOptionOn]}
+            onPress={() => setPayDriver((v) => !v)}
+            activeOpacity={0.85}
+          >
+            <View style={[styles.cashRadio, payDriver && styles.cashRadioOn]}>
+              {payDriver && <View style={styles.cashRadioDot} />}
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.cashTitle}>Pay {p.driver_name || 'the driver'} directly</Text>
+              <Text style={styles.cashSub}>
+                Hand over {num(seatFare)} when you board — nothing is charged now.
+                The driver reviews your request first.
+                {'\n'}
+                {cashAllowance?.remaining} of {cashAllowance?.limit} free rides left on your account.
+              </Text>
+            </View>
+          </HapticPressable>
+        )}
+
         <HapticPressable
           haptic="press"
           style={[styles.payBtn, (paying || !restrictedAck) && styles.payBtnDisabled]}
@@ -483,7 +567,9 @@ function describeDistance(metres: number, minutes: number): string {
           activeOpacity={0.9}
         >
           {paying ? <ActivityIndicator color="#fff" />
-            : <><Lock color="#fff" size={16} strokeWidth={2.6} /><Text style={styles.payBtnText}>Pay {num(total)} · Lock seat</Text></>}
+            : payDriver
+              ? <Text style={styles.payBtnText}>Request seat · pay {num(seatFare)} on board</Text>
+              : <><Lock color="#fff" size={16} strokeWidth={2.6} /><Text style={styles.payBtnText}>Pay {num(total)} · Lock seat</Text></>}
         </HapticPressable>
       </View>
     </View>
@@ -595,6 +681,21 @@ const styles = StyleSheet.create({
   change: { fontFamily: font.sansSemibold, fontSize: 13, color: c.textAccent },
 
   footer: { position: 'absolute', left: 0, right: 0, bottom: 0, paddingHorizontal: space.xl, paddingTop: space.md, backgroundColor: c.bgApp, borderTopWidth: 1, borderTopColor: c.borderSubtle },
+  cashOption: {
+    flexDirection: 'row', alignItems: 'flex-start', gap: 10,
+    padding: space.md, marginBottom: space.md,
+    borderRadius: radius.md, borderWidth: 1,
+    borderColor: c.borderSubtle, backgroundColor: c.surfaceCard,
+  },
+  cashOptionOn: { borderColor: c.go, backgroundColor: '#F0FDF4' },
+  cashRadio: {
+    width: 20, height: 20, borderRadius: 10, borderWidth: 2,
+    borderColor: c.borderSubtle, alignItems: 'center', justifyContent: 'center', marginTop: 1,
+  },
+  cashRadioOn: { borderColor: c.go },
+  cashRadioDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: c.go },
+  cashTitle: { fontFamily: font.sansBold, fontSize: 14, color: c.textPrimary },
+  cashSub: { fontFamily: font.sans, fontSize: 12, color: c.textSecondary, marginTop: 3, lineHeight: 17 },
   payBtn: { flexDirection: 'row', gap: 8, alignItems: 'center', justifyContent: 'center', backgroundColor: c.go, height: 54, borderRadius: radius.md },
   payBtnText: { fontFamily: font.sansBold, fontSize: 16, color: '#fff' },
 });

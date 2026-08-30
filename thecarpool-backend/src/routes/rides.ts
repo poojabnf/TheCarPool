@@ -361,9 +361,16 @@ export async function rideRoutes(fastify: FastifyInstance) {
         stopEtas = await resolveStopEtasForRide(ride, stops);
       } catch { /* fall through: riders without an ETA are simply skipped */ }
 
+      // HELD or NONE, not just HELD.
+      //
+      // Every other query on this field is asking "is there money to move",
+      // and for those HELD alone is right. This one is asking "is this rider
+      // actually travelling", which is a different question -- a
+      // pay-the-driver booking holds no escrow and still has someone standing
+      // at a kerb expecting to be told the car is close.
       const bookingsSnap = await db.collection('bookings')
         .where('ride_id', '==', rideDoc.id)
-        .where('escrow_status', '==', 'HELD')
+        .where('escrow_status', 'in', ['HELD', 'NONE'])
         .get();
 
       for (const bookingDoc of bookingsSnap.docs) {

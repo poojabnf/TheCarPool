@@ -1187,6 +1187,7 @@ export default function DriverInterface() {
                               <View style={{ flex: 1 }}>
                                 <Text style={styles.manifestRow}>
                                   {p.rider_name}{p.rider_rating ? ` ★${p.rider_rating}` : ''} · {p.seats_booked} seat{p.seats_booked > 1 ? 's' : ''}
+                                  {p.pays_cash ? ` · 💵 collect ${p.cash_due != null ? formatMoney(Number(p.cash_due), { decimals: 0 }) : 'cash'}` : ''}
                                 </Text>
                                 {/* Awaiting this driver's decision. Their fare is
                                     already held, so declining refunds it. */}
@@ -2014,6 +2015,21 @@ export default function DriverInterface() {
                   {p.luggage_note ? (
                     <Text style={styles.reqLuggageText}>🧳 Bringing: {p.luggage_note}</Text>
                   ) : null}
+                  {/* The single most important fact on this card when it
+                      applies. Nothing is held for a cash seat, so a rider who
+                      does not turn up costs the driver the fare with no
+                      no-show penalty to fall back on. They must see that
+                      before they accept, not after. */}
+                  {p.pays_cash ? (
+                    <Text style={styles.reqCashText}>
+                      💵 Pays cash on board{p.cash_due != null ? ` · collect ${formatMoney(Number(p.cash_due), { decimals: 0 })}` : ''}
+                    </Text>
+                  ) : null}
+                  {p.pays_cash ? (
+                    <Text style={styles.reqCashNote}>
+                      Nothing is held for this seat — accept only if you are happy to be paid in person.
+                    </Text>
+                  ) : null}
                 </View>
 
                 <View style={styles.actionRow}>
@@ -2659,6 +2675,8 @@ const styles = StyleSheet.create({
   reqRoute: { backgroundColor: colors.inputBackground, padding: 11, borderRadius: 10, marginBottom: 12, borderWidth: 1, borderColor: colors.cardBorder },
   reqSeatsText: { color: colors.textMuted, fontSize: 12.5, marginTop: 3 },
   reqLuggageText: { color: colors.text, fontSize: 12.5, marginTop: 6, fontWeight: '600' },
+  reqCashText: { color: '#B45309', fontSize: 12.5, marginTop: 6, fontWeight: '700', lineHeight: 17 },
+  reqCashNote: { color: colors.textMuted, fontSize: 11.5, marginTop: 3, lineHeight: 16 },
   reqRouteText: { color: colors.text, fontSize: 13, fontWeight: '600', lineHeight: 18 },
   actionRow: { flexDirection: 'row', gap: 9 },
   declineBtn: { flexDirection: 'row', gap: 5, paddingHorizontal: 16, height: 44, borderRadius: 11, backgroundColor: '#FEF2F2', borderWidth: 1, borderColor: '#FECACA', alignItems: 'center', justifyContent: 'center' },

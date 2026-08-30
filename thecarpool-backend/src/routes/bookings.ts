@@ -19,6 +19,7 @@ import { getUserEmail, buildRiderBookingEmail, buildDriverPassengerBookedEmail, 
 import { claimPaymentInTransaction } from '../lib/wallet';
 import { getRazorpay, isRazorpayConfigured, refundPaymentToSource } from '../lib/razorpay';
 import { isRouteConfigured, createHeldTransfer, reverseTransfer } from '../lib/route';
+import { cashAllowance, cashBookingRefusal, consumesAllowance, isBookingActive } from '../lib/cashRides';
 import {
   CONVENIENCE_FEE,
   bookingTotal,
@@ -75,7 +76,9 @@ const CreateBookingSchema = z.object({
   // payments keeps those clients working AND still enforces full payment (the
   // wallet debit fails if the balance doesn't cover the fare). Making this
   // field required would 400 every booking from every installed app.
-  payment_method: z.enum(['RAZORPAY', 'WALLET']).optional().default('WALLET'),
+  // PAY_DRIVER: a new rider's trust allowance -- no money moves through us,
+  // they settle with the driver directly. See lib/cashRides.
+  payment_method: z.enum(['RAZORPAY', 'WALLET', 'PAY_DRIVER']).optional().default('WALLET'),
   razorpay_payment_id: z.string().min(1).optional(),
   /** Rider opted into the optional journey insurance. */
   insurance_opted: z.boolean().optional().default(false),
@@ -295,8 +298,24 @@ export async function bookingRoutes(fastify: FastifyInstance) {
           throw new Error('PRICE_CHANGED');
         }
 
-        // Take the money. Either path throws rather than creating an unpaid seat.
-        if (payment_method === 'RAZORPAY') {
+        // Take the money -- unless this is a pay-the-driver ride, where the
+        // whole point is that we do not. There is no payment to claim and no
+        // wallet to debit; the rider settles at the kerb. Everything
+        // downstream that moves money has to know to leave it alone.
+        if (payment_method === 'PAY_DRIVER') {
+          // Re-checked inside the transaction, not just at the door.
+          // Five parallel requests would each pass an outside check and each
+          // create a booking, handing out ten free rides on an allowance of
+          // five.
+          const priorSnap = await transaction.get(
+            db.collection('bookings').where('rider_id', '==', String(rider_id))
+          );
+          const refusal = cashBookingRefusal(
+            cashAllowance(priorSnap.docs.map((d) => d.data() as any)),
+            seats_booked
+          );
+          if (refusal) throw new Error(`CASH_REFUSED:${refusal}`);
+        } else if (payment_method === 'RAZORPAY') {
           claimPaymentInTransaction(transaction, payDoc!, {
             paymentId: String(razorpay_payment_id),
             uid: String(rider_id),
@@ -357,8 +376,17 @@ export async function bookingRoutes(fastify: FastifyInstance) {
           total_paid: totalDue,
           payment_method,
           razorpay_payment_id: razorpay_payment_id ?? null,
-          payment_status: 'PAID',
-          escrow_status: 'HELD',
+          // A cash booking is not paid and holds nothing. Saying so plainly
+          // here is what keeps settlement, refunds and the no-show penalty
+          // away from it -- each of those keys off escrow_status, and a
+          // booking claiming HELD escrow it never funded would have settlement
+          // pay a driver out of money that does not exist.
+          payment_status: payment_method === 'PAY_DRIVER' ? 'DUE_TO_DRIVER' : 'PAID',
+          escrow_status: payment_method === 'PAY_DRIVER' ? 'NONE' : 'HELD',
+          // What the driver collects at the kerb. Frozen on the booking like
+          // every other amount, so a later edit to the ride price cannot
+          // change what the rider was told to bring.
+          cash_due: payment_method === 'PAY_DRIVER' ? fareAmount : null,
           // Drivers can require approval per ride. Off unless the ride asks
           // for it, so every existing ride keeps booking instantly.
           //
@@ -367,7 +395,17 @@ export async function bookingRoutes(fastify: FastifyInstance) {
           // out, and one that did not hold the fare would need the rider to
           // come back and pay at the worst possible moment. A decline refunds
           // in full and returns the seat.
-          booking_status: ride.requires_approval === true ? 'REQUESTED' : 'CONFIRMED',
+          //
+          // A cash booking ALWAYS asks, whatever the ride is set to. Without
+          // escrow the driver carries the entire risk -- a rider who does not
+          // turn up costs them the fare, and there is nothing to take a
+          // no-show penalty from. Being handed that silently, on an
+          // instant-book ride, is not a deal they agreed to. Approval is the
+          // machinery that already exists for giving them the choice.
+          booking_status:
+            (ride.requires_approval === true || payment_method === 'PAY_DRIVER')
+              ? 'REQUESTED'
+              : 'CONFIRMED',
           created_at: new Date().toISOString()
         };
         transaction.set(bookingRef, bookingData);
@@ -385,7 +423,8 @@ export async function bookingRoutes(fastify: FastifyInstance) {
           convenience_fee: CONVENIENCE_FEE,
           total_paid: totalDue,
           payment_status: 'PAID',
-          escrow_status: 'HELD',
+          escrow_status: payment_method === 'PAY_DRIVER' ? 'NONE' : 'HELD',
+          cash_due: payment_method === 'PAY_DRIVER' ? fareAmount : null,
           booking_status: bookingData.booking_status,
         };
       });
@@ -504,6 +543,15 @@ export async function bookingRoutes(fastify: FastifyInstance) {
 
       return reply.code(201).send(result);
     } catch (err: any) {
+      // The allowance ran out, or too many seats were asked for. Say which:
+      // "you have used all 5 of your pay-the-driver rides" is actionable, a
+      // bare refusal is not.
+      if (String(err?.message).startsWith('CASH_REFUSED:')) {
+        return reply.code(403).send({
+          error: 'CASH_LIMIT_REACHED',
+          message: String(err.message).slice('CASH_REFUSED:'.length),
+        });
+      }
       // The seat was never confirmed, so the rider has no booking and no
       // wallet relationship with this money — send it straight back to the
       // card/UPI they paid with. (Wallet refunds apply only once a booking
@@ -637,7 +685,12 @@ export async function bookingRoutes(fastify: FastifyInstance) {
     // DECLINE — refund everything the rider paid and give the seat back. The
     // rider did nothing wrong, so no cancellation fee applies; those tiers
     // price a rider changing their mind, not a driver turning them away.
-    const refund = round2((Number(booking.total_paid) || 0));
+    // Zero for a cash booking: total_paid records what the ride costs, not what
+    // we hold, and a decline that logged a refund of it would put money in the
+    // ledger that never entered it.
+    const refund = booking.payment_method === 'PAY_DRIVER'
+      ? 0
+      : round2((Number(booking.total_paid) || 0));
     const riderWalletRef = db.collection('wallets').doc(riderUid);
 
     // A card/UPI payment goes back to the card/UPI, not to store credit.
@@ -651,6 +704,9 @@ export async function bookingRoutes(fastify: FastifyInstance) {
     // Done BEFORE the transaction: an outbound call inside one is retried
     // with it, and a duplicate refund is much worse than a retryable failure.
     // The idempotency key makes a repeat request safe at Razorpay's end.
+    // A pay-the-driver booking has taken no money, so there is nothing to send
+    // back. Attempting a refund would ask Razorpay about a payment that does
+    // not exist and abort the decline on the error.
     const paidByRazorpay = booking.payment_method === 'RAZORPAY' && booking.razorpay_payment_id;
     let sourceRefund: { refund_id: string; status: string } | null = null;
     if (paidByRazorpay && refund > 0) {
@@ -905,6 +961,30 @@ export async function bookingRoutes(fastify: FastifyInstance) {
   // Without this a disputed fare is invisible unless someone goes looking in
   // Firestore. The money is parked until a human decides, so there has to be
   // somewhere that shows what is waiting.
+  /**
+   * How many pay-the-driver rides this rider has left.
+   *
+   * The app needs this BEFORE showing the option, so it can offer cash only
+   * when it is actually available rather than presenting a choice that will be
+   * refused at the last step of checkout.
+   *
+   * Derived from the bookings, like the check the booking endpoint makes, so
+   * the two cannot disagree about what someone has left.
+   */
+  fastify.get('/cash-allowance', { preHandler: [requireAuth] }, async (request, reply) => {
+    const uid = String(request.user!.id);
+    try {
+      const snap = await db.collection('bookings').where('rider_id', '==', uid).get();
+      const allowance = cashAllowance(snap.docs.map((d) => d.data() as any));
+      return reply.send(allowance);
+    } catch (err: any) {
+      fastify.log.error({ err, uid }, 'Failed to compute cash allowance');
+      // Fail closed. Guessing generously here would hand out a free ride on a
+      // Firestore hiccup; guessing meanly only asks someone to pay as normal.
+      return reply.send({ limit: 0, used: 0, remaining: 0, eligible: false });
+    }
+  });
+
   fastify.get('/disputes', { preHandler: [requireAdmin] }, async (_request, reply) => {
     const snap = await db.collection('bookings')
       .where('disputed', '==', true)
@@ -1136,7 +1216,11 @@ export async function bookingRoutes(fastify: FastifyInstance) {
       if (booking.boarding_verified === true) {
         return reply.send({ status: 'VERIFIED', message: 'This rider was already verified.' });
       }
-      if (booking.escrow_status !== 'HELD') {
+      // Active, not funded. A pay-the-driver booking holds no escrow and still
+      // has a rider getting into the car -- refusing to verify them would
+      // leave every cash ride unverifiable, which is the exact hole that made
+      // every settlement a no-show before tonight.
+      if (!isBookingActive(booking.escrow_status)) {
         return reply.code(400).send({ error: 'This booking is no longer active.' });
       }
 
@@ -1404,6 +1488,8 @@ export async function bookingRoutes(fastify: FastifyInstance) {
           // first to say "declined by the driver" rather than a vague
           // "cancelled", and the second so it never promises a wallet credit
           // to someone whose refund went back to their card.
+          pays_cash: b.payment_method === 'PAY_DRIVER',
+          cash_due: b.cash_due ?? null,
           cancelled_by: b.cancelled_by ?? null,
           refund_destination: b.refund_destination ?? null,
           refunded_amount: b.refunded_amount ?? null,
@@ -1572,6 +1658,11 @@ export async function bookingRoutes(fastify: FastifyInstance) {
               // the completion prompt, which must not nag about riders the
               // driver has already accounted for.
               marked_no_show: b.marked_no_show === true,
+              // Paying in cash at the kerb, and how much to collect. A driver
+              // who does not know this waits for a payout that is never
+              // coming, because there is no escrow behind this seat.
+              pays_cash: b.payment_method === 'PAY_DRIVER',
+              cash_due: b.cash_due ?? null,
               // What they are bringing, so the driver can plan boot space and
               // see it again after accepting, not only in the push.
               luggage_note: b.luggage_note ?? null,
@@ -1702,7 +1793,10 @@ export async function bookingRoutes(fastify: FastifyInstance) {
       if (String(b.rider_id) !== uid) {
         return reply.code(403).send({ error: 'Forbidden: you can only quote your own bookings.' });
       }
-      if (b.escrow_status !== 'HELD') {
+      // Cancellable while the seat is live, whether or not money is held for
+      // it. A cash rider with no way to withdraw would be stuck in a booking
+      // they cannot leave.
+      if (!isBookingActive(b.escrow_status)) {
         return reply.code(400).send({ error: 'This booking is no longer cancellable.' });
       }
 
@@ -1861,7 +1955,7 @@ export async function bookingRoutes(fastify: FastifyInstance) {
         // and wallets up front, then perform every write.
         const freshBookingDoc = await tx.get(bookingRef);
         const freshB = freshBookingDoc.data()!;
-        if (freshB.escrow_status !== 'HELD') {
+        if (!isBookingActive(freshB.escrow_status)) {
           throw new Error('ALREADY_PROCESSED');
         }
 
