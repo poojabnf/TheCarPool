@@ -18,7 +18,7 @@ import HapticPressable from '../components/HapticPressable';
 import { formatMoney } from '../services/currency';
 import HapticSwitch from '../components/HapticSwitch';
 
-const SUPPORT_EMAIL = 'support@thecarpool.in';
+const SUPPORT_EMAIL = 'soverontech@gmail.com';
 const SUPPORT_PHONE = '+919999002281';
 const PRIVACY_URL = 'https://thecarpool.in/privacy';
 

@@ -308,7 +308,7 @@ export function buildRiderBookingEmail(params: {
     </div>
     <div class="footer">
       TheCarPool • Booking ID: ${bookingId}<br>
-      Need help? Reach out at support@thecarpool.in
+      Need help? Reach out at soverontech@gmail.com
     </div>
   </div>
 </body>
