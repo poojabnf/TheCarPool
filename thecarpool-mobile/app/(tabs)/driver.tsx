@@ -114,7 +114,6 @@ export default function DriverInterface() {
   const router = useRouter();
   const params = useLocalSearchParams<{ tab?: string }>();
   const userId = auth().currentUser?.uid ?? null;
-  const [isOnline, setIsOnline] = useState(false);
   const [isPosting, setIsPosting] = useState(false);
   const [activeTab, setActiveTab] = useState<'overview' | 'requests'>(params?.tab === 'requests' ? 'requests' : 'overview');
   const socketRef = useRef<ReturnType<typeof io> | null>(null);
@@ -978,7 +977,12 @@ export default function DriverInterface() {
       useAuthStore.getState().triggerActivityRefresh();
       Alert.alert(
         'Ride Posted! 🚗',
-        `Your commute is live. Ride #${ride.id || ride.ride_id}. Go Online to start broadcasting your location.`,
+        // Says what actually happens. This used to end "Go Online to start
+        // broadcasting your location", pointing at a button with no bearing
+        // on it -- location goes out once a trip starts and only then,
+        // because streaming a driver's position outside a live trip would be
+        // surveillance rather than a feature.
+        `Your commute is live. Riders searching your route can find it now. Your location is shared only once you start the trip.`,
         [{ text: 'OK' }]
       );
     } catch {
@@ -993,15 +997,14 @@ export default function DriverInterface() {
     <View style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Driver Dashboard</Text>
-        <HapticPressable 
-          style={[styles.onlineToggle, isOnline ? styles.onlineActive : styles.onlineInactive]}
-          onPress={() => setIsOnline(!isOnline)}
-        >
-          <View style={[styles.onlineDot, isOnline ? { backgroundColor: 'white' } : { backgroundColor: colors.textMuted }]} />
-          <Text style={[styles.onlineText, isOnline ? { color: 'white' } : { color: colors.textMuted }]}>
-            {isOnline ? 'Online' : 'Go Online'}
-          </Text>
-        </HapticPressable>
+        {/* The Online/Offline pill lived here and did nothing. It was local
+            component state that toggled its own colour and label, read by
+            nothing, sent nowhere, and reset whenever the tab lost focus.
+            Worse than inert: on every other ride-hailing app "Online" means
+            "I am available, send me work", so a driver tapping it fairly
+            concluded they had changed their discoverability. They had not --
+            their rides are found by search either way. A control that lies
+            about what it does is worse than no control. */}
       </View>
 
       {/* Top Segmented Control */}
@@ -2455,11 +2458,6 @@ const styles = StyleSheet.create({
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, marginBottom: 20 },
   headerTitle: { fontSize: 24, fontWeight: '900', color: colors.text },
   
-  onlineToggle: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 20, gap: 6, borderWidth: 1 },
-  onlineActive: { backgroundColor: colors.success, borderColor: colors.success },
-  onlineInactive: { backgroundColor: colors.inputBackground, borderColor: colors.cardBorder },
-  onlineDot: { width: 8, height: 8, borderRadius: 4 },
-  onlineText: { fontWeight: 'bold', fontSize: 12 },
 
   segmentedControl: { flexDirection: 'row', backgroundColor: colors.inputBackground, marginHorizontal: 20, borderRadius: 12, padding: 4, marginBottom: 20, borderWidth: 1, borderColor: colors.cardBorder },
   segmentBtn: { flex: 1, paddingVertical: 10, alignItems: 'center', borderRadius: 8 },
