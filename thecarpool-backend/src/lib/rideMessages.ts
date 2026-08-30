@@ -251,7 +251,10 @@ export function driverCancelledRide(ctx: RideMessageContext): BuiltMessage {
   const body = joinLines([
     `${shortName(ctx.driver_name, 'Your driver')} cancelled the ride.`,
     ctx.origin && ctx.destination ? `Route: ${ctx.origin} → ${ctx.destination}` : null,
-    'Any amount paid is refunded to your wallet. You can book another ride.',
+    // Deliberately not naming the wallet. Card and UPI bookings now refund to
+    // source, so a flat promise of wallet credit is wrong for most riders --
+    // and this message reaches them before any screen does.
+    'You have been refunded in full, the same way you paid. You can book another ride.',
   ]);
   return { title: 'Ride cancelled by driver', body: scrubContact(body) };
 }

@@ -1410,6 +1410,41 @@ export async function rideRoutes(fastify: FastifyInstance) {
             );
             const riderWalletRef = db.collection('wallets').doc(riderUid);
 
+            // Back the way it came, like every other refund path.
+            //
+            // A rider whose ride was cancelled out from under them is owed
+            // their money, not credit with us -- they never chose to keep it
+            // here. This was the last path still crediting the wallet
+            // unconditionally, which made the destination depend on WHICH kind
+            // of cancellation happened rather than on how the rider paid.
+            //
+            // Before the transaction: Firestore retries a transaction body and
+            // an outbound refund inside one would be issued twice. The
+            // idempotency key makes a retry safe at Razorpay's end.
+            //
+            // Falls back to the wallet rather than aborting. The driver has
+            // already cancelled and the seat is gone; refusing to record that
+            // because a payment provider had a bad minute would leave the
+            // rider holding a booking for a ride that is not happening. The
+            // money reaches them either way.
+            let sourceRefund: { refund_id: string; status: string } | null = null;
+            const paidByRazorpay = booking.payment_method === 'RAZORPAY' && booking.razorpay_payment_id;
+            if (paidByRazorpay && refund > 0) {
+              try {
+                sourceRefund = await refundPaymentToSource({
+                  paymentId: String(booking.razorpay_payment_id),
+                  amountRupees: refund,
+                  referenceId: `ridecancel_${bookingDoc.id}`,
+                  notes: { reason: 'DRIVER_CANCELLED_RIDE', ride_id: String(id) },
+                });
+              } catch (refundErr) {
+                fastify.log.error(
+                  { err: refundErr, booking: bookingDoc.id, payment_id: booking.razorpay_payment_id },
+                  'Ride-cancel refund to source failed - falling back to wallet credit'
+                );
+              }
+            }
+
             try {
               await db.runTransaction(async (tx) => {
                 // All reads before writes, per Firestore.
@@ -1426,12 +1461,18 @@ export async function rideRoutes(fastify: FastifyInstance) {
                   cancelled_by: 'DRIVER',
                   cancellation_fee: 0,
                   refunded_amount: refund,
+                  refund_destination: sourceRefund ? 'SOURCE' : 'WALLET',
+                  refund_id: sourceRefund?.refund_id ?? null,
                   cancelled_at: new Date().toISOString(),
                 });
-                tx.set(riderWalletRef, {
-                  ...cur,
-                  available_wallet_balance: round2((cur.available_wallet_balance || 0) + refund),
-                }, { merge: true });
+                // Only when it did not go back to source -- crediting the
+                // wallet as well would refund the rider twice.
+                if (!sourceRefund) {
+                  tx.set(riderWalletRef, {
+                    ...cur,
+                    available_wallet_balance: round2((cur.available_wallet_balance || 0) + refund),
+                  }, { merge: true });
+                }
               });
             } catch (err) {
               // Never let one rider's refund abort the rest, but make it loud:
