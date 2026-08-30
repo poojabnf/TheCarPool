@@ -99,6 +99,42 @@ function expiryOf(token: string, now: number): number {
   return now;
 }
 
+/**
+ * One refresh at a time, shared by everyone waiting for it.
+ *
+ * The screens fire several requests at once -- rides, bookings, and a manifest
+ * per ride all leave together. When the cached token is at or past its expiry
+ * they each independently decide to refresh, so a single expiry produced a
+ * cluster of 401s and a matching cluster of refreshes, every one of them
+ * asking Firebase for the same token.
+ *
+ * Harmless in effect, since each retries and succeeds, but it showed up in
+ * production as four 401s at the same instant, several times an hour, on the
+ * two endpoints the app polls -- enough noise to hide a real failure in.
+ * Holding the in-flight promise means the first caller does the work and the
+ * rest await the same answer.
+ */
+let refreshInFlight: Promise<string | null> | null = null;
+
+async function freshToken(user: { getIdToken: (force: boolean) => Promise<string> }, force: boolean): Promise<string | null> {
+  if (refreshInFlight) return refreshInFlight;
+  refreshInFlight = (async () => {
+    try {
+      const token = await user.getIdToken(force);
+      cachedToken = { token, expiresAt: expiryOf(token, Date.now()) };
+      return token;
+    } catch {
+      return null;
+    } finally {
+      // Cleared in a microtask rather than immediately, so callers that
+      // arrived while this was running still see the same promise.
+      setTimeout(() => { refreshInFlight = null; }, 0);
+    }
+  })();
+  return refreshInFlight;
+}
+
+
 export async function apiFetch(
   path: string,
   init: RequestInit = {},
@@ -113,17 +149,13 @@ export async function apiFetch(
     if (cachedToken && cachedToken.expiresAt > now + 60000) {
       headers.set('Authorization', `Bearer ${cachedToken.token}`);
     } else {
-      try {
-        const token = await user.getIdToken(false);
-        cachedToken = { token, expiresAt: expiryOf(token, now) };
-        headers.set('Authorization', `Bearer ${token}`);
-      } catch {
-        try {
-          const token = await user.getIdToken(true);
-          cachedToken = { token, expiresAt: expiryOf(token, now) };
-          headers.set('Authorization', `Bearer ${token}`);
-        } catch {}
-      }
+      // No forced fallback here on purpose. freshToken hands back whatever
+      // refresh is already in flight, so an immediate second call could
+      // receive the same failed promise rather than a genuine forced retry --
+      // and the 401 path below already forces one, which is the case that
+      // actually matters.
+      const token = await freshToken(user, false);
+      if (token) headers.set('Authorization', `Bearer ${token}`);
     }
   }
   if (init.body && !headers.has('Content-Type')) {
@@ -148,15 +180,13 @@ export async function apiFetch(
 
       // If token expired (401) on initial attempt, refresh token and retry
       if (res.status === 401 && attempt === 1 && user) {
-        try {
-          const freshToken = await user.getIdToken(true);
-          // Cache it too. Without this the stale token stayed cached and every
-          // subsequent request repeated the same 401-then-refresh dance, paying
-          // two round trips forever instead of one.
-          cachedToken = { token: freshToken, expiresAt: expiryOf(freshToken, Date.now()) };
-          headers.set('Authorization', `Bearer ${freshToken}`);
+        // Forced, and shared: a burst of parallel requests all hitting 401 on
+        // the same expiry should cost one refresh between them, not one each.
+        const renewed = await freshToken(user, true);
+        if (renewed) {
+          headers.set('Authorization', `Bearer ${renewed}`);
           continue;
-        } catch {}
+        }
       }
 
       // If it is a transient server error (502, 503, 504) and we have retries left
