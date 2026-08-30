@@ -1007,6 +1007,68 @@ export async function bookingRoutes(fastify: FastifyInstance) {
     return reply.send({ id, resolution, refunded_amount: refund });
   });
 
+  /**
+   * Declare that a rider did not turn up.
+   *
+   * A no-show is a claim, and it costs the rider 20% of their fare, so it has
+   * to be made by someone. Until now it was inferred: any booking without a
+   * boarding code was settled as a no-show, which meant the penalty was
+   * applied 8 times out of 8 without a single driver ever asserting it.
+   *
+   * Reversible while the money is still held. A driver who marks the wrong
+   * rider, or whose passenger turns up late, can undo it right up until
+   * settlement -- after which it is a support conversation, because the money
+   * has moved.
+   */
+  fastify.patch('/:id/no-show', { preHandler: [requireAuth] }, async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const uid = String(request.user!.id);
+    const noShow = (request.body as { no_show?: boolean })?.no_show !== false;
+
+    const ref = db.collection('bookings').doc(id);
+    const snap = await ref.get();
+    if (!snap.exists) return reply.code(404).send({ error: 'Booking not found.' });
+    const booking = snap.data()!;
+
+    const rideSnap = await db.collection('rides').doc(String(booking.ride_id)).get();
+    const driverUid = rideSnap.exists
+      ? String(rideSnap.data()?.driver_uid ?? rideSnap.data()?.driver_id ?? '')
+      : '';
+    if (driverUid !== uid) {
+      return reply.code(403).send({
+        error: 'FORBIDDEN',
+        message: 'Only the driver of this ride can mark a rider as a no-show.',
+      });
+    }
+
+    // Once settled the money has moved; flipping the flag now would only make
+    // the record disagree with the ledger.
+    if (booking.escrow_status === 'SETTLED') {
+      return reply.code(409).send({
+        error: 'ALREADY_SETTLED',
+        message: 'This booking has already been paid out. Contact support to correct it.',
+      });
+    }
+
+    // A verified boarding code is direct evidence the rider was in the car,
+    // and it outranks a later claim that they were not.
+    if (noShow && booking.boarding_verified === true) {
+      return reply.code(409).send({
+        error: 'ALREADY_VERIFIED',
+        message: 'You verified this rider boarded, so they cannot be marked as a no-show.',
+      });
+    }
+
+    await ref.update({
+      marked_no_show: noShow,
+      marked_no_show_at: noShow ? new Date().toISOString() : null,
+      marked_no_show_by: noShow ? uid : null,
+    });
+
+    fastify.log.warn({ booking_id: id, driver: uid, no_show: noShow }, 'Driver set no-show flag');
+    return reply.send({ id, marked_no_show: noShow });
+  });
+
   fastify.post('/:id/verify-boarding-otp', { preHandler: [requireAuth] }, async (request, reply) => {
     const { id } = request.params as { id: string };
     const { otp } = (request.body as { otp?: string }) || {};
@@ -1485,6 +1547,10 @@ export async function bookingRoutes(fastify: FastifyInstance) {
               // Never the code itself — only whether this rider is verified, so
               // the driver UI can show who still needs to board.
               boarding_verified: b.boarding_verified ?? false,
+              // Whether the driver has declared this rider a no-show. Drives
+              // the completion prompt, which must not nag about riders the
+              // driver has already accounted for.
+              marked_no_show: b.marked_no_show === true,
               // What they are bringing, so the driver can plan boot space and
               // see it again after accepting, not only in the push.
               luggage_note: b.luggage_note ?? null,

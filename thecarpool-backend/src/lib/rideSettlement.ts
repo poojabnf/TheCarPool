@@ -69,7 +69,11 @@ export async function settleDueBookingsForRide(
     const riderRefs = new Map<string, FirebaseFirestore.DocumentReference>();
     for (const doc of bookingDocs) {
       if (!doc.exists || !isSettlementDue(doc.data() as any)) continue;
-      if (doc.data()?.boarding_verified === true) continue;
+      // Preload exactly the wallets that will be refunded, which is now the
+      // declared no-shows. Kept in step with the settlement branch below on
+      // purpose: a booking that reaches the refund path without its wallet ref
+      // preloaded would dereference undefined inside the transaction.
+      if (doc.data()?.marked_no_show !== true) continue;
       const rid = String(doc.data()?.rider_id);
       if (rid && !riderRefs.has(rid)) riderRefs.set(rid, db.collection('wallets').doc(rid));
     }
@@ -96,7 +100,22 @@ export async function settleDueBookingsForRide(
       const fare = Number(b.fare_amount ?? Number(ride.price_split || 0) * Number(b.seats_booked || 1));
       const premium = Number(b.insurance_premium || 0);
 
-      if (b.boarding_verified === true) {
+      // A no-show is now something the driver DECLARES, not something we infer
+      // from a missing boarding code.
+      //
+      // This used to read `if (b.boarding_verified === true)`, so an unverified
+      // booking took the penalty branch: the rider was refunded 80% and the
+      // driver received 5% of a fare they had earned. The inference was wrong
+      // in every case it was ever applied. Across 8 settlements, exactly 0 were
+      // verified and all 8 settled as no-shows -- because the control for
+      // entering a boarding code was being wiped by any failed manifest fetch,
+      // so no driver could verify anyone even when they wanted to. "We did not
+      // record a boarding code" is not evidence that nobody boarded.
+      //
+      // A genuine no-show still exists and still carries the penalty; it now
+      // requires the driver to say so, which is a claim someone is accountable
+      // for rather than a silent default.
+      if (b.marked_no_show !== true) {
         paidCount += 1;
         // A Route transfer already holds this driver's share at Razorpay, so
         // releasing it IS the payout — crediting the wallet as well would pay

@@ -677,32 +677,80 @@ export default function DriverInterface() {
     }
 
     // COMPLETED status
+    //
+    // Boarding verification is a stage of the trip, not an optional extra, and
+    // this is where it gets asked for. Nothing used to mention it: a driver
+    // completed the trip and the unverified riders were silently settled as
+    // no-shows at 5% of their fare. Across every settlement to date that was
+    // 8 out of 8, because the control for entering a code was elsewhere on the
+    // card and easy to never see.
+    //
+    // So completion now names the unverified riders and makes the driver
+    // choose: go back and verify them, or complete and treat them as ordinary
+    // passengers. Declaring an actual no-show is a separate, deliberate action
+    // on the rider's own row -- it costs them money and should never be
+    // something that happens by pressing the same button as "I'm finished".
+    const unverified: any[] = (manifests[rideId]?.passengers || []).filter(
+      (p: any) => !p.boarding_verified && p.marked_no_show !== true
+    );
+
+    if (unverified.length > 0) {
+      const names = unverified.map((p: any) => p.rider_name || 'a rider').join(', ');
+      Alert.alert(
+        'Verify boarding first?',
+        `You haven't entered a boarding code for ${names}.\n\n` +
+        'Verifying confirms they travelled with you. You can still complete the ' +
+        'trip without it and they will be paid for as normal passengers.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Enter codes',
+            onPress: () => { setOtpInput(''); setOtpTarget(null); setBoardingRideId(rideId); },
+          },
+          {
+            text: 'Complete anyway',
+            style: 'destructive',
+            onPress: () => completeRide(rideId),
+          },
+        ]
+      );
+      return;
+    }
+
     Alert.alert('Complete this trip?', 'Escrow for all passengers is released to your wallet.', [
       { text: 'Not yet', style: 'cancel' },
-      {
-        text: 'Complete trip',
-        onPress: async () => {
-          try {
-            const res = await apiFetch(`/api/rides/${rideId}/status`, {
-              method: 'PATCH',
-              body: JSON.stringify({ status }),
-            });
-            if (res.ok) {
-              haptics.success();
-              setActiveRideId(null);
-              loadMyRides();
-            } else {
-              haptics.error();
-              const e = await res.json().catch(() => ({}));
-              Alert.alert('Could not update', e.message || e.error || `Server error (${res.status}).`);
-            }
-          } catch {
-            haptics.error();
-            Alert.alert('Could not update', 'Network error. Please try again.');
-          }
-        },
-      },
+      { text: 'Complete trip', onPress: () => completeRide(rideId) },
     ]);
+  };
+
+  /**
+   * The completion request itself, shared by both routes into it.
+   *
+   * 'COMPLETED' is written out rather than closed over: this function is only
+   * ever the completion path, and the outer `status` parameter it used to
+   * capture is no longer in scope here.
+   */
+  const completeRide = (rideId: string) => {
+    (async () => {
+      try {
+        const res = await apiFetch(`/api/rides/${rideId}/status`, {
+          method: 'PATCH',
+          body: JSON.stringify({ status: 'COMPLETED' }),
+        });
+        if (res.ok) {
+          haptics.success();
+          setActiveRideId(null);
+          loadMyRides();
+        } else {
+          haptics.error();
+          const e = await res.json().catch(() => ({}));
+          Alert.alert('Could not update', e.message || e.error || `Server error (${res.status}).`);
+        }
+      } catch {
+        haptics.error();
+        Alert.alert('Could not update', 'Network error. Please try again.');
+      }
+    })();
   };
 
   // Haversine distance formula to auto-calculate route length (in KM)
