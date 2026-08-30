@@ -394,8 +394,18 @@ export async function notifyRideOffered(
  * Awaiting with a ceiling fixes it without a platform change: the send gets
  * the CPU it needs because the request is still open, and a slow provider
  * costs the caller at most `ms` rather than hanging the booking.
+ *
+ * The ceiling is 9s rather than the 4s it started at, because the ceiling is
+ * not a timeout: hitting it does not cancel the work, it just stops waiting
+ * for it -- and once the response flushes, whatever is left is frozen exactly
+ * as before. So the ceiling has to clear the SLOWEST stage, not the typical
+ * one. A cancel or a start fans out to every rider on the ride and was
+ * measured at 4.10s in production, i.e. already past the old limit, while a
+ * booking's two messages take about 2s. Latency here is paid only on actions
+ * that are rare and deliberate, and a driver waiting an extra second beats a
+ * carload of riders never hearing that their ride was cancelled.
  */
-export function deliver(work: Promise<unknown>, log?: Log, ms = 4000): Promise<void> {
+export function deliver(work: Promise<unknown>, log?: Log, ms = 9000): Promise<void> {
   return Promise.race([
     work.catch((err) => { log?.error({ err }, 'Notification dispatch failed'); }),
     new Promise<void>((resolve) => setTimeout(resolve, ms).unref?.()),
