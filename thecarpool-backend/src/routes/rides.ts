@@ -614,10 +614,9 @@ export async function rideRoutes(fastify: FastifyInstance) {
           ? Math.round(Number(distance_km) * 10) / 10
           : null,
         pickup_points: normalisePickupPoints(pickup_points),
-        // Opt-in per ride: when true, a booking arrives as REQUESTED and waits
-        // for the driver to accept. Defaults to false so every existing ride,
-        // and every driver who does not ask for it, keeps booking instantly.
-        requires_approval: (request.body as any)?.requires_approval === true,
+        // Defaults to TRUE: every ride requires the driver to approve/accept each rider.
+        // If explicitly set to false by the driver, it confirms instantly.
+        requires_approval: (request.body as any)?.requires_approval !== false,
         vehicle_make: clean(vehicle_make),
         // Derived server-side, never taken from the client: a ride could
         // otherwise claim SUV for a two-seater and mislead riders at booking.
