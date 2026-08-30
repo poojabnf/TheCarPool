@@ -18,6 +18,7 @@ import {
   registerForPushNotifications,
   subscribeToTokenRefresh,
   setupForegroundNotifications,
+  setupNotificationResponseListener,
 } from './services/notifications';
 import { apiFetch } from './services/api';
 import { warmUp } from './services/geo';
@@ -59,6 +60,14 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
   // reload costs a blink; never mid-session, where it could interrupt someone
   // paying for a seat.
   useEffect(() => { applyPendingUpdate().catch(() => { /* non-fatal */ }); }, []);
+
+  // Listen to notification interactions (tapping a notification banner or lockscreen alert)
+  useEffect(() => {
+    const unsubscribeResponse = setupNotificationResponseListener();
+    return () => {
+      unsubscribeResponse();
+    };
+  }, []);
 
   // Listen to Firebase auth state changes
   useEffect(() => {

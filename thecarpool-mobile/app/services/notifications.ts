@@ -92,6 +92,63 @@ export async function registerForPushNotifications(): Promise<string | null> {
     console.warn('Push notification registration warning:', err);
     return null;
   }
+import { router } from 'expo-router';
+
+export function handleNotificationNavigation(data?: Record<string, any>) {
+  if (!data) return;
+
+  const { type, ride_id, booking_id } = data;
+
+  // 1. Driver booking request -> Driver tab Requests subview
+  if (type === 'BOOKING_REQUESTED') {
+    router.push('/(tabs)/driver?tab=requests');
+    return;
+  }
+
+  // 2. Rider booking confirmed / OTP / boarding soon / ride completed -> Trip details
+  if (ride_id) {
+    router.push(`/trip/${ride_id}`);
+    return;
+  }
+
+  // 3. Fallback for booking specific notifications -> My Trips
+  if (booking_id || type === 'RIDER_REQUEST_DECLINED') {
+    router.push('/(tabs)/trips');
+    return;
+  }
+}
+
+/**
+ * Listen to user tapping on a notification while the app is backgrounded or in foreground.
+ */
+export function setupNotificationResponseListener(): () => void {
+  // Check if app was opened from a quit state via FCM notification
+  messaging()
+    .getInitialNotification()
+    .then((remoteMessage) => {
+      if (remoteMessage?.data) {
+        setTimeout(() => handleNotificationNavigation(remoteMessage.data), 800);
+      }
+    })
+    .catch(() => {});
+
+  // App opened from background via FCM notification
+  const unsubscribeMessaging = messaging().onNotificationOpenedApp((remoteMessage) => {
+    if (remoteMessage?.data) {
+      handleNotificationNavigation(remoteMessage.data);
+    }
+  });
+
+  // User interacted with Expo local/presented notification
+  const subscription = Notifications.addNotificationResponseReceivedListener((response) => {
+    const data = response.notification.request.content.data;
+    handleNotificationNavigation(data);
+  });
+
+  return () => {
+    unsubscribeMessaging();
+    subscription.remove();
+  };
 }
 
 /**

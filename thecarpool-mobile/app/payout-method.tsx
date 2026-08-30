@@ -360,13 +360,30 @@ export default function PayoutMethodScreen() {
               <Text style={styles.fundSub}>Available Fund Value</Text>
               <Text style={styles.fundAmount}>{formatMoney(balance, { decimals: 2 })}</Text>
             </View>
-            <View style={styles.shieldBadge}>
-              <ShieldCheck color={c.goStrong} size={16} />
-              <Text style={styles.shieldText}>Instant Ready</Text>
-            </View>
+            {/* Only claim readiness when money can actually move. This said
+                "Instant Ready" directly above a paragraph explaining that
+                withdrawals are unavailable — and a green badge outranks a
+                grey paragraph every time. */}
+            {current?.payouts_available !== false ? (
+              <View style={styles.shieldBadge}>
+                <ShieldCheck color={c.goStrong} size={16} />
+                <Text style={styles.shieldText}>Instant Ready</Text>
+              </View>
+            ) : (
+              <View style={styles.shieldBadgeMuted}>
+                <Clock color={c.textTertiary} size={15} />
+                <Text style={styles.shieldTextMuted}>Withdrawals coming soon</Text>
+              </View>
+            )}
           </View>
 
-          {balance > 0 && current?.configured && (
+          {/* The calculator only appears when a withdrawal can actually be
+              made. Showing an amount box, percentage chips and a "Net Credited
+              to Account" total for an operation that cannot run invites
+              someone to select 100%, read a confident figure, and then find an
+              explanation where the button should be. The balance and the
+              reason are the honest content until the rails exist. */}
+          {balance > 0 && current?.configured && current?.payouts_available !== false && (
             <View style={styles.withdrawSection}>
               <Text style={styles.withdrawSectionLabel}>Withdrawal Amount</Text>
               <View style={styles.amountInputRow}>
@@ -438,15 +455,21 @@ export default function PayoutMethodScreen() {
                     </View>
                   )}
                 </HapticPressable>
-              ) : (
-                <Text style={styles.payoutsOffNote}>
-                  Withdrawing to a bank or UPI isn't available yet — we're still setting up
-                  the payout rails with our provider, and we don't have a date. Your balance
-                  is safe and spendable on rides. Once your PAN is on file, earnings from
-                  new rides go straight to your bank instead of the wallet.
-                </Text>
-              )}
+              ) : null}
             </View>
+          )}
+
+          {/* Kept OUTSIDE the calculator, which is now hidden entirely when
+              withdrawals cannot run — otherwise hiding the section would take
+              the explanation with it and leave a balance with no account of
+              why nothing can be done with it. */}
+          {balance > 0 && current?.payouts_available === false && (
+            <Text style={styles.payoutsOffNote}>
+              Withdrawing to a bank or UPI isn't available yet — we're still setting up
+              the payout rails with our provider, and we don't have a date. Your balance
+              is safe and spendable on rides. Once your PAN is on file, earnings from
+              new rides go straight to your bank instead of the wallet.
+            </Text>
           )}
 
           {balance === 0 && (
@@ -543,10 +566,17 @@ export default function PayoutMethodScreen() {
             </View>
 
             {panOnFile && (
-              <View style={styles.panBadgeRow}>
-                <ShieldCheck color={c.goStrong} size={15} />
-                <Text style={styles.panBadgeText}>PAN Verified: {panOnFile}</Text>
-              </View>
+              kycStatus === 'LINKED' ? (
+                <View style={styles.panBadgeRow}>
+                  <ShieldCheck color={c.goStrong} size={15} />
+                  <Text style={styles.panBadgeText}>Payout account active · PAN {panOnFile}</Text>
+                </View>
+              ) : (
+                <View style={styles.panBadgeRowPending}>
+                  <Clock color={c.textTertiary} size={15} />
+                  <Text style={styles.panBadgeTextPending}>PAN on file: {panOnFile} · payout account not set up yet</Text>
+                </View>
+              )
             )}
           </View>
         ) : (
@@ -914,6 +944,17 @@ const styles = StyleSheet.create({
   savedDest: { fontFamily: font.monoBold, fontSize: 15, color: c.textPrimary, marginTop: 2 },
   savedHolder: { fontFamily: font.sans, fontSize: 12.5, color: c.textSecondary, marginTop: 1 },
   savedCheck: { width: 24, height: 24, borderRadius: 12, backgroundColor: c.goStrong, alignItems: 'center', justifyContent: 'center' },
+  shieldBadgeMuted: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    backgroundColor: 'rgba(255,255,255,0.06)', borderRadius: radius.pill,
+    paddingHorizontal: 10, paddingVertical: 5,
+  },
+  shieldTextMuted: { fontFamily: font.sansSemibold, fontSize: 12, color: c.textTertiary },
+  panBadgeRowPending: {
+    flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 8,
+    backgroundColor: c.bgApp, borderRadius: radius.sm, paddingHorizontal: 8, paddingVertical: 6,
+  },
+  panBadgeTextPending: { flex: 1, fontFamily: font.sans, fontSize: 12, color: c.textSecondary, lineHeight: 16 },
   panBadgeRow: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
     backgroundColor: c.goSoft, paddingHorizontal: 10, paddingVertical: 6, borderRadius: radius.sm,

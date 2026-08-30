@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { StyleSheet, View, Text, ScrollView, Dimensions, TextInput, Alert, ActivityIndicator, Modal, Linking, FlatList } from 'react-native';
-import { useRouter, useFocusEffect } from 'expo-router';
+import { useRouter, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { PlusCircle, Activity, MapPin, Calendar, Users, X, Check, Car, Bike, Shield, Phone, Mail, ChevronDown, Search } from 'lucide-react-native';
 import { colors } from '../../theme/colors';
 import { apiFetch } from '../services/api';
@@ -25,10 +25,9 @@ const DEPARTURE_DAYS = 14;
 
 function upcomingDays(count = DEPARTURE_DAYS): { label: string; date: Date }[] {
   const out: { label: string; date: Date }[] = [];
+  const now = new Date();
   for (let i = 0; i < count; i++) {
-    const d = new Date();
-    d.setDate(d.getDate() + i);
-    d.setHours(0, 0, 0, 0);
+    const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() + i);
     const label =
       i === 0 ? 'Today'
       : i === 1 ? 'Tomorrow'
@@ -112,13 +111,20 @@ function stopTimeToIso(timeText: string | undefined, departure: Date): string | 
 
 export default function DriverInterface() {
   const router = useRouter();
+  const params = useLocalSearchParams<{ tab?: string }>();
   const userId = auth().currentUser?.uid ?? null;
   const [isOnline, setIsOnline] = useState(false);
   const [isPosting, setIsPosting] = useState(false);
-  const [activeTab, setActiveTab] = useState<'overview' | 'requests'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'requests'>(params?.tab === 'requests' ? 'requests' : 'overview');
   const socketRef = useRef<ReturnType<typeof io> | null>(null);
   const telemetryIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const locationSubRef = useRef<Location.LocationSubscription | null>(null);
+
+  useEffect(() => {
+    if (params?.tab === 'requests') {
+      setActiveTab('requests');
+    }
+  }, [params?.tab]);
 
   const originTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const destTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
