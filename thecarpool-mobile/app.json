@@ -18,7 +18,7 @@
       "supportsTablet": false,
       "bundleIdentifier": "com.thecarpool.app",
       "googleServicesFile": "./GoogleService-Info.plist",
-      "buildNumber": "178",
+      "buildNumber": "179",
       "usesAppleSignIn": true,
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "TheCarPool uses your location to find rides going your way and match you with people travelling the same route.",
@@ -39,7 +39,7 @@
         "backgroundColor": "#ffffff"
       },
       "package": "com.thecarpool.app",
-      "versionCode": 178,
+      "versionCode": 179,
       "googleServicesFile": "./google-services.json",
       "config": {
         "googleMaps": {
