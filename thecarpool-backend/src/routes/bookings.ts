@@ -1400,6 +1400,13 @@ export async function bookingRoutes(fastify: FastifyInstance) {
           // Completion + dispute state, so the rider UI can offer to finish
           // the ride and show how long they have to challenge it.
           booking_status: b.booking_status ?? 'CONFIRMED',
+          // Who ended it, and where the money went. The trip screen needs the
+          // first to say "declined by the driver" rather than a vague
+          // "cancelled", and the second so it never promises a wallet credit
+          // to someone whose refund went back to their card.
+          cancelled_by: b.cancelled_by ?? null,
+          refund_destination: b.refund_destination ?? null,
+          refunded_amount: b.refunded_amount ?? null,
           completed_at: b.completed_at ?? null,
           disputed: b.disputed === true,
           // Ride snapshot fields

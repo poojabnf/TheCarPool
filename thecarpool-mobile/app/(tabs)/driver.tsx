@@ -1334,9 +1334,6 @@ export default function DriverInterface() {
                         <Text style={{ fontSize: 12.5, fontWeight: '600', color: '#15803D' }}>
                           ✓ Trip Completed & Settled
                         </Text>
-                        <HapticPressable style={styles.chatMiniBtn} onPress={() => router.push(`/chat/${r.id}`)} activeOpacity={0.9}>
-                          <Text style={styles.chatMiniText}>💬</Text>
-                        </HapticPressable>
                       </View>
                     ) : (
                       <View style={styles.lifecycleRow}>
@@ -1358,9 +1355,6 @@ export default function DriverInterface() {
                             <Text style={styles.startBtnText} numberOfLines={1}>✓  Complete trip</Text>
                           </HapticPressable>
                         )}
-                        <HapticPressable style={styles.chatMiniBtn} onPress={() => router.push(`/chat/${r.id}`)} activeOpacity={0.9}>
-                          <Text style={styles.chatMiniText}>💬</Text>
-                        </HapticPressable>
                       </View>
                     )}
                   </View>
@@ -2536,8 +2530,6 @@ const styles = StyleSheet.create({
   editTitle: { fontSize: 20, fontWeight: '900', color: colors.text },
   completeBtn: { flex: 1, minWidth: 0, backgroundColor: colors.success, borderRadius: 10, height: 40, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 6 },
   startBtnText: { color: '#fff', fontSize: 13, fontWeight: '700', letterSpacing: 0.1 },
-  chatMiniBtn: { width: 40, height: 40, borderRadius: 10, backgroundColor: colors.inputBackground, borderWidth: 1, borderColor: colors.cardBorder, alignItems: 'center', justifyContent: 'center' },
-  chatMiniText: { fontSize: 15 },
   passengerBox: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingTop: 16, borderTopWidth: 1, borderTopColor: colors.cardBorder },
   passengerAvatars: { flexDirection: 'row' },
   avatarMini: { width: 28, height: 28, borderRadius: 14, borderWidth: 2, borderColor: colors.card },

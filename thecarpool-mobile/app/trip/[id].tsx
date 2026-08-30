@@ -5,7 +5,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import io from 'socket.io-client';
 import * as Location from 'expo-location';
 import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
-import { ShieldAlert, Share2, MapPin, MessageCircle, Phone, Mail, Navigation, ChevronUp, ChevronDown } from 'lucide-react-native';
+import { ShieldAlert, Share2, MapPin, Phone, Mail, Navigation, ChevronUp, ChevronDown } from 'lucide-react-native';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -18,6 +18,7 @@ import * as haptics from '../services/haptics';
 import { c, font, radius, space, shadowSm } from '../../theme/tokens';
 import HapticPressable from '../components/HapticPressable';
 import { useI18n } from '../services/i18n';
+import { useAuthStore } from '../store/authStore';
 
 const SOCKET_URL = API_URL;
 
@@ -61,6 +62,7 @@ export default function TripScreen() {
   // booking but offered no way to act on it.
   const [bookingId, setBookingId] = useState<string | null>(null);
   const [escrowStatus, setEscrowStatus] = useState<string | null>(null);
+  const [cancelledBy, setCancelledBy] = useState<string | null>(null);
   const [cancelling, setCancelling] = useState(false);
   const [isSheetExpanded, setIsSheetExpanded] = useState<boolean>(false);
 
@@ -108,6 +110,7 @@ export default function TripScreen() {
           setBookingStatus(myBooking.booking_status || 'CONFIRMED');
           setBookingId(myBooking.id ?? null);
           setEscrowStatus(myBooking.escrow_status ?? null);
+          setCancelledBy(myBooking.cancelled_by ?? null);
           setBoardingOtp(myBooking.boarding_otp || null);
           setBoardingVerified(myBooking.boarding_verified ?? false);
         }
@@ -121,6 +124,15 @@ export default function TripScreen() {
     const pollTimer = setInterval(fetchRideData, 8000);
     return () => clearInterval(pollTimer);
   }, [id]);
+
+  // Refetch the moment a push arrives.
+  //
+  // A rider watching this screen when their request is declined should not
+  // wait up to 8 seconds to be told -- the server has already pushed the news
+  // to the device, and the foreground handler raises this signal. Polling
+  // remains the backstop for when the app was backgrounded and missed it.
+  const activityRefreshEpoch = useAuthStore((st) => st.activityRefreshEpoch);
+  useEffect(() => { fetchRideData(); }, [activityRefreshEpoch]);
 
   useEffect(() => {
     let socket: ReturnType<typeof io> | undefined;
@@ -544,8 +556,10 @@ export default function TripScreen() {
               <View style={[styles.alertBox, { backgroundColor: '#FEF2F2', borderColor: '#FECACA' }]}>
                 <Text style={[styles.alertText, { color: '#B91C1C' }]}>
                   {bookingStatus === 'DECLINED'
-                    ? 'This request was declined by the driver. Your payment has been refunded — search again for other rides on your route.'
-                    : 'This booking was cancelled. Any refund due is on its way back to you.'}
+                    ? 'Request declined. The driver couldn\u2019t take you on this ride, and your payment has been refunded. Search again for other rides on your route.'
+                    : cancelledBy === 'DRIVER'
+                      ? 'Ride cancelled by the driver. You have been refunded in full \u2014 search again for other rides on your route.'
+                      : 'This booking was cancelled. Any refund due is on its way back to you.'}
                 </Text>
               </View>
             )}
@@ -561,28 +575,6 @@ export default function TripScreen() {
               </View>
             )}
 
-            {/* Leaving.
-                This screen is where confirm.tsx drops a rider the moment they
-                pay, and it is where they sit waiting for an answer -- yet the
-                only cancel control was on the Trips tab, which they had to know
-                to go and look for. A rider who has just paid and changed their
-                mind should not have to hunt for the way out. */}
-            {bookingId && escrowStatus === 'HELD'
-              && ride?.status !== 'COMPLETED' && ride?.status !== 'CANCELLED' && (
-              <HapticPressable
-                haptic="warning"
-                style={styles.cancelBookingBtn}
-                onPress={cancelBooking}
-                disabled={cancelling}
-                activeOpacity={0.85}
-              >
-                <Text style={styles.cancelBookingText}>
-                  {cancelling
-                    ? 'Checking…'
-                    : bookingStatus === 'REQUESTED' ? 'Withdraw request' : 'Cancel booking'}
-                </Text>
-              </HapticPressable>
-            )}
 
             {/* 🛡️ Boarding Verification OTP Card */}
             {boardingOtp && bookingStatus !== 'REQUESTED' && (
@@ -666,10 +658,26 @@ export default function TripScreen() {
                     <Text style={styles.shareText}>{t('share_live_trip')}</Text>
                   </HapticPressable>
                 </View>
-                <HapticPressable style={styles.chatBtn} onPress={() => router.push(`/chat/${id}`)} activeOpacity={0.9}>
-                  <MessageCircle color={c.textPrimary} size={17} strokeWidth={2.2} />
-                  <Text style={styles.shareText}>{t('message_cotravellers')}</Text>
-                </HapticPressable>
+                {/* Cancelling sits here, where "Message co-travellers" used
+                    to. This is the actions block a rider already looks at for
+                    Share and End trip, so it is where they will look for the
+                    way out too. */}
+                {bookingId && escrowStatus === 'HELD'
+                  && ride?.status !== 'COMPLETED' && ride?.status !== 'CANCELLED' && (
+                  <HapticPressable
+                    haptic="warning"
+                    style={styles.cancelBookingBtn}
+                    onPress={cancelBooking}
+                    disabled={cancelling}
+                    activeOpacity={0.85}
+                  >
+                    <Text style={styles.cancelBookingText}>
+                      {cancelling
+                        ? 'Checking…'
+                        : bookingStatus === 'REQUESTED' ? 'Withdraw request' : 'Cancel booking'}
+                    </Text>
+                  </HapticPressable>
+                )}
                 <HapticPressable style={styles.endTrip} onPress={() => setShowRating(true)}>
                   <Text style={styles.endTripText}>End trip & rate</Text>
                 </HapticPressable>
