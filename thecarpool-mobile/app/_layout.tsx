@@ -50,15 +50,13 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
   // instead of racing the user's first keystroke.
   useEffect(() => { warmUp(); }, []);
 
-  // Apply a pending over-the-air update at launch.
+  // Download a pending over-the-air update at launch, ready for next start.
   //
-  // fallbackToCacheTimeout: 0 makes the app start instantly from cache and
-  // download updates in the background, but it only APPLIES them on the next
-  // cold start — and most people background an app rather than quitting it, so
-  // a downloaded update could sit unapplied indefinitely. This closes that gap
-  // without giving back the instant launch. Runs once, at start, where a
-  // reload costs a blink; never mid-session, where it could interrupt someone
-  // paying for a seat.
+  // Downloads only. An earlier version reloaded the app the moment an update
+  // arrived, which is how a single bad bundle became a launch-fetch-reload
+  // loop that no user could break out of. Fetching here still beats waiting on
+  // a background check that may never run, and the update applies on the next
+  // launch — a path that cannot brick the app.
   useEffect(() => { applyPendingUpdate().catch(() => { /* non-fatal */ }); }, []);
 
   // Listen to notification interactions (tapping a notification banner or lockscreen alert)

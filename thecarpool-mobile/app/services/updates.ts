@@ -15,19 +15,19 @@
  * Nothing in the app called the expo-updates JS API either, so there was no
  * second route in. The package was installed and never used.
  *
- * This restores the missing half: check on launch, fetch, and reload once —
- * so an update lands on the first relaunch rather than the second or never,
- * while the instant launch is kept.
+ * This restores the missing half: check and fetch on launch, so an update is
+ * already downloaded and ready to apply on the next start rather than waiting
+ * for a background check that may never run.
+ *
+ * It deliberately does NOT reload the app itself. See applyPendingUpdate().
  */
 import * as Updates from 'expo-updates';
 
 /**
- * Fetch and apply a pending update, if there is one.
+ * Download a pending update so it is ready for the next launch.
  *
- * Deliberately called only at app start. Reloading mid-session would tear the
- * screen out from under someone who might be halfway through paying for a
- * seat, and no update is worth that. At launch there is nothing in flight, so
- * a reload costs a blink.
+ * Returns true when something was downloaded. It does not restart the app —
+ * see the note inside for why that turned out to matter more than speed.
  *
  * Silent by design: every failure path here is non-fatal. A device with no
  * connection, an update server having a bad minute, or a build running in
@@ -46,7 +46,20 @@ export async function applyPendingUpdate(): Promise<boolean> {
     const fetched = await Updates.fetchUpdateAsync();
     if (!fetched.isNew) return false;
 
-    await Updates.reloadAsync();
+    // Downloaded, NOT applied here.
+    //
+    // This used to call Updates.reloadAsync() straight away, and that is
+    // almost certainly why the app became unusable after an update. A reload
+    // at launch turns a single bad bundle into a loop: launch, fetch, reload,
+    // the new bundle fails to start or expo-updates rolls it back, launch,
+    // fetch, reload — forever, with no way in from the user's side. The one
+    // failure it cannot recover from is the one it creates.
+    //
+    // Downloading and letting the update apply on the next natural launch is
+    // what expo-updates does by default, and it cannot loop: a bundle that
+    // will not start is simply replaced on the following launch. The cost is
+    // that an update lands one launch later than it might. That is a fair
+    // price for an app that always opens.
     return true;
   } catch {
     // Offline, server unreachable, or a manifest we cannot use. The app keeps
