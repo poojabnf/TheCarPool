@@ -248,6 +248,7 @@ export default function DriverInterface() {
   // Mirrors myRides so loadMyRides can check it without depending on it.
   const myRidesRef = useRef<any[]>(myRides);
   const [manifests, setManifests] = useState<Record<string, any>>(() => AppCache.get<Record<string, any>>('driver_manifests') || {});
+  const manifestsRef = useRef<Record<string, any>>(manifests);
   const [ridesLoading, setRidesLoading] = useState(false);
   const [earnings, setEarnings] = useState(() => AppCache.get<number>('driver_earnings') || 0);
   const [payoutDestination, setPayoutDestination] = useState<string | null>(null);
@@ -303,14 +304,31 @@ export default function DriverInterface() {
       setMyRides(toDisplay);
       AppCache.set('driver_my_rides', toDisplay);
 
-      // Fetch passenger manifests for active / recent rides (best-effort).
+      // Fetch passenger manifests for active / recent rides.
+      //
+      // A failed fetch KEEPS the manifest we already had. It used to store
+      // null, and that one line is why boarding verification has never once
+      // succeeded in this app: the driver's card renders passenger rows from
+      // the manifest, and the "Enter OTP" control lives on those rows. Null
+      // manifest, no rows, no way to enter a boarding code — while the seat
+      // counter, which falls back to the ride document, still cheerfully read
+      // "1/3 Seats Filled" next to "No bookings yet".
+      //
+      // These requests were being rate-limited 42 times in a single session
+      // (the dashboard asked for one manifest per ride every 10 seconds), so
+      // the wipe was not rare — it was most of the time. The polling and the
+      // limiter are both fixed, but a transient failure must not be able to
+      // remove a control the driver needs at the kerb.
+      const prev = manifestsRef.current;
       const entries = await Promise.all(toDisplay.map(async (r: any) => {
         try {
           const m = await apiFetch(`/api/bookings/for-ride/${r.id}`);
-          return m.ok ? [r.id, await m.json()] : [r.id, null];
-        } catch { return [r.id, null]; }
+          if (m.ok) return [r.id, await m.json()];
+        } catch { /* fall through to the last good manifest */ }
+        return [r.id, prev[r.id] ?? null];
       }));
       const manifestObj = Object.fromEntries(entries);
+      manifestsRef.current = manifestObj;
       setManifests(manifestObj);
       AppCache.set('driver_manifests', manifestObj);
     } catch { setAllRides([]); myRidesRef.current = []; setMyRides([]); }
@@ -341,8 +359,12 @@ export default function DriverInterface() {
 
   const activityRefreshEpoch = useAuthStore((s) => s.activityRefreshEpoch);
   useEffect(() => {
+    // Both, not just rides: this signal now fires on an incoming push, and the
+    // push that matters most to a driver is a new seat request — which lives
+    // in the pending list, not the ride list.
     loadMyRides();
-  }, [activityRefreshEpoch]);
+    loadPendingRequests();
+  }, [activityRefreshEpoch, loadPendingRequests]);
 
   // Periodic refresh so a driver sees new seat requests without restarting.
   //

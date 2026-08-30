@@ -157,6 +157,15 @@ export function setupNotificationResponseListener(): () => void {
  */
 export function setupForegroundNotifications(): () => void {
   return messaging().onMessage(async (remoteMessage) => {
+    // A push IS the event. The screens were polling for the same news the
+    // server had already pushed to the device -- a driver's seat request
+    // arrived as a banner in about two seconds and then sat unlisted until
+    // the next poll came round. Refreshing here closes that gap to nothing.
+    try {
+      const { useAuthStore } = require('../store/authStore');
+      useAuthStore.getState().triggerActivityRefresh();
+    } catch { /* store not ready; the poll still covers it */ }
+
     if (remoteMessage.notification) {
       await Notifications.scheduleNotificationAsync({
         content: {
