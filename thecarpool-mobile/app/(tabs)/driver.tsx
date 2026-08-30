@@ -380,11 +380,19 @@ export default function DriverInterface() {
   // What actually needs to be fresh is the pending-request list, and that is
   // exactly one request. The heavy refresh drops to once a minute; it also
   // runs on focus and after every decision, so nothing waits on it.
+  //
+  // Nothing polls without a session. Watching a signed-out app in production
+  // was instructive: it kept firing all 22 manifest requests every 10 seconds,
+  // every one a 401, indefinitely — because the timers know nothing about auth
+  // and the screen stays mounted underneath the login route. A signed-out
+  // device should be silent, not the loudest client on the service.
+  const isLoggedIn = useAuthStore((s) => s.isLoggedIn);
   useEffect(() => {
+    if (!isLoggedIn) return;
     const requestsPoll = setInterval(() => { loadPendingRequests(); }, 10000);
     const ridesPoll = setInterval(() => { loadMyRides(); }, 60000);
     return () => { clearInterval(requestsPoll); clearInterval(ridesPoll); };
-  }, [loadPendingRequests]);
+  }, [loadPendingRequests, isLoggedIn]);
 
   // Switching between Car Pool and Bike Pool invalidates whatever was picked
   // under the other mode — otherwise a driver who selects Maruti Swift and

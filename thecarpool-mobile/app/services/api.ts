@@ -67,6 +67,38 @@ function waitForAuth(timeoutMs = 1500): Promise<ReturnType<typeof auth>['current
   });
 }
 
+/**
+ * When a Firebase ID token actually expires, read from the token itself.
+ *
+ * This used to assume `now + 50 minutes`, which is only true for a token that
+ * was just issued. getIdToken(false) returns the EXISTING token whenever it
+ * has not expired yet — so a token already 55 minutes old was cached as good
+ * for another 50, and every request made with it failed with 401 until
+ * something forced a refresh. That is a session that dies roughly an hour in
+ * and takes the whole app down with it: rides, bookings, manifests, profile.
+ *
+ * The `exp` claim is seconds since the epoch. One minute of margin covers
+ * clock skew and the flight time of the request. If the token cannot be
+ * parsed, treat it as already expired rather than trusting it — a needless
+ * refresh costs a round trip, a wrong one costs the session.
+ */
+function expiryOf(token: string, now: number): number {
+  try {
+    const [, payload] = token.split('.');
+    const json = JSON.parse(
+      decodeURIComponent(
+        atob(payload.replace(/-/g, '+').replace(/_/g, '/'))
+          .split('')
+          .map((ch) => `%${`00${ch.charCodeAt(0).toString(16)}`.slice(-2)}`)
+          .join('')
+      )
+    );
+    const exp = Number(json?.exp);
+    if (Number.isFinite(exp)) return exp * 1000 - 60000;
+  } catch { /* fall through */ }
+  return now;
+}
+
 export async function apiFetch(
   path: string,
   init: RequestInit = {},
@@ -83,12 +115,12 @@ export async function apiFetch(
     } else {
       try {
         const token = await user.getIdToken(false);
-        cachedToken = { token, expiresAt: now + 50 * 60 * 1000 };
+        cachedToken = { token, expiresAt: expiryOf(token, now) };
         headers.set('Authorization', `Bearer ${token}`);
       } catch {
         try {
           const token = await user.getIdToken(true);
-          cachedToken = { token, expiresAt: now + 50 * 60 * 1000 };
+          cachedToken = { token, expiresAt: expiryOf(token, now) };
           headers.set('Authorization', `Bearer ${token}`);
         } catch {}
       }
@@ -118,6 +150,10 @@ export async function apiFetch(
       if (res.status === 401 && attempt === 1 && user) {
         try {
           const freshToken = await user.getIdToken(true);
+          // Cache it too. Without this the stale token stayed cached and every
+          // subsequent request repeated the same 401-then-refresh dance, paying
+          // two round trips forever instead of one.
+          cachedToken = { token: freshToken, expiresAt: expiryOf(freshToken, Date.now()) };
           headers.set('Authorization', `Bearer ${freshToken}`);
           continue;
         } catch {}
