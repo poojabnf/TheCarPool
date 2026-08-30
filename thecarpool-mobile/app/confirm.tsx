@@ -237,7 +237,11 @@ function describeDistance(metres: number, minutes: number): string {
       // booking-history will pick up the new booking without a restart.
       useAuthStore.getState().triggerActivityRefresh();
 
-      const rideId = b.ride_id || b.id || p.ride_id;
+      // Never b.id — that is the BOOKING id, and using it as a ride id sent
+      // the rider to a trip screen that could only ever 404, then re-asked for
+      // the same missing ride every 8 seconds. p.ride_id is the ride they
+      // actually searched and paid for, so it is the correct fallback.
+      const rideId = b.ride_id || p.ride_id;
       if (b.booking_status === 'REQUESTED') {
         Alert.alert(
           'Seat Requested!',

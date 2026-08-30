@@ -360,6 +360,11 @@ export async function bookingRoutes(fastify: FastifyInstance) {
 
         return {
           id: bookingId,
+          // The ride this seat is on. Absent before, which sent the app to
+          // /trip/<booking id>: the client fell back to the booking id when
+          // this was missing, and every poll of that screen asked for a ride
+          // whose id was a booking's, every 8 seconds, forever.
+          ride_id: String(ride_id),
           boarding_otp,
           fare_amount: fareAmount,
           insurance_premium: insuranceAmount,
