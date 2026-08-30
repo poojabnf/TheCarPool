@@ -56,6 +56,12 @@ export default function TripScreen() {
   const [boardingOtp, setBoardingOtp] = useState<string | null>(null);
   const [boardingVerified, setBoardingVerified] = useState<boolean>(false);
   const [bookingStatus, setBookingStatus] = useState<string>('CONFIRMED');
+  // The booking itself, not just its status: this screen is where a rider
+  // lands straight after paying, and until now it could show them their
+  // booking but offered no way to act on it.
+  const [bookingId, setBookingId] = useState<string | null>(null);
+  const [escrowStatus, setEscrowStatus] = useState<string | null>(null);
+  const [cancelling, setCancelling] = useState(false);
   const [isSheetExpanded, setIsSheetExpanded] = useState<boolean>(false);
 
   const toggleSheet = () => {
@@ -82,11 +88,26 @@ export default function TripScreen() {
       if (bRes.ok) {
         const data = await bRes.json();
         const bookings: any[] = Array.isArray(data?.bookings) ? data.bookings : [];
-        const myBooking = bookings.find(
-          (b) => String(b.ride_id) === String(id) && (b.escrow_status === 'HELD' || b.booking_status === 'REQUESTED')
-        );
+        // Any booking of mine on this ride, in whatever state.
+        //
+        // This used to require escrow HELD or status REQUESTED, which a
+        // DECLINED booking satisfies neither of -- it is CANCELLED and
+        // DECLINED. So the lookup returned nothing, no state updated, and the
+        // screen went on showing "waiting for driver approval" indefinitely.
+        // A rider whose request had been refused and refunded sat watching a
+        // live map for a seat they no longer had, waiting for an answer that
+        // had already come.
+        //
+        // Prefer a live booking when there is one; otherwise take the most
+        // recent, so the screen can say what became of it.
+        const mine = bookings.filter((b) => String(b.ride_id) === String(id));
+        const myBooking =
+          mine.find((b) => b.escrow_status === 'HELD' || b.booking_status === 'REQUESTED')
+          ?? mine.sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)))[0];
         if (myBooking) {
           setBookingStatus(myBooking.booking_status || 'CONFIRMED');
+          setBookingId(myBooking.id ?? null);
+          setEscrowStatus(myBooking.escrow_status ?? null);
           setBoardingOtp(myBooking.boarding_otp || null);
           setBoardingVerified(myBooking.boarding_verified ?? false);
         }
@@ -125,6 +146,78 @@ export default function TripScreen() {
     })();
     return () => { cancelled = true; socket?.disconnect(); };
   }, [id]);
+
+  /**
+   * Cancel this booking from the screen the rider is actually looking at.
+   *
+   * confirm.tsx sends a rider straight here after paying, so this is where
+   * they sit while waiting for a driver to answer -- and it had no way to
+   * change their mind. The only cancel control lived on the Trips tab, which
+   * they had to know to go and find.
+   *
+   * Quotes before it asks. A rider agreeing to a cancellation charge should be
+   * told the number first, and it uses the same two endpoints the Trips tab
+   * does so the two paths cannot quote differently for the same booking.
+   */
+  const cancelBooking = async () => {
+    if (!bookingId || cancelling) return;
+    haptics.warning();
+    setCancelling(true);
+    try {
+      const qRes = await apiFetch(`/api/bookings/${bookingId}/cancellation-quote`);
+      if (!qRes.ok) {
+        const e = await qRes.json().catch(() => ({}));
+        Alert.alert('Could not cancel', e.message || e.error || 'This booking is no longer cancellable.');
+        return;
+      }
+      const q = await qRes.json();
+      const card = Array.isArray(q.rate_card) && q.cancellation_fee > 0
+        ? '\n\nRefund depends on when you cancel:\n'
+          + q.rate_card.map((r: any) => `  ${r.refund_pct}%  \u00b7  ${r.window}`).join('\n')
+        : '';
+
+      Alert.alert(
+        q.headline || 'Cancel this booking?',
+        q.detail + card,
+        [
+          { text: bookingStatus === 'REQUESTED' ? 'Keep waiting' : 'Keep booking', style: 'cancel' },
+          {
+            text: bookingStatus === 'REQUESTED' ? 'Withdraw request' : 'Cancel booking',
+            style: 'destructive',
+            onPress: async () => {
+              try {
+                const res = await apiFetch(`/api/bookings/${bookingId}/cancel`, { method: 'PATCH' });
+                const d = await res.json().catch(() => ({}));
+                if (!res.ok) {
+                  haptics.error();
+                  Alert.alert('Could not cancel', d.message || d.error || `Server error (${res.status}).`);
+                  return;
+                }
+                haptics.success();
+                const where = d.refund_destination === 'SOURCE'
+                  ? 'to the card or UPI you paid with — allow 5-7 working days'
+                  : 'to your TheCarPool wallet';
+                Alert.alert(
+                  bookingStatus === 'REQUESTED' ? 'Request withdrawn' : 'Booking cancelled',
+                  d.cancellation_fee > 0
+                    ? `A ₹${d.cancellation_fee} charge (${d.cancellation_fee_pct}%) was applied. ₹${d.refunded_amount} is on its way ${where}.`
+                    : `₹${d.refunded_amount} has been refunded in full ${where}.`,
+                  [{ text: 'OK', onPress: () => router.replace('/(tabs)/trips') }]
+                );
+              } catch {
+                haptics.error();
+                Alert.alert('Could not cancel', 'Network error. Please try again.');
+              }
+            },
+          },
+        ]
+      );
+    } catch {
+      Alert.alert('Could not cancel', 'Check your connection and try again.');
+    } finally {
+      setCancelling(false);
+    }
+  };
 
   // Derived route coordinates for rendering polyline
   const routePoints = useMemo(() => {
@@ -442,13 +535,53 @@ export default function TripScreen() {
               </View>
             )}
 
-            {/* ⏳ Waiting for Driver Approval Card */}
-            {bookingStatus === 'REQUESTED' && (
-              <View style={[styles.alertBox, { backgroundColor: '#FEF3C7', borderColor: '#FDE68A' }]}>
-                <Text style={[styles.alertText, { color: '#92400E' }]}>
-                  ⏳ Waiting for driver approval. Once the driver accepts your request, your 4-digit Boarding OTP and seat confirmation will appear here.
+            {/* The answer, when it is no.
+                Shown in place of the waiting card rather than beside it: a
+                rider whose request was declined is not still waiting, and the
+                screen said they were. */}
+            {(bookingStatus === 'DECLINED' || bookingStatus === 'CANCELLED'
+              || escrowStatus === 'CANCELLED') && (
+              <View style={[styles.alertBox, { backgroundColor: '#FEF2F2', borderColor: '#FECACA' }]}>
+                <Text style={[styles.alertText, { color: '#B91C1C' }]}>
+                  {bookingStatus === 'DECLINED'
+                    ? 'This request was declined by the driver. Your payment has been refunded — search again for other rides on your route.'
+                    : 'This booking was cancelled. Any refund due is on its way back to you.'}
                 </Text>
               </View>
+            )}
+
+            {/* ⏳ Waiting for Driver Approval Card */}
+            {bookingStatus === 'REQUESTED' && escrowStatus !== 'CANCELLED' && (
+              <View style={[styles.alertBox, { backgroundColor: '#FEF3C7', borderColor: '#FDE68A' }]}>
+                <Text style={[styles.alertText, { color: '#92400E' }]}>
+                  ⏳ Waiting for driver approval. Once the driver accepts, your 4-digit
+                  boarding code and seat confirmation appear here. You can withdraw
+                  this request at any time before they answer, at no charge.
+                </Text>
+              </View>
+            )}
+
+            {/* Leaving.
+                This screen is where confirm.tsx drops a rider the moment they
+                pay, and it is where they sit waiting for an answer -- yet the
+                only cancel control was on the Trips tab, which they had to know
+                to go and look for. A rider who has just paid and changed their
+                mind should not have to hunt for the way out. */}
+            {bookingId && escrowStatus === 'HELD'
+              && ride?.status !== 'COMPLETED' && ride?.status !== 'CANCELLED' && (
+              <HapticPressable
+                haptic="warning"
+                style={styles.cancelBookingBtn}
+                onPress={cancelBooking}
+                disabled={cancelling}
+                activeOpacity={0.85}
+              >
+                <Text style={styles.cancelBookingText}>
+                  {cancelling
+                    ? 'Checking…'
+                    : bookingStatus === 'REQUESTED' ? 'Withdraw request' : 'Cancel booking'}
+                </Text>
+              </HapticPressable>
             )}
 
             {/* 🛡️ Boarding Verification OTP Card */}
@@ -582,6 +715,18 @@ export default function TripScreen() {
 }
 
 const styles = StyleSheet.create({
+  cancelBookingBtn: {
+    marginTop: space.md,
+    height: 46,
+    borderRadius: radius.md,
+    backgroundColor: '#FEF2F2',
+    borderWidth: 1,
+    borderColor: '#FECACA',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cancelBookingText: { fontFamily: font.sansBold, fontSize: 14, color: '#DC2626' },
+
   screen: { flex: 1, backgroundColor: c.bgApp },
   mapWrap: { flex: 1 },
   backChip: { position: 'absolute', left: space.lg, backgroundColor: c.surfaceCard, borderRadius: radius.pill, paddingHorizontal: 14, paddingVertical: 8, ...shadowSm },
