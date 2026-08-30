@@ -90,9 +90,21 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
         unsubscribeForeground?.();
         unsubscribeForeground = setupForegroundNotifications();
 
-        // Rehydrate the profile from backend — fixes cold-start reset bug.
+        // Rehydrate the profile from backend.
+        //
+        // Retried, because a single attempt was why the greeting kept falling
+        // back to "there". Nothing about the profile survives a restart — the
+        // auth store is in-memory and AppCache is a plain Map — so every cold
+        // start, and every OTA reload, depends entirely on this one request
+        // succeeding. When it did not (a 401 while the auth token was still
+        // settling, or a timeout against a cold backend) the name was gone for
+        // the rest of the session, with nothing to try again.
         try {
-          const res = await apiFetch('/api/users/me');
+          let res = await apiFetch('/api/users/me');
+          for (let attempt = 1; attempt <= 3 && !res.ok; attempt++) {
+            await new Promise((r) => setTimeout(r, attempt * 800));
+            res = await apiFetch('/api/users/me');
+          }
           if (res.ok) {
             const data = await res.json();
             // Only pass through fields the server actually returned.

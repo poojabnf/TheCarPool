@@ -83,7 +83,7 @@ export default function NotificationsScreen() {
     if (item.data) {
       handleNotificationNavigation(item.data);
     } else if (item.ride_id) {
-      router.push(/trip/);
+      router.push(`/trip/${item.ride_id}`);
     } else if (item.booking_id) {
       router.push('/(tabs)/trips');
     }
@@ -101,7 +101,7 @@ export default function NotificationsScreen() {
       case 'BOARDING_SOON':
         return <MapPin color={c.accent} size={20} strokeWidth={2.4} />;
       default:
-        return <Bell color={c.brand} size={20} strokeWidth={2.4} />;
+        return <Bell color={c.textAccent} size={20} strokeWidth={2.4} />;
     }
   };
 
@@ -115,7 +115,7 @@ export default function NotificationsScreen() {
         <Text style={styles.title}>Notification Center</Text>
         {notifications.some((n) => !n.read) ? (
           <HapticPressable style={styles.markReadBtn} onPress={markAllRead}>
-            <CheckCheck color={c.brand} size={18} strokeWidth={2.2} />
+            <CheckCheck color={c.textAccent} size={18} strokeWidth={2.2} />
             <Text style={styles.markReadText}>Read All</Text>
           </HapticPressable>
         ) : (
@@ -125,7 +125,7 @@ export default function NotificationsScreen() {
 
       {loading && notifications.length === 0 ? (
         <View style={styles.center}>
-          <ActivityIndicator color={c.brand} size="large" />
+          <ActivityIndicator color={c.textAccent} size="large" />
         </View>
       ) : notifications.length === 0 ? (
         <View style={styles.center}>
@@ -145,7 +145,7 @@ export default function NotificationsScreen() {
             <RefreshControl
               refreshing={refreshing}
               onRefresh={() => loadNotifications(true)}
-              tintColor={c.brand}
+              tintColor={c.textAccent}
             />
           }
           contentContainerStyle={styles.listContent}
@@ -212,7 +212,7 @@ const styles = StyleSheet.create({
   markReadText: {
     fontSize: 13,
     fontFamily: font.sansSemibold,
-    color: c.brand,
+    color: c.textAccent,
   },
   center: {
     flex: 1,
@@ -224,7 +224,7 @@ const styles = StyleSheet.create({
     width: 80,
     height: 80,
     borderRadius: 40,
-    backgroundColor: c.bgElevated,
+    backgroundColor: c.surfaceSunken,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: space.lg,
@@ -250,7 +250,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'flex-start',
     padding: space.lg,
-    backgroundColor: c.bgSurface,
+    backgroundColor: c.surfaceCard,
     borderRadius: radius.lg,
     borderWidth: 1,
     borderColor: c.borderSubtle,
@@ -258,8 +258,8 @@ const styles = StyleSheet.create({
     ...shadowSm,
   },
   unreadCard: {
-    backgroundColor: c.bgElevated,
-    borderColor: c.brand,
+    backgroundColor: c.surfaceSunken,
+    borderColor: c.textAccent,
     borderLeftWidth: 4,
   },
   itemIconContainer: {
@@ -293,7 +293,7 @@ const styles = StyleSheet.create({
     width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: c.brand,
+    backgroundColor: c.textAccent,
     marginLeft: 6,
   },
   itemText: {

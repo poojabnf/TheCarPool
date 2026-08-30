@@ -671,7 +671,7 @@ const styles = StyleSheet.create({
     width: 42,
     height: 42,
     borderRadius: radius.pill,
-    backgroundColor: c.bgSurface,
+    backgroundColor: c.surfaceCard,
     borderWidth: 1,
     borderColor: c.borderSubtle,
     alignItems: 'center',
