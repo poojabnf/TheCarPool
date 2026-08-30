@@ -299,8 +299,16 @@ export default function TripsScreen() {
     );
   };
 
-  const upcoming = bookings.filter(b => b.ride_status !== 'COMPLETED' && b.escrow_status !== 'SETTLED');
-  const past = bookings.filter(b => b.ride_status === 'COMPLETED' || b.escrow_status === 'SETTLED');
+  // A booking is only "upcoming" while its money is still held.
+  //
+  // This excluded SETTLED but not CANCELLED, so a seat the driver had DECLINED
+  // — refunded, gone, seat given back — kept sitting in the rider's upcoming
+  // trips looking live. Escrow status is the honest test: HELD means the seat
+  // is still real, anything else means it is over one way or another.
+  const isLive = (b: Booking) =>
+    b.ride_status !== 'COMPLETED' && b.escrow_status === 'HELD';
+  const upcoming = bookings.filter(isLive);
+  const past = bookings.filter(b => !isLive(b));
 
   return (
     <View style={[styles.screen, { paddingTop: insets.top + space.lg }]}>
@@ -343,7 +351,14 @@ export default function TripsScreen() {
                 <BookingCard
                   key={b.id} b={b}
                   onPress={() => router.push(`/trip/${b.ride_id}`)}
-                  onCancel={b.ride_status === 'SCHEDULED' && !b.completed_at ? () => cancelBooking(b) : undefined}
+                  // escrow_status is the same test the server applies, so the
+                  // button is offered exactly when cancelling can succeed. It
+                  // used to gate on the RIDE's status alone and would happily
+                  // offer Cancel on a booking the driver had already declined,
+                  // which could only ever return "no longer cancellable".
+                  onCancel={b.escrow_status === 'HELD' && b.ride_status === 'SCHEDULED' && !b.completed_at
+                    ? () => cancelBooking(b)
+                    : undefined}
                   // Offer completion once the trip is under way and not already ended.
                   onComplete={b.ride_status === 'STARTED' && !b.completed_at && b.booking_status !== 'REQUESTED' ? () => completeRide(b) : undefined}
                   // Dispute stays available while the window is open and the fare unsettled.
