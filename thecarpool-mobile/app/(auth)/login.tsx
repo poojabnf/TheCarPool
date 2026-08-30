@@ -132,7 +132,7 @@ export default function LoginScreen() {
         <View style={styles.hero}>
           <Text style={styles.h1}>Share the drive.</Text>
           <Text style={styles.h1accent}>Split the fare.</Text>
-          <Text style={styles.sub}>Verified workplace carpooling for commuting professionals.</Text>
+          <Text style={styles.sub}>Share a ride with people heading your way.</Text>
         </View>
 
         {/* Phone */}

@@ -64,10 +64,10 @@ async function api(path, { method = 'GET', body } = {}) {
 // and "instant UPI payouts" (earnings reach a driver's account about two hours
 // after the ride, or their wallet if they have no payout details). Store copy
 // that overstates the product is both a review risk and a support burden.
-const DESCRIPTION = `TheCarPool is verified workplace carpooling built for Indian professionals. Find coworkers and neighbours heading your way, share the drive, and split the fuel cost fairly — so your daily commute is cheaper, greener, and a lot less lonely.
+const DESCRIPTION = `TheCarPool is carpooling for everyday journeys across India. Find people already heading your way, share the drive, and split the fuel cost fairly — so getting there is cheaper, greener, and a lot less lonely.
 
 WHY THECARPOOL
-• Verified community — riders verify a government ID before booking, and anyone offering rides also verifies a driving licence. You travel with people who have been checked.
+• Know who you are travelling with — see each driver's name, rating, trip history and vehicle details before you book.
 • Smart route matching — enter your pickup and destination and instantly see drivers already going your way, with the exact detour and fair per-seat price.
 • No booking fees — you pay the seat fare and nothing else. There is no convenience fee, no surge and no haggling, and the driver receives the full fare.
 • Escrow-protected payments — your fare is held safely via UPI/Razorpay and released to the driver only after they confirm you boarded with your 4-digit code.
@@ -87,7 +87,7 @@ GREENER COMMUTES
 Every shared ride takes a car off the road. Track the CO₂ you have avoided and the money you have saved, right in the app.
 
 OFFER A RIDE
-Driving in anyway? Offer your empty seats, set your route, price and pickup points, and earn back your fuel costs. Add your bank or UPI details and earnings reach your account within about two hours of the ride; otherwise they go to your TheCarPool wallet.
+Driving in anyway? Offer your empty seats, set your route, price and pickup points, and earn back your fuel costs. Add your PAN and bank details to have earnings sent to your account, usually about a day after the ride; otherwise they go to your TheCarPool wallet and can be spent on your own rides.
 
 MORE
 • See the car make, model and colour before you book.

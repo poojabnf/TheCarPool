@@ -73,7 +73,7 @@ function StepRole({ onNext }: { onNext: (data: any) => void }) {
     <ScrollView showsVerticalScrollIndicator={false}>
       <Text style={styles.stepTitle}>Choose Your Role</Text>
       <Text style={styles.stepSubtitle}>
-        Are you looking for a ride, or do you want to offer rides to your co-workers?
+        Are you looking for a ride, or do you want to offer seats to people going your way?
       </Text>
 
       <HapticPressable 

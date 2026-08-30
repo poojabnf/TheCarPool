@@ -18,10 +18,10 @@
       "supportsTablet": false,
       "bundleIdentifier": "com.thecarpool.app",
       "googleServicesFile": "./GoogleService-Info.plist",
-      "buildNumber": "170",
+      "buildNumber": "171",
       "usesAppleSignIn": true,
       "infoPlist": {
-        "NSLocationWhenInUseUsageDescription": "TheCarPool requires location access to find nearby workplace carpools and match you with active co-workers on your route.",
+        "NSLocationWhenInUseUsageDescription": "TheCarPool uses your location to find rides going your way and match you with people travelling the same route.",
         "NSLocationAlwaysAndWhenInUseUsageDescription": "TheCarPool requires background location access to monitor route detour deviations and ensure real-time safety during active trips.",
         "ITSAppUsesNonExemptEncryption": false,
         "CFBundleURLTypes": [
@@ -39,7 +39,7 @@
         "backgroundColor": "#ffffff"
       },
       "package": "com.thecarpool.app",
-      "versionCode": 170,
+      "versionCode": 171,
       "googleServicesFile": "./google-services.json",
       "config": {
         "googleMaps": {
