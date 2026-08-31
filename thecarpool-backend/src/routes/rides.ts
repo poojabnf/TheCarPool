@@ -10,6 +10,7 @@ import { classifyVehicle, listMakes, listModels, VEHICLE_CLASSES } from '../lib/
 import { needsDepartureReminder, minutesUntil } from '../lib/rideNotifications';
 import { needsBoardingReminder, minutesUntil as etaMinutesUntil, BOARDING_REMINDER_MINUTES } from '../lib/eta';
 import { partitionStopsByRoute } from '../lib/stopGeography';
+import { routePosition, isForwardTravel } from '../lib/routeProgress';
 import {
   notifyBoardingSoon, resolveStopEtasForRide, notifyRideCompleted, deliver,
   notifyRideStarted, notifyDriverCancelledRide, notifyRideOffered,
@@ -923,28 +924,21 @@ export async function rideRoutes(fastify: FastifyInstance) {
         const route_coords = ride.route_coords || [];
         if (route_coords.length === 0) continue;
 
-        let minPickupDist = Infinity;
-        let minDropDist = Infinity;
-        let pickupIndex = -1;
-        let dropIndex = -1;
-
-        for (let i = 0; i < route_coords.length; i++) {
-          const pt = route_coords[i];
-          const distToPickup = haversineDistance(pickup_lat, pickup_lng, pt.lat, pt.lng);
-          if (distToPickup < minPickupDist) {
-            minPickupDist = distToPickup;
-            pickupIndex = i;
-          }
-        }
-
-        for (let i = 0; i < route_coords.length; i++) {
-          const pt = route_coords[i];
-          const distToDrop = haversineDistance(drop_lat, drop_lng, pt.lat, pt.lng);
-          if (distToDrop < minDropDist) {
-            minDropDist = distToDrop;
-            dropIndex = i;
-          }
-        }
+        // Projected onto the route rather than snapped to the nearest vertex.
+        //
+        // Rides store route_coords as just [origin, destination], so a vertex
+        // index could only ever be 0 or 1: every point past halfway snapped to
+        // the destination and compared equal to the drop, failing the
+        // pickup-before-drop test below. On a Jhansi -> New Delhi ride that
+        // made Agra and Mathura unbookable while Datia and Gwalior worked --
+        // a driver could advertise a stop in the second half of their route
+        // that no rider could find. Projection gives a continuous position, so
+        // the ordering means something however few vertices exist.
+        let pickupPos = routePosition(route_coords, { lat: pickup_lat, lng: pickup_lng });
+        let dropPos = routePosition(route_coords, { lat: drop_lat, lng: drop_lng });
+        if (!pickupPos || !dropPos) continue;
+        let minPickupDist = pickupPos.distance;
+        let minDropDist = dropPos.distance;
 
         // The driver's declared stops are a promise to collect there, so a rider
         // near one matches even when the polyline itself stays far away. Only
@@ -957,7 +951,7 @@ export async function rideRoutes(fastify: FastifyInstance) {
         // one of them. Only rides already flagged _metroMatch get the wider
         // tolerance; nearby matching stays at max_detour_meters.
         let pickupAllowance = ride._metroMatch ? METRO_DETOUR_METERS : max_detour_meters;
-        const dropAllowance = ride._metroMatch ? METRO_DETOUR_METERS : max_detour_meters;
+        let dropAllowance = ride._metroMatch ? METRO_DETOUR_METERS : max_detour_meters;
         let viaPickupPoint: string | null = null;
         for (const stop of (ride.pickup_points || [])) {
           if (typeof stop?.lat !== 'number' || typeof stop?.lng !== 'number') continue;
@@ -966,25 +960,34 @@ export async function rideRoutes(fastify: FastifyInstance) {
 
           // Anchor the stop to the route so the pickup-before-drop ordering
           // below still means something.
-          let stopIndex = -1;
-          let stopToRoute = Infinity;
-          for (let i = 0; i < route_coords.length; i++) {
-            const rd = haversineDistance(stop.lat, stop.lng, route_coords[i].lat, route_coords[i].lng);
-            if (rd < stopToRoute) { stopToRoute = rd; stopIndex = i; }
-          }
-          if (stopIndex === -1) continue;
+          const stopPos = routePosition(route_coords, { lat: stop.lat, lng: stop.lng });
+          if (!stopPos) continue;
 
           minPickupDist = distToStop;
-          pickupIndex = stopIndex;
+          pickupPos = stopPos;
           pickupAllowance = PICKUP_POINT_RADIUS_METERS;
           viaPickupPoint = stop.label || 'Driver stop';
         }
 
-        // direction correctness check (pickupIndex < dropIndex) and detour constraint
+        // A declared stop is also somewhere the driver can drop a rider off.
+        // Only pickups consulted the stop list, so Jhansi -> Agra, or
+        // Agra -> Mathura, found nothing even though the driver passes through
+        // both and had said so.
+        for (const stop of (ride.pickup_points || [])) {
+          if (typeof stop?.lat !== 'number' || typeof stop?.lng !== 'number') continue;
+          const distToStop = haversineDistance(drop_lat, drop_lng, stop.lat, stop.lng);
+          if (distToStop > PICKUP_POINT_RADIUS_METERS || distToStop >= minDropDist) continue;
+          const stopPos = routePosition(route_coords, { lat: stop.lat, lng: stop.lng });
+          if (!stopPos) continue;
+          minDropDist = distToStop;
+          dropPos = stopPos;
+          dropAllowance = PICKUP_POINT_RADIUS_METERS;
+        }
+
+        // Boarding must come before alighting, measured as progress along the
+        // route, and both ends must be within reach of it.
         if (
-          pickupIndex !== -1 &&
-          dropIndex !== -1 &&
-          pickupIndex < dropIndex &&
+          isForwardTravel(pickupPos, dropPos) &&
           minPickupDist <= pickupAllowance &&
           minDropDist <= dropAllowance
         ) {
