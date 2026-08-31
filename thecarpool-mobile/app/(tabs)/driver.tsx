@@ -113,7 +113,13 @@ function stopTimeToIso(timeText: string | undefined, departure: Date): string | 
 export default function DriverInterface() {
   const router = useRouter();
   const params = useLocalSearchParams<{ tab?: string }>();
-  const userId = auth().currentUser?.uid ?? null;
+  // Read from the store, not auth().currentUser: the store is updated by
+  // onAuthStateChanged, so this re-renders on an account switch. A direct
+  // currentUser read is a render-time snapshot that nothing invalidates,
+  // which left this id pointing at the previous account while apiFetch
+  // signed the request as the new one -- every such request 403'd on the
+  // server's id-mismatch guard.
+  const userId = useAuthStore((s) => s.firebaseUser?.uid) ?? null;
   const [isPosting, setIsPosting] = useState(false);
   const [activeTab, setActiveTab] = useState<'overview' | 'requests'>(params?.tab === 'requests' ? 'requests' : 'overview');
   const socketRef = useRef<ReturnType<typeof io> | null>(null);

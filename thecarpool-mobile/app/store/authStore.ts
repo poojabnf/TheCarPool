@@ -55,11 +55,38 @@ const initialState = {
 export const useAuthStore = create<AuthState>((set) => ({
   ...initialState,
 
+  /**
+   * Adopt a new Firebase user -- and drop the previous one's profile with it.
+   *
+   * The profile used to survive an account switch, because hydration merges
+   * field-by-field and skips anything the new account left blank. Signing in
+   * as a second person on the same handset therefore produced a profile that
+   * belonged to nobody: their name over the previous account's phone number,
+   * each field from whichever identity last supplied it. On screen that read
+   * as one coherent person, which is what made it so hard to see.
+   *
+   * A uid change is an identity change, so everything downstream of identity
+   * goes with it. Only a *different* uid clears -- token refreshes and app
+   * resumes hand back the same uid constantly, and wiping on those would
+   * throw the profile away several times a session.
+   */
   setFirebaseUser: (user) =>
-    set({
-      firebaseUser: user,
-      isLoggedIn: user !== null,
-      isAuthLoading: false,
+    set((state) => {
+      const switched =
+        state.firebaseUser?.uid != null &&
+        user?.uid !== state.firebaseUser.uid;
+      return {
+        firebaseUser: user,
+        isLoggedIn: user !== null,
+        isAuthLoading: false,
+        ...(switched
+          ? {
+              userProfile: null,
+              isProfileHydrated: false,
+              onboardingStep: 0,
+            }
+          : {}),
+      };
     }),
 
   setAuthLoading: (loading) => set({ isAuthLoading: loading }),

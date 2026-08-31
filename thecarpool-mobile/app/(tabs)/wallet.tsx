@@ -10,6 +10,7 @@ import { c, font, radius, space, shadowSm } from '../../theme/tokens';
 import HapticPressable from '../components/HapticPressable';
 import { formatMoney, currencySymbol, useCurrency } from '../services/currency';
 import { useI18n } from '../services/i18n';
+import { useAuthStore } from '../store/authStore';
 
 interface Txn { id: string; type: string; label: string; amount: number; status: string; at: string | null; }
 
@@ -24,7 +25,9 @@ const QUICK_AMOUNTS = [200, 500, 1000, 2000];
 export default function WalletScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const uid = auth().currentUser?.uid ?? null;
+  // Reactive: see the note in driver.tsx. A currentUser snapshot goes stale
+  // across an account switch and sends the previous account's id.
+  const uid = useAuthStore((s) => s.firebaseUser?.uid) ?? null;
   const [balance, setBalance] = useState<number | null>(null);
   const [txns, setTxns] = useState<Txn[]>([]);
   const [loading, setLoading] = useState(true);

@@ -27,7 +27,13 @@ export default function ConfirmPay() {
   const insets = useSafeAreaInsets();
   const p = useLocalSearchParams<Record<string, string>>();
   const { userProfile } = useAuthStore();
-  const uid = auth().currentUser?.uid ?? null;
+  // Read from the store, not auth().currentUser: the store is updated by
+  // onAuthStateChanged, so this re-renders on an account switch. A direct
+  // currentUser read is a render-time snapshot that nothing invalidates,
+  // which left this id pointing at the previous account while apiFetch
+  // signed the request as the new one -- every such request 403'd on the
+  // server's id-mismatch guard.
+  const uid = useAuthStore((s) => s.firebaseUser?.uid) ?? null;
   const [paying, setPaying] = useState(false);
 
   // Meeting-point suggestions: points on the driver's existing route within

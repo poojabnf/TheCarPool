@@ -62,8 +62,11 @@ export default function AccountInterface() {
   // Gender powers women-only rides — surfaced in Settings so the flagship
   // safety feature is actually reachable.
   const [gender, setGender] = useState<string | null>(null);
+  // Reactive: see the note in driver.tsx. Held here so the effects can list it
+  // as a dependency -- otherwise they fetch once for whoever was signed in at
+  // mount and never refresh after a switch.
+  const uid = useAuthStore((s) => s.firebaseUser?.uid) ?? null;
   useEffect(() => {
-    const uid = auth().currentUser?.uid;
     if (!uid) return;
     apiFetch(`/api/sustainability/streaks/${uid}`)
       .then((r) => (r.ok ? r.json() : null))
@@ -77,7 +80,7 @@ export default function AccountInterface() {
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => setGender(d?.gender ?? null))
       .catch(() => {});
-  }, []);
+  }, [uid]);
 
   useFocusEffect(useCallback(() => {
     const user = auth().currentUser;
@@ -114,7 +117,6 @@ export default function AccountInterface() {
 
   useEffect(() => {
     if (view !== 'history') return;
-    const uid = auth().currentUser?.uid;
     if (!uid) return;
     setHistoryLoading(true);
     apiFetch(`/api/payments/history/${uid}`)
@@ -122,7 +124,7 @@ export default function AccountInterface() {
       .then((d) => setHistory((d.transactions || []).filter((t: any) => t.type === 'DEBIT' || /ride/i.test(t.label || ''))))
       .catch(() => {})
       .finally(() => setHistoryLoading(false));
-  }, [view]);
+  }, [view, uid]);
 
   useEffect(() => {
     if (view !== 'offered') return;

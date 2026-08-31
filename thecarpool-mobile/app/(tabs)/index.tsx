@@ -145,7 +145,9 @@ function Suggestions({ items, onPick }: { items: any[]; onPick: (s: any) => void
 export default function HomeScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const userId = auth().currentUser?.uid ?? null;
+  // Reactive: see the note in driver.tsx. A currentUser snapshot goes stale
+  // across an account switch and sends the previous account's id.
+  const userId = useAuthStore((s) => s.firebaseUser?.uid) ?? null;
   const { userProfile, activityRefreshEpoch } = useAuthStore();
   const name = userProfile?.name || 'there';
 
