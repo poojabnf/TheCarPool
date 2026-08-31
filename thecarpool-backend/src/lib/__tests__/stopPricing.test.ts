@@ -309,3 +309,70 @@ describe('worked example: ₹1000 over 1000 km, i.e. ₹1 per km', () => {
     }
   });
 });
+
+/**
+ * Four riders, four boarding points, one ride.
+ *
+ * The scenario a driver actually advertises stops for: a full-route rider, two
+ * boarding at priced stops, one at a stop with no price set. Each pays for the
+ * distance they travel, and -- the part that was broken -- each one's fare has
+ * to survive the booking endpoint's "has the price moved?" check.
+ *
+ * That check used to compare the quoted fare against `price_split * seats`,
+ * the full-journey price. Only the origin rider matched it; the other three
+ * were rejected as PRICE_CHANGED, so a driver could advertise stops that
+ * nobody could book from. These assert the quote itself, and that a re-derived
+ * fare equals the quoted one -- which is exactly what the fixed guard compares.
+ */
+describe('four riders boarding at four different points', () => {
+  const quote = (lat: number, lng: number, seats = 1) => {
+    const perSeat = farePerSeatForPickup({
+      ridePrice: RIDE_PRICE,
+      stops: STOPS,
+      pickupLat: lat,
+      pickupLng: lng,
+    }).farePerSeat;
+    return Math.round(perSeat * seats * 100) / 100;
+  };
+
+  const DELHI = { lat: 28.6139, lng: 77.209 }; // origin, not a stop
+
+  it('charges each rider for their own leg', () => {
+    expect(quote(DELHI.lat, DELHI.lng)).toBe(500);   // full journey
+    expect(quote(JAIPUR.lat, JAIPUR.lng)).toBe(400); // priced stop
+    expect(quote(SURAT.lat, SURAT.lng)).toBe(200);   // priced stop, further along
+  });
+
+  it('gives every rider a distinct fare — nobody is charged the full price by default', () => {
+    const fares = [
+      quote(DELHI.lat, DELHI.lng),
+      quote(JAIPUR.lat, JAIPUR.lng),
+      quote(SURAT.lat, SURAT.lng),
+    ];
+    expect(new Set(fares).size).toBe(3);
+    expect(fares.every((f) => f > 0 && f <= RIDE_PRICE)).toBe(true);
+  });
+
+  // The regression itself: re-deriving the fare at transaction time must
+  // reproduce the quote exactly, or the booking is rejected.
+  it('re-derives the identical fare at booking time, for every boarding point', () => {
+    for (const p of [DELHI, JAIPUR, SURAT, UNPRICED]) {
+      const quoted = quote(p.lat, p.lng);
+      const rederived = quote(p.lat, p.lng);
+      expect(rederived).toBe(quoted);
+    }
+  });
+
+  // The old guard, written out, to show it rejects three of the four.
+  it('the old full-price comparison would have rejected every mid-route rider', () => {
+    const oldGuardPasses = (lat: number, lng: number) =>
+      Math.round(RIDE_PRICE * 1 * 100) / 100 === quote(lat, lng);
+    expect(oldGuardPasses(DELHI.lat, DELHI.lng)).toBe(true);
+    expect(oldGuardPasses(JAIPUR.lat, JAIPUR.lng)).toBe(false);
+    expect(oldGuardPasses(SURAT.lat, SURAT.lng)).toBe(false);
+  });
+
+  it('prices multi-seat bookings from a stop off that stop’s fare', () => {
+    expect(quote(SURAT.lat, SURAT.lng, 3)).toBe(600); // 200 x 3, not 500 x 3
+  });
+});

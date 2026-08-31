@@ -294,7 +294,21 @@ export async function bookingRoutes(fastify: FastifyInstance) {
         }
 
         // The fare must not have moved between the quote and this transaction.
-        if (round2(Number(ride.price_split || 0) * seats_booked) !== fareAmount) {
+        //
+        // Re-derived through farePerSeatForPickup rather than compared against
+        // price_split, because those are only the same number for a rider
+        // boarding at the origin. Someone joining at a stop pays that stop's
+        // fare -- which is the whole point of stops -- so the old comparison
+        // treated every mid-route booking as a price change and rejected it.
+        // A driver could advertise stops that nobody was able to book from.
+        const freshFarePerSeat = farePerSeatForPickup({
+          ridePrice: Number(ride.price_split || 0),
+          stops: ride.pickup_points,
+          routeCoords: ride.route_coords,
+          pickupLat: pickup_lat,
+          pickupLng: pickup_lng,
+        }).farePerSeat;
+        if (round2(freshFarePerSeat * seats_booked) !== fareAmount) {
           throw new Error('PRICE_CHANGED');
         }
 
