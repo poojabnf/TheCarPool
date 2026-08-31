@@ -9,6 +9,7 @@ import { planPayout, maskPayoutMethod } from '../lib/payouts';
 import { classifyVehicle, listMakes, listModels, VEHICLE_CLASSES } from '../lib/vehicles';
 import { needsDepartureReminder, minutesUntil } from '../lib/rideNotifications';
 import { needsBoardingReminder, minutesUntil as etaMinutesUntil, BOARDING_REMINDER_MINUTES } from '../lib/eta';
+import { partitionStopsByRoute } from '../lib/stopGeography';
 import {
   notifyBoardingSoon, resolveStopEtasForRide, notifyRideCompleted, deliver,
   notifyRideStarted, notifyDriverCancelledRide, notifyRideOffered,
@@ -625,6 +626,31 @@ export async function rideRoutes(fastify: FastifyInstance) {
           }
         } catch (err: any) {
           fastify.log.error(err, 'Failed to parse route_geojson');
+        }
+      }
+
+      // Reject stops that are nowhere near this journey.
+      //
+      // The stop picker is a place search, so "AGR" offered "AGR Automation"
+      // in Goa and a Jhansi to New Delhi ride was published with a stop 1,500
+      // km off its route. Search matches riders within 100 km of a stop, so
+      // that one mistake offered this ride to everyone searching in Goa; the
+      // proportional stop fare was equally meaningless. Refused with the
+      // offending labels named, rather than dropped quietly -- silence is what
+      // let it ship looking correct.
+      {
+        const normalisedStops = normalisePickupPoints(pickup_points);
+        const origin = routeCoords[0] ?? null;
+        const destination = routeCoords[routeCoords.length - 1] ?? null;
+        const { offRoute } = partitionStopsByRoute(normalisedStops, origin, destination);
+        if (offRoute.length > 0) {
+          return reply.code(400).send({
+            error: 'STOP_OFF_ROUTE',
+            message:
+              `${offRoute.map((s) => s.label || 'A stop').join(', ')} ` +
+              `${offRoute.length === 1 ? 'is' : 'are'} not on the way from your start to your destination. ` +
+              'Pick the stop from the map suggestions along your route.',
+          });
         }
       }
 
@@ -1332,6 +1358,22 @@ export async function rideRoutes(fastify: FastifyInstance) {
           error: 'INVALID_PICKUP_POINTS',
           message: 'Every pickup point needs a valid location — pick them from the suggestions.',
         });
+      }
+      // Same on-route rule as ride creation. Editing was the other way an
+      // off-route stop could reach a published ride, and the pricing and
+      // search consequences are identical whichever door it came through.
+      {
+        const rc: any[] = Array.isArray(ride.route_coords) ? ride.route_coords : [];
+        const { offRoute } = partitionStopsByRoute(cleaned, rc[0] ?? null, rc[rc.length - 1] ?? null);
+        if (offRoute.length > 0) {
+          return reply.code(400).send({
+            error: 'STOP_OFF_ROUTE',
+            message:
+              `${offRoute.map((s) => s.label || 'A stop').join(', ')} ` +
+              `${offRoute.length === 1 ? 'is' : 'are'} not on the way from your start to your destination. ` +
+              'Pick the stop from the map suggestions along your route.',
+          });
+        }
       }
       updates.pickup_points = cleaned;
     }
