@@ -6,6 +6,7 @@ import { colors } from '../../theme/colors';
 import { apiFetch } from '../services/api';
 import * as haptics from '../services/haptics';
 import HapticPressable from '../components/HapticPressable';
+import Button from '../components/Button';
 import { formatMoney } from '../services/currency';
 import { searchPlaces, MIN_QUERY_LENGTH, SEARCH_DEBOUNCE_MS, warmUp } from '../services/geo';
 import auth from '@react-native-firebase/auth';
@@ -439,8 +440,7 @@ export default function DriverInterface() {
    * sensible number rather than guessing or leaving it blank.
    */
   const suggestedStopFare = (stopLat: number, stopLng: number): number | null => {
-    const full = parseFloat(customPrice);
-    if (!sourceCoords || !destCoords || isNaN(full) || full <= 0) return null;
+    if (!sourceCoords || !destCoords) return null;
     const m = (aLat: number, aLng: number, bLat: number, bLng: number) => {
       const R = 6371e3;
       const p1 = (aLat * Math.PI) / 180;
@@ -452,10 +452,12 @@ export default function DriverInterface() {
     };
     const total = m(sourceCoords.lat, sourceCoords.lng, destCoords.lat, destCoords.lng);
     if (total <= 0) return null;
+    const parsed = parseFloat(customPrice);
+    const full = (!isNaN(parsed) && parsed > 0) ? parsed : Math.max(50, Math.round((total / 1000) * (vehicleType === 'BIKE' ? 6 : 10)));
     const remaining = m(stopLat, stopLng, destCoords.lat, destCoords.lng);
     const fraction = Math.min(1, remaining / total);
     const suggested = Math.round(full * fraction);
-    return suggested > 0 && suggested < full ? suggested : null;
+    return suggested > 0 ? suggested : null;
   };
 
   const boardingPassengers: any[] =
@@ -1081,10 +1083,13 @@ export default function DriverInterface() {
               </HapticPressable>
             </View>
 
-            <HapticPressable haptic="press" style={styles.postRideBtn} onPress={() => setShowPostModal(true)}>
-              <PlusCircle color="white" size={20} />
-              <Text style={styles.postRideText}>Offer a New Ride</Text>
-            </HapticPressable>
+            <Button
+              label="Offer a New Ride"
+              onPress={() => setShowPostModal(true)}
+              size="lg"
+              style={{ marginBottom: 32 }}
+              icon={({ color, size }) => <PlusCircle color={color} size={size} />}
+            />
 
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 16, marginBottom: 8 }}>
               <Text style={styles.sectionTitle}>Rides You Offered</Text>
@@ -1592,21 +1597,26 @@ export default function DriverInterface() {
               <Text style={styles.formLabel}>Seats Offered</Text>
               <View style={styles.seatRow}>
                 <HapticPressable
-                  style={[styles.seatBtn, seatsTotal <= 1 && styles.seatBtnDisabled]}
+                  style={[styles.seatBtn, (seatsTotal <= 1 || vehicleType === 'BIKE') && styles.seatBtnDisabled]}
                   onPress={() => setSeatsTotal((s) => Math.max(1, s - 1))}
-                  disabled={seatsTotal <= 1}
+                  disabled={seatsTotal <= 1 || vehicleType === 'BIKE'}
                 >
                   <Text style={styles.seatBtnText}>−</Text>
                 </HapticPressable>
-                <Text style={styles.seatCount}>{seatsTotal}</Text>
+                <Text style={styles.seatCount}>{vehicleType === 'BIKE' ? 1 : seatsTotal}</Text>
                 <HapticPressable
-                  style={[styles.seatBtn, seatsTotal >= 6 && styles.seatBtnDisabled]}
+                  style={[styles.seatBtn, (seatsTotal >= 6 || vehicleType === 'BIKE') && styles.seatBtnDisabled]}
                   onPress={() => setSeatsTotal((s) => Math.min(6, s + 1))}
-                  disabled={seatsTotal >= 6}
+                  disabled={seatsTotal >= 6 || vehicleType === 'BIKE'}
                 >
                   <Text style={styles.seatBtnText}>+</Text>
                 </HapticPressable>
               </View>
+              {vehicleType === 'BIKE' && (
+                <Text style={[styles.formHint, { color: colors.primary, marginTop: 4 }]}>
+                  Bike pools are limited to 1 pillion rider.
+                </Text>
+              )}
             </View>
 
             <View style={styles.formGroup}>
@@ -1683,7 +1693,10 @@ export default function DriverInterface() {
                 </HapticPressable>
                 <HapticPressable 
                   style={[styles.vehicleSelectBtn, vehicleType === 'BIKE' && styles.vehicleSelectBtnActive]}
-                  onPress={() => setVehicleType('BIKE')}
+                  onPress={() => {
+                    setVehicleType('BIKE');
+                    setSeatsTotal(1);
+                  }}
                 >
                   <Bike color={vehicleType === 'BIKE' ? '#fff' : colors.textMuted} size={18} style={{marginRight: 6}} />
                   <Text style={[styles.vehicleSelectBtnText, vehicleType === 'BIKE' && styles.vehicleSelectBtnTextActive]}>Bike Pool</Text>
@@ -2488,9 +2501,6 @@ const styles = StyleSheet.create({
   earningsAmount: { fontSize: 40, fontWeight: '900', color: colors.text, marginVertical: 8 },
   sparklineBox: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: 'rgba(16,185,129,0.15)', padding: 8, borderRadius: 8, alignSelf: 'flex-start' },
   sparklineText: { color: colors.success, fontWeight: 'bold', fontSize: 12 },
-
-  postRideBtn: { backgroundColor: colors.primary, padding: 16, borderRadius: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, marginBottom: 32 },
-  postRideText: { color: 'white', fontWeight: 'bold', fontSize: 16 },
 
   sectionTitle: { fontSize: 16, fontWeight: 'bold', color: colors.text, marginBottom: 16, textTransform: 'uppercase', letterSpacing: 0.5 },
   upcomingCard: { backgroundColor: colors.card, borderRadius: 16, padding: 14, borderLeftWidth: 3, borderLeftColor: colors.primary, borderWidth: 1, borderColor: colors.cardBorder },

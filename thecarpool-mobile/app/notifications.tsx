@@ -2,7 +2,7 @@ import React, { useState, useCallback } from 'react';
 import { StyleSheet, View, Text, FlatList, RefreshControl, ActivityIndicator } from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Bell, ArrowLeft, CheckCheck, Clock, MapPin, ShieldAlert, ShieldCheck, CheckCircle2, XCircle, Wallet, Car, MessageCircle, Navigation, Info } from 'lucide-react-native';
+import { Bell, ArrowLeft, CheckCheck, Clock, MapPin, ShieldAlert, ShieldCheck, CheckCircle2, XCircle, Wallet, Car, Navigation, Info } from 'lucide-react-native';
 import { c, font, radius, space, shadowSm } from '../theme/tokens';
 import { apiFetch } from './services/api';
 import { AppCache } from './services/cache';
@@ -125,8 +125,6 @@ export default function NotificationsScreen() {
         return <Wallet color={c.go} size={20} strokeWidth={2.4} />;
       case 'REFUND_CREDITED':
         return <Wallet color={c.textAccent} size={20} strokeWidth={2.4} />;
-      case 'CHAT_MESSAGE':
-        return <MessageCircle color={c.textAccent} size={20} strokeWidth={2.4} />;
       case 'EMERGENCY_SOS':
         return <ShieldAlert color={c.danger} size={20} strokeWidth={2.4} />;
       default:

@@ -107,8 +107,6 @@ const en = {
   last_name: 'Last name',
   address_optional: 'Address (optional)',
 
-  // Trip / chat
-  trip_chat: 'Trip chat',
   message_cotravellers: 'Message co-travellers',
   sos: 'SOS',
   share_live_trip: 'Share live trip',
@@ -217,8 +215,6 @@ const hi: typeof en = {
   last_name: 'अंतिम नाम',
   address_optional: 'पता (वैकल्पिक)',
 
-  // Trip / chat
-  trip_chat: 'यात्रा चैट',
   message_cotravellers: 'सह-यात्रियों को संदेश भेजें',
   sos: 'SOS',
   share_live_trip: 'लाइव यात्रा साझा करें',

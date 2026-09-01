@@ -5,7 +5,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import io from 'socket.io-client';
 import * as Location from 'expo-location';
 import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
-import { ShieldAlert, Share2, MapPin, Phone, Mail, Navigation, ChevronUp, ChevronDown } from 'lucide-react-native';
+import { ShieldAlert, Share2, MapPin, Phone, Mail, Navigation, ChevronUp, ChevronDown, CheckCircle2 } from 'lucide-react-native';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -17,6 +17,7 @@ import { API_URL, apiFetch } from '../services/api';
 import * as haptics from '../services/haptics';
 import { c, font, radius, space, shadowSm } from '../../theme/tokens';
 import HapticPressable from '../components/HapticPressable';
+import Button from '../components/Button';
 import { useI18n } from '../services/i18n';
 import { useAuthStore } from '../store/authStore';
 
@@ -424,9 +425,10 @@ export default function TripScreen() {
               anchor={{ x: 0.5, y: 0.5 }}
               flat={true}
               rotation={bearing}
+              tracksViewChanges={false}
             >
               <View style={styles.carMarker}>
-                <Text style={styles.carEmoji}>🚗</Text>
+                <Navigation color="#FFFFFF" size={16} fill="#0E8A5F" />
               </View>
             </Marker>
           )}
@@ -604,46 +606,60 @@ export default function TripScreen() {
               </View>
             </View>
 
-            {/* Driver Contact & Profile Card */}
+            {/* Driver Contact & Profile Card / Driver Cockpit View */}
             {ride && (
-              <View style={styles.driverContactCard}>
-                <View style={styles.driverInfoRow}>
-                  <View style={styles.driverAvatar}>
-                    <Text style={styles.driverAvatarText}>
-                      {(ride.driver_name || 'Driver').charAt(0).toUpperCase()}
-                    </Text>
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.driverName}>{ride.driver_name || 'Driver'}</Text>
-                    <Text style={styles.driverRole}>Your Driver</Text>
-                  </View>
-                  <View style={styles.driverActionsRow}>
-                    {ride.driver_phone && (
-                      <HapticPressable
-                        haptic="tap"
-                        style={styles.contactBtn}
-                        onPress={() => Linking.openURL(`tel:${ride.driver_phone}`)}
-                        accessibilityLabel="Call driver"
-                      >
-                        <Phone color={c.go} size={18} />
-                      </HapticPressable>
-                    )}
-                    {ride.driver_email && (
-                      <HapticPressable
-                        haptic="tap"
-                        style={styles.contactBtn}
-                        onPress={() => Linking.openURL(`mailto:${ride.driver_email}`)}
-                        accessibilityLabel="Email driver"
-                      >
-                        <Mail color={c.textAccent} size={18} />
-                      </HapticPressable>
-                    )}
+              (auth().currentUser?.uid === ride.driver_id || useAuthStore.getState().firebaseUser?.uid === ride.driver_id) ? (
+                <View style={[styles.driverContactCard, { borderColor: c.go, borderWidth: 1.5 }]}>
+                  <View style={styles.driverInfoRow}>
+                    <View style={[styles.driverAvatar, { backgroundColor: c.go }]}>
+                      <Text style={[styles.driverAvatarText, { color: '#fff' }]}>🚗</Text>
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.driverName}>Driver Live Cockpit</Text>
+                      <Text style={[styles.driverRole, { color: c.go }]}>Broadcasting live telemetry to riders</Text>
+                    </View>
                   </View>
                 </View>
-                {ride.driver_phone && (
-                  <Text style={styles.phoneSubText}>📞 {ride.driver_phone}</Text>
-                )}
-              </View>
+              ) : (
+                <View style={styles.driverContactCard}>
+                  <View style={styles.driverInfoRow}>
+                    <View style={styles.driverAvatar}>
+                      <Text style={styles.driverAvatarText}>
+                        {(ride.driver_name || 'Driver').charAt(0).toUpperCase()}
+                      </Text>
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.driverName}>{ride.driver_name || 'Driver'}</Text>
+                      <Text style={styles.driverRole}>Your Driver</Text>
+                    </View>
+                    <View style={styles.driverActionsRow}>
+                      {ride.driver_phone && (
+                        <HapticPressable
+                          haptic="tap"
+                          style={styles.contactBtn}
+                          onPress={() => Linking.openURL(`tel:${ride.driver_phone}`)}
+                          accessibilityLabel="Call driver"
+                        >
+                          <Phone color={c.go} size={18} />
+                        </HapticPressable>
+                      )}
+                      {ride.driver_email && (
+                        <HapticPressable
+                          haptic="tap"
+                          style={styles.contactBtn}
+                          onPress={() => Linking.openURL(`mailto:${ride.driver_email}`)}
+                          accessibilityLabel="Email driver"
+                        >
+                          <Mail color={c.textAccent} size={18} />
+                        </HapticPressable>
+                      )}
+                    </View>
+                  </View>
+                  {ride.driver_phone && (
+                    <Text style={styles.phoneSubText}>📞 {ride.driver_phone}</Text>
+                  )}
+                </View>
+              )
             )}
 
             {!showRating ? (
@@ -662,21 +678,26 @@ export default function TripScreen() {
                     to. This is the actions block a rider already looks at for
                     Share and End trip, so it is where they will look for the
                     way out too. */}
-                {bookingId && escrowStatus === 'HELD'
+                {/* NONE as well as HELD: a pay-the-driver booking holds no
+                    escrow and is entirely real, so gating on HELD alone left
+                    cash riders with no way out of a seat they had taken. The
+                    server already accepts both -- see isBookingActive. */}
+                {bookingId && (escrowStatus === 'HELD' || escrowStatus === 'NONE')
                   && ride?.status !== 'COMPLETED' && ride?.status !== 'CANCELLED' && (
-                  <HapticPressable
+                  <Button
+                    label={cancelling
+                      ? 'Checking…'
+                      : bookingStatus === 'REQUESTED' ? 'Withdraw request' : 'Cancel booking'}
+                    // Bordered rather than filled: leaving is available, not
+                    // encouraged, and a solid red slab beside Share reads as
+                    // the screen's main action.
+                    variant="secondary"
                     haptic="warning"
-                    style={styles.cancelBookingBtn}
                     onPress={cancelBooking}
                     disabled={cancelling}
-                    activeOpacity={0.85}
-                  >
-                    <Text style={styles.cancelBookingText}>
-                      {cancelling
-                        ? 'Checking…'
-                        : bookingStatus === 'REQUESTED' ? 'Withdraw request' : 'Cancel booking'}
-                    </Text>
-                  </HapticPressable>
+                    style={{ marginTop: space.md, backgroundColor: c.dangerSoft, borderColor: '#FECACA' }}
+                    labelStyle={{ color: c.danger }}
+                  />
                 )}
                 <HapticPressable style={styles.endTrip} onPress={() => setShowRating(true)}>
                   <Text style={styles.endTripText}>End trip & rate</Text>
@@ -723,17 +744,6 @@ export default function TripScreen() {
 }
 
 const styles = StyleSheet.create({
-  cancelBookingBtn: {
-    marginTop: space.md,
-    height: 46,
-    borderRadius: radius.md,
-    backgroundColor: '#FEF2F2',
-    borderWidth: 1,
-    borderColor: '#FECACA',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  cancelBookingText: { fontFamily: font.sansBold, fontSize: 14, color: '#DC2626' },
 
   screen: { flex: 1, backgroundColor: c.bgApp },
   mapWrap: { flex: 1 },
@@ -748,12 +758,11 @@ const styles = StyleSheet.create({
   recenterText: { fontFamily: font.sansSemibold, fontSize: 13, color: c.textPrimary },
 
   carMarker: {
-    width: 44, height: 44, borderRadius: 22,
-    backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center',
-    borderWidth: 2.5, borderColor: '#2563EB',
-    ...shadowSm,
+    width: 36, height: 36, borderRadius: 18,
+    backgroundColor: '#0E8A5F', alignItems: 'center', justifyContent: 'center',
+    borderWidth: 2.5, borderColor: '#FFFFFF',
+    ...shadowSm, elevation: 6,
   },
-  carEmoji: { fontSize: 22 },
 
   pickupPin: {
     width: 28, height: 28, borderRadius: 14,

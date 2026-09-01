@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, Alert, ActivityIndicator, ScrollView, TextInput} from 'react-native';
+import { View, Text, StyleSheet, Alert, ScrollView, TextInput} from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import auth from '@react-native-firebase/auth';
@@ -10,6 +10,7 @@ import * as haptics from './services/haptics';
 import { useAuthStore } from './store/authStore';
 import { c, font, radius, space, shadowSm } from '../theme/tokens';
 import HapticPressable from './components/HapticPressable';
+import Button from './components/Button';
 import { formatMoney } from './services/currency';
 import { formatDeparture } from './services/datetime';
 
@@ -565,18 +566,19 @@ function describeDistance(metres: number, minutes: number): string {
           </HapticPressable>
         )}
 
-        <HapticPressable
-          haptic="press"
-          style={[styles.payBtn, (paying || !restrictedAck) && styles.payBtnDisabled]}
+        <Button
+          label={payDriver
+            ? `Request seat · pay ${num(seatFare)} on board`
+            : `Pay ${num(total)} · Lock seat`}
           onPress={pay}
-          disabled={paying || !restrictedAck}
-          activeOpacity={0.9}
-        >
-          {paying ? <ActivityIndicator color="#fff" />
-            : payDriver
-              ? <Text style={styles.payBtnText}>Request seat · pay {num(seatFare)} on board</Text>
-              : <><Lock color="#fff" size={16} strokeWidth={2.6} /><Text style={styles.payBtnText}>Pay {num(total)} · Lock seat</Text></>}
-        </HapticPressable>
+          variant="go"
+          size="lg"
+          loading={paying}
+          disabled={!restrictedAck}
+          // No padlock on the cash path: nothing is being locked, and the icon
+          // promised an escrow that pay-the-driver deliberately does not hold.
+          icon={payDriver ? undefined : ({ color, size }) => <Lock color={color} size={size} strokeWidth={2.6} />}
+        />
       </View>
     </View>
   );
@@ -655,7 +657,6 @@ const styles = StyleSheet.create({
   ackBoxOn: { backgroundColor: c.go, borderColor: c.go },
   ackTick: { color: '#fff', fontSize: 13, fontFamily: font.sansBold },
   ackLabel: { flex: 1, fontFamily: font.sansSemibold, fontSize: 13, color: c.textPrimary },
-  payBtnDisabled: { opacity: 0.45 },
   ackRequiredNote: {
     fontFamily: font.sans, fontSize: 12.5, color: c.danger,
     textAlign: 'center', marginBottom: 8, lineHeight: 17,
@@ -702,6 +703,4 @@ const styles = StyleSheet.create({
   cashRadioDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: c.go },
   cashTitle: { fontFamily: font.sansBold, fontSize: 14, color: c.textPrimary },
   cashSub: { fontFamily: font.sans, fontSize: 12, color: c.textSecondary, marginTop: 3, lineHeight: 17 },
-  payBtn: { flexDirection: 'row', gap: 8, alignItems: 'center', justifyContent: 'center', backgroundColor: c.go, height: 54, borderRadius: radius.md },
-  payBtnText: { fontFamily: font.sansBold, fontSize: 16, color: '#fff' },
 });

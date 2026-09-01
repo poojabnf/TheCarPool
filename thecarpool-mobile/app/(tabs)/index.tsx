@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
-  View, Text, StyleSheet, TextInput, ScrollView, Alert, ActivityIndicator, Image,
+  View, Text, StyleSheet, TextInput, ScrollView, Alert, Image,
 } from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -12,6 +12,7 @@ import { useI18n } from '../services/i18n';
 import * as haptics from '../services/haptics';
 import { c, font, radius, space, shadowSm, brass, rideStatusColors } from '../../theme/tokens';
 import HapticPressable from '../components/HapticPressable';
+import Button from '../components/Button';
 import { formatMoney } from '../services/currency';
 import { searchPlaces, MIN_QUERY_LENGTH, SEARCH_DEBOUNCE_MS, warmUp } from '../services/geo';
 import { formatDeparture, isDepartingSoon, formatPostedAgo } from '../services/datetime';
@@ -513,10 +514,14 @@ export default function HomeScreen() {
           </HapticPressable>
         </View>
 
-        <HapticPressable style={styles.findBtn} onPress={findRides} disabled={searching} activeOpacity={0.9}>
-          {searching ? <ActivityIndicator color={c.actionPrimaryText} />
-            : <><Search color={c.actionPrimaryText} size={17} strokeWidth={2.4} /><Text style={styles.findBtnText}>{t('find_rides')}</Text></>}
-        </HapticPressable>
+        <Button
+          label={t('find_rides')}
+          onPress={findRides}
+          loading={searching}
+          size="lg"
+          style={{ marginTop: space.md }}
+          icon={({ color, size }) => <Search color={color} size={size} strokeWidth={2.4} />}
+        />
       </View>
 
       {/* Results */}
@@ -624,20 +629,24 @@ export default function HomeScreen() {
               </View>
 
               {bookedRideIds[String(ride.id)] ? (
-                <HapticPressable
+                // Already booked: the card's action becomes a way back to the
+                // trip, so it drops to secondary weight rather than competing
+                // with the bookable cards around it.
+                <Button
+                  label="✓ Booked · View trip"
+                  variant="secondary"
                   haptic="tap"
-                  style={[styles.bookBtn, { backgroundColor: '#F0FDF4', borderColor: '#86EFAC', borderWidth: 1 }]}
                   onPress={() => router.push(`/trip/${ride.id}`)}
-                  activeOpacity={0.9}
-                >
-                  <Text style={[styles.bookBtnText, { color: '#15803D' }]}>
-                    ✓ You booked this ride · View Trip →
-                  </Text>
-                </HapticPressable>
+                  style={{ marginTop: space.md }}
+                  labelStyle={{ color: c.go }}
+                />
               ) : (
-                <HapticPressable haptic="press" style={styles.bookBtn} onPress={() => bookRide(ride)} activeOpacity={0.9}>
-                  <Text style={styles.bookBtnText}>{t('book_ride')} · {formatMoney(Number(ride.price_split), { decimals: 0 })}</Text>
-                </HapticPressable>
+                <Button
+                  label={`${t('book_ride')} · ${formatMoney(Number(ride.price_split), { decimals: 0 })}`}
+                  variant="go"
+                  onPress={() => bookRide(ride)}
+                  style={{ marginTop: space.md }}
+                />
               )}
 
               {/* Make the tap target discoverable. A card that silently
@@ -737,9 +746,6 @@ const styles = StyleSheet.create({
   womenChipOn: { backgroundColor: c.textAccent, borderColor: c.textAccent },
   womenChipText: { fontFamily: font.sansSemibold, fontSize: 12.5, color: c.textAccent },
 
-  findBtn: { flexDirection: 'row', gap: 8, alignItems: 'center', justifyContent: 'center', backgroundColor: c.actionPrimary, height: 50, borderRadius: radius.md, marginTop: space.md },
-  findBtnText: { fontFamily: font.sansBold, fontSize: 15.5, color: c.actionPrimaryText },
-
   offlineBanner: { backgroundColor: c.accentSoft, borderRadius: radius.md, padding: space.md, borderWidth: 1, borderColor: brass[300] },
   offlineText: { fontFamily: font.sansMedium, fontSize: 12.5, color: c.textAccent, textAlign: 'center' },
   sectionTitle: { fontFamily: font.sansBold, fontSize: 16, color: c.textPrimary, marginBottom: space.md, marginTop: space.lg },
@@ -770,9 +776,7 @@ const styles = StyleSheet.create({
   badgeText: { fontFamily: font.sansSemibold, fontSize: 11, color: c.textSecondary },
   detour: { fontFamily: font.mono, fontSize: 11, color: c.textTertiary, marginLeft: 'auto' },
   vehicleRow: { flexDirection: 'row', alignItems: 'center', gap: 2, marginTop: 1 },
-  bookBtn: { backgroundColor: c.go, height: 46, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center', marginTop: space.md },
   viewDetails: { fontFamily: font.sans, fontSize: 11.5, color: c.textTertiary, textAlign: 'center', marginTop: space.sm },
-  bookBtnText: { fontFamily: font.sansBold, fontSize: 14.5, color: '#fff' },
 
   routeRow: { flexDirection: 'row', alignItems: 'center', gap: space.md, backgroundColor: c.surfaceCard, borderRadius: radius.md, padding: space.md, borderWidth: 1, borderColor: c.borderSubtle, marginBottom: space.sm },
   routeDot: { width: 10, height: 10, borderRadius: 5, borderWidth: 2.5, borderColor: c.accent },

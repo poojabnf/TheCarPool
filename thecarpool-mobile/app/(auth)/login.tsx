@@ -177,7 +177,7 @@ export default function LoginScreen() {
 
         {appleAvailable && (
           <HapticPressable haptic="press" style={[styles.socialBtn, styles.appleBtn]} onPress={handleAppleSignIn} disabled={isAppleLoading} activeOpacity={0.9}>
-            {isAppleLoading ? <ActivityIndicator color="#fff" /> : <><Text style={styles.appleIcon}></Text><Text style={[styles.socialText, { color: '#fff' }]}>Continue with Apple</Text></>}
+            {isAppleLoading ? <ActivityIndicator color="#fff" /> : <><Text style={styles.appleIcon}></Text><Text style={[styles.socialText, { color: '#fff' }]}>Continue with Apple</Text></>}
           </HapticPressable>
         )}
 
@@ -190,9 +190,7 @@ export default function LoginScreen() {
         </Animated.View>
       </ScrollView>
 
-      {/* Country picker. Changing country clears the number: an NSN typed for
-          one country is rarely valid in another, and silently keeping it
-          produces a confusing "invalid number" at the OTP step instead. */}
+      {/* Country picker */}
       <Modal
         visible={pickerOpen}
         animationType="slide"
@@ -200,7 +198,7 @@ export default function LoginScreen() {
         onRequestClose={() => setPickerOpen(false)}
       >
         <View style={styles.modalBackdrop}>
-          <View style={styles.modalSheet}>
+          <View style={[styles.modalSheet, { paddingBottom: insets.bottom + 24 }]}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Select country</Text>
               <HapticPressable onPress={() => setPickerOpen(false)} activeOpacity={0.7}>

@@ -144,3 +144,65 @@ export function rideStatusColors(opts: {
   if (opts.ongoing) return rideStatus.ongoing;
   return rideStatus.pending;
 }
+
+/**
+ * Button scale.
+ *
+ * Buttons had drifted: primary actions were 50pt on Home, 46pt on the ride
+ * card, 54pt on Confirm & Pay and a padding-derived height on the driver
+ * dashboard -- and "primary" meant ink on one screen, green on the next and
+ * the legacy theme's blue on a third. Three answers to "what does the main
+ * button look like", none of them wrong on its own.
+ *
+ * One scale, in the ride-hailing idiom the app is borrowing from: a tall flat
+ * slab, no gradient, no shadow, a modest corner, and weight carried by the
+ * fill rather than ornament. Text is semibold at a size that stays legible one
+ * -handed at arm's length.
+ */
+export const button = {
+  /**
+   * Heights, corners and label sizes follow Uber's Base design system, whose
+   * button tokens are public in uber/baseweb: buttonBorderRadius 8, and
+   * heights of scale950/1200/1400 -- 36, 48 and 56.
+   *
+   * The corner is the tell. At 8 a button reads as a slab of the interface;
+   * by 12 it has started to become a lozenge floating on top of it, and the
+   * screen loses its grid. Everything else here is ordinary; that one value
+   * is most of the look.
+   */
+  height: { sm: 36, md: 48, lg: 56 },
+  radius: 8,
+  paddingX: { sm: 12, md: 16, lg: 20 },
+  fontSize: { sm: 14, md: 16, lg: 18 },
+  /** Icon/label gap, and the icon size that sits level with the text. */
+  gap: 8,
+  iconSize: { sm: 16, md: 18, lg: 20 },
+  /**
+   * Pressed feedback is a darkening overlay, not opacity.
+   *
+   * Fading a near-black button against a white page turns it grey -- it reads
+   * as becoming disabled at the exact moment it is being used. Base darkens
+   * the fill instead, so the button stays itself and only deepens.
+   */
+  pressDarken: 0.14,
+  /** Transparent variants have no fill to darken, so they tint instead. */
+  pressTint: gray[100],
+} as const;
+
+/**
+ * Mix a hex colour toward black. Used for pressed button fills.
+ *
+ * Kept here rather than in the component so the pressed state is derived from
+ * the same token as the resting one and cannot drift from it.
+ */
+export function darken(hex: string, amount: number): string {
+  const h = hex.replace('#', '');
+  const full = h.length === 3 ? h.split('').map((ch) => ch + ch).join('') : h;
+  const n = parseInt(full, 16);
+  if (!Number.isFinite(n)) return hex;
+  const k = Math.max(0, Math.min(1, 1 - amount));
+  const r = Math.round(((n >> 16) & 255) * k);
+  const g = Math.round(((n >> 8) & 255) * k);
+  const b = Math.round((n & 255) * k);
+  return `#${((1 << 24) | (r << 16) | (g << 8) | b).toString(16).slice(1)}`;
+}

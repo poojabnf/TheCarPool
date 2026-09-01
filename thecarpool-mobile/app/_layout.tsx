@@ -194,12 +194,15 @@ export default function RootLayout() {
     <SafeAreaProvider>
       <StatusBar barStyle="dark-content" backgroundColor={c.bgApp} />
       <AuthGuard>
-        <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: c.bgApp } }}>
+        <Stack screenOptions={{ headerShown: false, animation: 'slide_from_right', contentStyle: { backgroundColor: c.bgApp } }}>
           <Stack.Screen name="(auth)" options={{ headerShown: false }} />
           <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
           <Stack.Screen name="onboarding" options={{ headerShown: false }} />
           <Stack.Screen name="trip/[id]" options={{ headerShown: false }} />
           <Stack.Screen name="ride/[id]" options={{ headerShown: false }} />
+          <Stack.Screen name="notifications" options={{ headerShown: false }} />
+          <Stack.Screen name="leaderboard" options={{ headerShown: false }} />
+          <Stack.Screen name="safety-center" options={{ headerShown: false }} />
           <Stack.Screen name="confirm" options={{ headerShown: false }} />
           <Stack.Screen name="payout-method" options={{ headerShown: false }} />
           <Stack.Screen name="components/AiVoiceModal" options={{ presentation: 'modal' }} />

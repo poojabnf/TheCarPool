@@ -11,11 +11,13 @@ import {
   Dimensions,
   Platform,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { apiFetch } from '../services/api';
 import { auth } from '../services/firebase';
 import { useRouter } from 'expo-router';
 import { useAuthStore } from '../store/authStore';
 import HapticPressable from '../components/HapticPressable';
+import { c, font, radius, space } from '../../theme/tokens';
 
 const { width } = Dimensions.get('window');
 const TOTAL_STEPS = 2;
@@ -245,12 +247,14 @@ export default function OnboardingScreen() {
     <StepProfile key="profile" onNext={(d) => handleNext(d)} isLastStep />,
   ];
 
+  const insets = useSafeAreaInsets();
+
   return (
     <View style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor="#FAFBFC" />
 
       {/* Header */}
-      <View style={styles.header}>
+      <View style={[styles.header, { paddingTop: insets.top + space.sm }]}>
         {/* Back to the previous step.
             The wizard only ever moved forward, so someone who picked "rider"
             at step 1 and then wanted to offer rides had no way back — the

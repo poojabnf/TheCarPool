@@ -128,7 +128,8 @@ export function handleNotificationNavigation(data?: Record<string, any>) {
     return;
   }
 
-  // 2. Rider booking confirmed / OTP / boarding soon / ride completed -> Trip details
+
+  // 3. Rider booking confirmed / OTP / boarding soon / ride completed -> Trip details
   if (ride_id) {
     router.push(`/trip/${ride_id}`);
     return;

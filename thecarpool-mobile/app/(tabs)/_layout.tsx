@@ -37,25 +37,25 @@ export default function TabLayout() {
     >
       <Tabs.Screen
         name="index"
-        options={{ title: t('tab_home'), tabBarIcon: ({ color }) => <Home color={color} size={21} strokeWidth={2.2} /> }}
+        options={{ title: t('tab_home'), tabBarIcon: ({ color, focused }) => <Home color={color} size={21} strokeWidth={focused ? 2.6 : 1.9} /> }}
       />
       <Tabs.Screen
         name="rides"
-        options={{ title: t('tab_rides'), tabBarIcon: ({ color }) => <Car color={color} size={21} strokeWidth={2.2} /> }}
+        options={{ title: t('tab_rides'), tabBarIcon: ({ color, focused }) => <Car color={color} size={21} strokeWidth={focused ? 2.6 : 1.9} /> }}
       />
       <Tabs.Screen
         name="trips"
-        options={{ title: t('tab_trips'), tabBarIcon: ({ color }) => <Route color={color} size={21} strokeWidth={2.2} /> }}
+        options={{ title: t('tab_trips'), tabBarIcon: ({ color, focused }) => <Route color={color} size={21} strokeWidth={focused ? 2.6 : 1.9} /> }}
       />
       <Tabs.Screen
         name="wallet"
-        options={{ title: t('tab_wallet'), tabBarIcon: ({ color }) => <Wallet color={color} size={21} strokeWidth={2.2} /> }}
+        options={{ title: t('tab_wallet'), tabBarIcon: ({ color, focused }) => <Wallet color={color} size={21} strokeWidth={focused ? 2.6 : 1.9} /> }}
       />
       <Tabs.Screen
         name="account"
         options={{
           title: t('tab_account'),
-          tabBarIcon: ({ color }) => <User color={color} size={21} strokeWidth={2.2} />,
+          tabBarIcon: ({ color, focused }) => <User color={color} size={21} strokeWidth={focused ? 2.6 : 1.9} />,
         }}
       />
 
