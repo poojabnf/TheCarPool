@@ -18,7 +18,8 @@ import {
   riderBookingConfirmed, riderRequestSubmitted, driverBookingRequested,
   driverBookingConfirmed, riderRequestDeclined, riderBoardingSoon, riderRideCompleted,
   riderCancelledBooking, driverCancelledRide, rideStarted, rideOfferedSuccess,
-  driverEarningsSettled, riderRefundCredited,
+  driverEarningsSettled,
+  driverPayoutStarted, riderRefundCredited,
 } from './rideMessages';
 
 type Log = { error: (...args: any[]) => void };
@@ -424,6 +425,30 @@ export function deliver(work: Promise<unknown>, log?: Log, ms = 9000): Promise<v
  * `riderRefunds` is keyed by rider uid. Riders with nothing coming back are
  * simply absent, so no one is told about a zero.
  */
+/**
+ * Tell the driver their fare's complaint window has closed and the money is
+ * moving. Fired when the sweep picks the ride up, before the transfer -- see
+ * driverPayoutStarted for why that is a separate event from settlement.
+ */
+export async function notifyPayoutStarted(
+  rideId: string,
+  driverUid: string,
+  amount: number,
+  currency = '₹',
+  log?: Log
+): Promise<void> {
+  if (!driverUid || !(amount > 0)) return;
+  const money = `${currency}${amount.toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
+  const { ctx, driverPhone } = await resolve({ rideId, riderUid: '', driverUid });
+  await dispatch(
+    String(driverUid),
+    driverPhone,
+    driverPayoutStarted(ctx, money),
+    { type: 'PAYOUT_STARTED', ride_id: rideId },
+    log
+  );
+}
+
 export async function notifySettlement(
   rideId: string,
   opts: {

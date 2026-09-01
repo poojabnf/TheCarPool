@@ -314,6 +314,28 @@ export function rideOfferedSuccess(ctx: RideMessageContext): BuiltMessage {
  * "spendable in your wallet" are different promises, and a driver who is told
  * the wrong one goes looking for money in the wrong place.
  */
+/**
+ * Sent to the DRIVER the moment a fare's complaint window closes.
+ *
+ * Distinct from driverEarningsSettled, which reports money that has already
+ * moved. This one marks the fifteen minutes elapsing: the rider did not
+ * complain, the fare is now the driver's, and the transfer is being made.
+ * Without it a driver watches a completed ride sit with no visible change
+ * until the money simply appears, and cannot tell a payout in progress from
+ * one that has silently failed.
+ */
+export function driverPayoutStarted(
+  ctx: RideMessageContext,
+  amount: string
+): BuiltMessage {
+  const body = joinLines([
+    `No issues raised, so ${amount} is being released to you now.`,
+    ctx.origin && ctx.destination ? `${ctx.origin} → ${ctx.destination}` : null,
+    'We will confirm as soon as it lands.',
+  ]);
+  return { title: 'Payment processing', body: scrubContact(body) };
+}
+
 export function driverEarningsSettled(
   ctx: RideMessageContext,
   amount: string,

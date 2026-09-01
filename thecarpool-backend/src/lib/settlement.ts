@@ -6,22 +6,40 @@
  * way the rider gets a short window to say "no, that didn't happen" before the
  * money moves. Once the hold expires with no dispute, the fare settles.
  *
- * The two windows are deliberately different lengths:
- *   - DISPUTE_WINDOW (10 min) is how long the rider has to raise a problem.
- *     Short, because it is meant to be used while they are still standing
- *     there, not a day later.
- *   - SETTLEMENT_HOLD (1 hour) is how long the money waits. Longer than the
- *     dispute window on purpose, so a dispute raised at minute 9 still lands
- *     well before any payout, even if a sweep runs late.
+ * Both windows are fifteen minutes, and the same fifteen minutes: if the
+ * person who booked has not complained a quarter of an hour after getting out
+ * of the car, the driver is paid without further review. Making the hold
+ * longer than the complaint window would be a second, silent review that
+ * nobody asked for.
+ *
+ * The boundary is safe because settlement re-reads the dispute flag inside its
+ * transaction, so a complaint filed in the final seconds still stops a payout
+ * the sweep has already selected.
  *
  * Pure — no I/O — so every rule here is unit-testable.
  */
 
-/** How long the rider has to dispute a completion. */
-export const DISPUTE_WINDOW_MINUTES = 10;
+/**
+ * How long the rider has to complain before the fare is treated as accepted.
+ *
+ * The operator's rule, and it is deliberately a simple one: if the person who
+ * booked has not complained within a quarter of an hour of getting out of the
+ * car, the driver is paid, no questions asked. Short because it is meant to be
+ * used while they are still standing on the pavement -- if the trip went
+ * wrong, they know immediately.
+ */
+export const DISPUTE_WINDOW_MINUTES = 15;
 
-/** How long the fare is held after completion before it can settle. */
-export const SETTLEMENT_HOLD_MINUTES = 60;
+/**
+ * How long the fare waits before it can settle.
+ *
+ * Equal to the dispute window rather than longer than it, which is the whole
+ * point of the rule: no silent extra hold, no second review, paid at fifteen
+ * minutes. A complaint filed in the last seconds still wins, because
+ * settlement re-reads the dispute flag inside its transaction rather than
+ * trusting the query that selected the booking.
+ */
+export const SETTLEMENT_HOLD_MINUTES = 15;
 
 /**
  * How close the rider must be to the destination for the app to call the ride
@@ -85,6 +103,16 @@ export function disputeMinutesRemaining(
 }
 
 export interface SettlementCandidate {
+  /**
+   * When this rider got out.
+   *
+   * Preferred over completed_at, because the clock the operator described runs
+   * from the passenger's own drop-off, not the driver's last stop. On a
+   * Jhansi to Delhi run someone alighting at Agra has finished their trip
+   * hours before the ride ends, and should not wait on a journey they are no
+   * longer part of. Falls back to completed_at where it was never recorded.
+   */
+  dropped_off_at?: string | null;
   /** When the ride was marked complete. */
   completed_at?: string | null;
   /** Set when the rider raised a problem. Blocks settlement outright. */
@@ -93,6 +121,23 @@ export interface SettlementCandidate {
   escrow_status?: string | null;
   /** Requests never accepted must not pay out. */
   booking_status?: string | null;
+}
+
+/**
+ * The instant this booking's fifteen minutes start running.
+ *
+ * One definition, used by both the due check and the stored due-at, so the
+ * sweep and the timestamp on the document can never disagree about when a
+ * fare becomes payable.
+ */
+export function settlementClockFrom(
+  booking: Pick<SettlementCandidate, 'dropped_off_at' | 'completed_at'>
+): number | null {
+  for (const raw of [booking?.dropped_off_at, booking?.completed_at]) {
+    const t = Date.parse(String(raw ?? ''));
+    if (Number.isFinite(t)) return t;
+  }
+  return null;
 }
 
 /**
@@ -111,8 +156,8 @@ export function isSettlementDue(
   // confirmed by definition.
   if (String(booking?.booking_status ?? 'CONFIRMED') !== 'CONFIRMED') return false;
 
-  const t = Date.parse(String(booking?.completed_at ?? ''));
-  if (!Number.isFinite(t)) return false;
+  const t = settlementClockFrom(booking);
+  if (t === null) return false;
   return (now.getTime() - t) / 60000 >= SETTLEMENT_HOLD_MINUTES;
 }
 

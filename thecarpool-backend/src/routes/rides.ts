@@ -11,6 +11,8 @@ import { needsDepartureReminder, minutesUntil } from '../lib/rideNotifications';
 import { needsBoardingReminder, minutesUntil as etaMinutesUntil, BOARDING_REMINDER_MINUTES } from '../lib/eta';
 import { partitionStopsByRoute } from '../lib/stopGeography';
 import { routePosition, isForwardTravel } from '../lib/routeProgress';
+import { isPastCloseDeadline } from '../lib/rideDeadline';
+import { autoCloseRide } from '../lib/rideAutoClose';
 import {
   notifyBoardingSoon, resolveStopEtasForRide, notifyRideCompleted, deliver,
   notifyRideStarted, notifyDriverCancelledRide, notifyRideOffered,
@@ -472,6 +474,39 @@ export async function rideRoutes(fastify: FastifyInstance) {
    * Automatically expires and cancels stale rides posted > 5 days ago or whose
    * departure date has passed with no activity.
    */
+  /**
+   * ── POST /close-overdue ──────────────────────────────────────────────────
+   * Close out rides the driver started and never finished.
+   *
+   * Separate from /cleanup-expired, which only sweeps rides that never left
+   * SCHEDULED. This one handles STARTED rides past a distance-scaled deadline
+   * -- 48 hours per 500 km -- where riders' fares are otherwise held forever
+   * behind a driver who is simply not coming back. See lib/rideDeadline.
+   */
+  fastify.post('/close-overdue', { preHandler: [requireCronOrAdmin] }, async (_request, reply) => {
+    // Oldest first, so a backlog drains in the order people have been waiting
+    // rather than starving the earliest riders past the scan cap.
+    const snap = await db.collection('rides')
+      .where('status', '==', 'STARTED')
+      .orderBy('departure_time', 'asc')
+      .limit(100)
+      .get();
+
+    const closed: any[] = [];
+    for (const doc of snap.docs) {
+      if (!isPastCloseDeadline(doc.data() as any)) continue;
+      try {
+        const result = await autoCloseRide(doc.id, fastify.log);
+        if (result) closed.push(result);
+      } catch (err) {
+        // One bad ride must not abort the sweep for the rest.
+        fastify.log.error({ err, rideId: doc.id }, 'Auto-close failed for ride');
+      }
+    }
+
+    return reply.send({ scanned: snap.size, closed: closed.length, rides: closed });
+  });
+
   fastify.post('/cleanup-expired', { preHandler: [requireCronOrAdmin] }, async (_request, reply) => {
     const fiveDaysAgo = new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString();
     

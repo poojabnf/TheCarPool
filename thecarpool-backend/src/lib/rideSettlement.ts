@@ -20,7 +20,7 @@ import { noShowOutcome } from './fees';
 import { planPayout, maskPayoutMethod } from './payouts';
 import { isSettlementDue } from './settlement';
 import { releaseTransfer } from './route';
-import { notifySettlement } from './bookingNotifications';
+import { notifySettlement, notifyPayoutStarted, deliver } from './bookingNotifications';
 import { isRazorpayXConfigured } from './razorpay';
 import { round2 } from './money';
 
@@ -61,6 +61,29 @@ export async function settleDueBookingsForRide(
   // requires all reads before writes inside one.
   const driverDoc = await db.collection('users').doc(driverUid).get();
   const driverPayoutMethod = driverDoc.data()?.payout_method ?? null;
+
+  // Tell the driver the complaint window has closed and their money is moving.
+  //
+  // Sent before the transfer, not after: settlement can take a moment and a
+  // bank leg can take a day, and without this the driver watches a completed
+  // ride sit unchanged with no way to tell a payout in progress from one that
+  // has quietly failed. The confirmation that it landed is a separate event.
+  //
+  // Awaited, never fired and forgotten: under Cloud Run CPU throttling any
+  // work still running when the response flushes is frozen where it stands.
+  const dueNow = bookingsSnap.docs.filter((d) => isSettlementDue(d.data() as any));
+  if (dueNow.length > 0) {
+    const pending = round2(dueNow.reduce(
+      (sum, d) => sum + Number(
+        d.data().fare_amount ?? Number(ride.price_split || 0) * Number(d.data().seats_booked || 1)
+      ),
+      0
+    ));
+    await deliver(
+      notifyPayoutStarted(rideId, driverUid, pending, defaultCurrency(), log),
+      log
+    );
+  }
 
   return db.runTransaction(async (tx) => {
     const bookingDocs = await Promise.all(bookingsSnap.docs.map((d) => tx.get(d.ref)));

@@ -50,7 +50,7 @@ describe('isDisputeWindowOpen', () => {
   });
 
   it('is closed once it has passed', () => {
-    expect(isDisputeWindowOpen(minutesAgo(11), NOW)).toBe(false);
+    expect(isDisputeWindowOpen(minutesAgo(16), NOW)).toBe(false);
     expect(isDisputeWindowOpen(minutesAgo(120), NOW)).toBe(false);
   });
 
@@ -69,7 +69,7 @@ describe('isDisputeWindowOpen', () => {
 describe('disputeMinutesRemaining', () => {
   it('counts down and floors at zero', () => {
     expect(disputeMinutesRemaining(minutesAgo(0), NOW)).toBe(DISPUTE_WINDOW_MINUTES);
-    expect(disputeMinutesRemaining(minutesAgo(7), NOW)).toBe(3);
+    expect(disputeMinutesRemaining(minutesAgo(7), NOW)).toBe(8);
     expect(disputeMinutesRemaining(minutesAgo(30), NOW)).toBe(0);
     expect(disputeMinutesRemaining(null, NOW)).toBe(0);
   });
@@ -88,7 +88,7 @@ describe('isSettlementDue', () => {
   });
 
   it('waits while the hold is still running', () => {
-    expect(isSettlementDue({ ...held, completed_at: minutesAgo(59) }, NOW)).toBe(false);
+    expect(isSettlementDue({ ...held, completed_at: minutesAgo(14) }, NOW)).toBe(false);
     expect(isSettlementDue({ ...held, completed_at: minutesAgo(1) }, NOW)).toBe(false);
   });
 
@@ -138,11 +138,48 @@ describe('canResolveDispute', () => {
 });
 
 describe('settlementDueAt', () => {
-  it('is one hour after completion', () => {
-    expect(settlementDueAt('2026-08-28T12:00:00.000Z')).toBe('2026-08-28T13:00:00.000Z');
+  it('is fifteen minutes after completion', () => {
+    expect(settlementDueAt('2026-08-28T12:00:00.000Z')).toBe('2026-08-28T12:15:00.000Z');
   });
 
   it('is null for an unusable time', () => {
     expect(settlementDueAt('nope')).toBeNull();
+  });
+});
+
+describe('the fifteen-minute rule', () => {
+  const NOW2 = new Date('2026-08-28T12:00:00.000Z');
+  const ago = (m: number) => new Date(NOW2.getTime() - m * 60000).toISOString();
+  const held = { escrow_status: 'HELD', booking_status: 'CONFIRMED' } as const;
+
+  it('pays at fifteen minutes with no complaint', () => {
+    expect(isSettlementDue({ ...held, completed_at: ago(15) }, NOW2)).toBe(true);
+    expect(isSettlementDue({ ...held, completed_at: ago(14.9) }, NOW2)).toBe(false);
+  });
+
+  // A rider who alights at a mid-route stop has finished their trip; they
+  // should not wait on a journey that continues for hours without them.
+  it('runs from the rider getting out, not the end of the ride', () => {
+    expect(isSettlementDue(
+      { ...held, dropped_off_at: ago(20), completed_at: null }, NOW2
+    )).toBe(true);
+    // Drop-off wins even when the ride finished only moments ago.
+    expect(isSettlementDue(
+      { ...held, dropped_off_at: ago(20), completed_at: ago(1) }, NOW2
+    )).toBe(true);
+    // And a recent drop-off is not overridden by an older completion.
+    expect(isSettlementDue(
+      { ...held, dropped_off_at: ago(2), completed_at: ago(90) }, NOW2
+    )).toBe(false);
+  });
+
+  it('falls back to completion when no drop-off was recorded', () => {
+    expect(isSettlementDue({ ...held, completed_at: ago(30) }, NOW2)).toBe(true);
+  });
+
+  it('still refuses to pay a complained-about ride, however long it waits', () => {
+    expect(isSettlementDue(
+      { ...held, disputed: true, dropped_off_at: ago(600) }, NOW2
+    )).toBe(false);
   });
 });
