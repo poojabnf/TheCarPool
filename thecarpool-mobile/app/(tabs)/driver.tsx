@@ -7,6 +7,7 @@ import { apiFetch } from '../services/api';
 import * as haptics from '../services/haptics';
 import HapticPressable from '../components/HapticPressable';
 import Button from '../components/Button';
+import SwipeAction from '../components/SwipeAction';
 import { formatMoney } from '../services/currency';
 import { searchPlaces, MIN_QUERY_LENGTH, SEARCH_DEBOUNCE_MS, warmUp } from '../services/geo';
 import auth from '@react-native-firebase/auth';
@@ -1362,10 +1363,17 @@ export default function DriverInterface() {
                             </HapticPressable>
                           </>
                         )}
+                        {/* Slide, not tap. Completing releases every rider's
+                            fare to the driver and nothing afterwards can take
+                            it back, so it should not be reachable by a thumb
+                            brushing a phone propped on a dashboard. */}
                         {r.status === 'STARTED' && (
-                          <HapticPressable haptic="press" style={styles.completeBtn} onPress={() => updateRideStatus(r.id, 'COMPLETED')} activeOpacity={0.9}>
-                            <Text style={styles.startBtnText} numberOfLines={1}>✓  Complete trip</Text>
-                          </HapticPressable>
+                          <SwipeAction
+                            label="Slide to complete trip"
+                            busyLabel="Completing…"
+                            onComplete={() => updateRideStatus(r.id, 'COMPLETED')}
+                            style={{ flex: 1 }}
+                          />
                         )}
                       </View>
                     )}
