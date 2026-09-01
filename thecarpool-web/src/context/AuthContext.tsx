@@ -75,7 +75,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       await signInWithPopup(auth, provider);
     } catch (error: any) {
       console.error("Google Sign In Error:", error);
-      alert(`Sign in failed: ${error.message || error.code || error}`);
+      throw error;
     }
   };
 
@@ -91,16 +91,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const uid = auth.currentUser.uid;
 
     // 1. Call the backend to delete all Firestore data associated with this user.
-    // apiFetch attaches the Firebase ID token so the backend can authorize the deletion.
-    await apiFetch('/api/safety/account', {
+    const res = await apiFetch('/api/safety/account', {
       method: 'DELETE',
       body: JSON.stringify({ user_id: uid }),
     });
 
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({}));
+      throw new Error(errData.message || errData.error || 'Account deletion was blocked by the server.');
+    }
+
     // 2. Delete Firebase Auth account on the client side
     await firebaseDeleteUser(auth.currentUser);
 
-    // 3. Clear any local onboarding state and auth cookies
+    // 3. Clear local state and auth cookies
     localStorage.removeItem(`thecarpool_onboarded_${uid}`);
     document.cookie = '__session=; path=/; max-age=0; SameSite=Lax';
     document.cookie = 'firebase_authenticated=; path=/; max-age=0; SameSite=Lax';

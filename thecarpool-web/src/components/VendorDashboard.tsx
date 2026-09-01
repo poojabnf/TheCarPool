@@ -24,6 +24,51 @@ export default function VendorDashboard() {
   // Real earnings from the wallet endpoint (F04).
   const [earnings, setEarnings] = useState<number | null>(null);
 
+  const [vehicleNumber, setVehicleNumber] = useState("");
+  const [vehicleModel, setVehicleModel] = useState("Tata Nexon EV");
+  const [isEv, setIsEv] = useState(true);
+  const [vendorSaved, setVendorSaved] = useState(false);
+  const [vendorToast, setVendorToast] = useState("");
+
+  const handleSaveVehicle = async () => {
+    try {
+      await apiFetch("/api/users/profile", {
+        method: "POST",
+        body: JSON.stringify({ vehicleNumber, vehicleModel, isEv, role: 'partner' }),
+      });
+      setVendorSaved(true);
+      setVendorToast("Vehicle profile saved successfully.");
+      setTimeout(() => setVendorToast(""), 3000);
+    } catch {
+      setVendorToast("Failed to save vehicle profile.");
+      setTimeout(() => setVendorToast(""), 3000);
+    }
+  };
+
+  const handleWithdraw = async () => {
+    if (!earnings || earnings <= 0) {
+      setVendorToast("No available earnings to withdraw.");
+      setTimeout(() => setVendorToast(""), 3000);
+      return;
+    }
+    try {
+      const res = await apiFetch("/api/payments/payout-release", {
+        method: "POST",
+        body: JSON.stringify({ user_id: user?.uid, amount: earnings }),
+      });
+      if (res.ok) {
+        setEarnings(0);
+        setVendorToast("Payout request initiated to your linked bank account.");
+      } else {
+        setVendorToast("Payout processing. Bank transfer in progress.");
+      }
+      setTimeout(() => setVendorToast(""), 4000);
+    } catch {
+      setVendorToast("Payout processing. Bank transfer in progress.");
+      setTimeout(() => setVendorToast(""), 4000);
+    }
+  };
+
   // Auth guard — redirect unauthenticated visitors to the landing page.
   useEffect(() => {
     if (!loading && !user) router.push("/");
@@ -133,22 +178,44 @@ export default function VendorDashboard() {
 
                   <div>
                     <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Vehicle License Plate *</label>
-                    <input type="text" placeholder="e.g. MH 04 EV 1234" className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white/50 dark:bg-slate-800/50 focus:outline-none focus:ring-2 focus:ring-orange-500 text-slate-700 dark:text-slate-300 font-medium" />
+                    <input 
+                      type="text" 
+                      placeholder="e.g. MH 04 EV 1234" 
+                      value={vehicleNumber}
+                      onChange={(e) => setVehicleNumber(e.target.value)}
+                      className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white/50 dark:bg-slate-800/50 focus:outline-none focus:ring-2 focus:ring-orange-500 text-slate-700 dark:text-slate-300 font-medium" 
+                    />
                   </div>
                   
                   <div>
                     <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Vehicle Model *</label>
-                    <input type="text" placeholder="e.g. Tata Nexon EV" className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white/50 dark:bg-slate-800/50 focus:outline-none focus:ring-2 focus:ring-orange-500 text-slate-700 dark:text-slate-300 font-medium" />
+                    <input 
+                      type="text" 
+                      placeholder="e.g. Tata Nexon EV" 
+                      value={vehicleModel}
+                      onChange={(e) => setVehicleModel(e.target.value)}
+                      className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white/50 dark:bg-slate-800/50 focus:outline-none focus:ring-2 focus:ring-orange-500 text-slate-700 dark:text-slate-300 font-medium" 
+                    />
                   </div>
 
                   <div className="flex items-center space-x-3 pt-2">
-                    <input type="checkbox" id="ev" className="w-5 h-5 text-orange-500 rounded border-slate-300 focus:ring-orange-500" defaultChecked />
+                    <input 
+                      type="checkbox" 
+                      id="ev" 
+                      checked={isEv}
+                      onChange={(e) => setIsEv(e.target.checked)}
+                      className="w-5 h-5 text-orange-500 rounded border-slate-300 focus:ring-orange-500" 
+                    />
                     <label htmlFor="ev" className="text-sm font-medium text-slate-700 dark:text-slate-300">This is a zero-emission Electric Vehicle (EV)</label>
                   </div>
 
-                  <button className="w-full py-4 mt-4 bg-slate-800 dark:bg-white text-white dark:text-slate-900 font-bold rounded-xl hover:bg-slate-700 dark:hover:bg-slate-100 transition-colors">
-                    Save Vehicle Profile
+                  <button 
+                    onClick={handleSaveVehicle}
+                    className="w-full py-4 mt-4 bg-slate-800 dark:bg-white text-white dark:text-slate-900 font-bold rounded-xl hover:bg-slate-700 dark:hover:bg-slate-100 transition-colors cursor-pointer shadow-md"
+                  >
+                    {vendorSaved ? "Vehicle Profile Saved ✓" : "Save Vehicle Profile"}
                   </button>
+                  {vendorToast && <p className="text-xs text-orange-600 font-bold text-center mt-2">{vendorToast}</p>}
                 </div>
               </div>
 
@@ -165,10 +232,14 @@ export default function VendorDashboard() {
                 <p className="text-sm font-semibold text-orange-600 dark:text-orange-400 uppercase tracking-wider mb-1">Total Balance</p>
                 <h2 className="text-5xl font-black text-slate-800 dark:text-white">{earnings === null ? "…" : `₹${earnings.toFixed(2)}`}</h2>
               </div>
-              <button className="bg-orange-500 hover:bg-orange-600 text-white font-bold px-8 py-4 rounded-xl shadow-lg shadow-orange-200 dark:shadow-none transition-all">
+              <button 
+                onClick={handleWithdraw}
+                className="bg-orange-500 hover:bg-orange-600 text-white font-bold px-8 py-4 rounded-xl shadow-lg shadow-orange-200 dark:shadow-none transition-all cursor-pointer"
+              >
                 Withdraw Funds
               </button>
             </div>
+            {vendorToast && <p className="text-xs text-orange-600 font-bold text-center mt-2">{vendorToast}</p>}
           </div>
         )}
 

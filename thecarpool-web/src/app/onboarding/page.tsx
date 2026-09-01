@@ -9,18 +9,16 @@ import {
   MapPin, 
   Building, 
   Briefcase, 
-  Camera, 
   Check, 
   ArrowRight, 
-  AlertCircle, 
-  CreditCard
+  Car,
+  UserCheck,
+  ShieldCheck,
+  ArrowLeft
 } from "lucide-react";
-// Identity verification (Aadhaar/PAN/selfie) was removed from the product;
-// the backend endpoints it called no longer exist. Onboarding is now the two
-// steps that actually collect something we use.
+
 const TOTAL_STEPS = 2;
 const STEP_LABELS = ['Role', 'Profile'];
-const STEP_ICONS = ['🚗', '👤'];
 const STEP_DESCRIPTIONS = [
   'Choose how you want to use the app',
   'Tell us about yourself',
@@ -37,7 +35,6 @@ export default function OnboardingPage() {
   const [company, setCompany] = useState("");
   const [employeeId, setEmployeeId] = useState("");
   const [workLocation, setWorkLocation] = useState("");
-  
 
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
@@ -53,13 +50,20 @@ export default function OnboardingPage() {
           setName(user.displayName);
         }
 
-        // If already onboarded (server-side flag), send to customer portal.
+        // Check localStorage or server-side flag
+        const localFlag = localStorage.getItem(`thecarpool_onboarded_${user.uid}`);
+        if (localFlag === 'true') {
+          router.push("/customer");
+          return;
+        }
+
         (async () => {
           try {
             const res = await apiFetch("/api/users/me");
             if (res.ok) {
               const data = await res.json();
               if (data.onboarded === true) {
+                localStorage.setItem(`thecarpool_onboarded_${user.uid}`, 'true');
                 router.push("/customer");
               }
             }
@@ -88,25 +92,29 @@ export default function OnboardingPage() {
           body: JSON.stringify({ name, company, employeeId, workLocation, role }),
         });
         if (!res.ok) throw new Error(`Save failed (${res.status})`);
+        
+        // Authoritatively set localStorage flag to prevent landing page bounce loop
+        localStorage.setItem(`thecarpool_onboarded_${user.uid}`, 'true');
       } catch (err: any) {
-        // Block navigation on failure — otherwise the `onboarded` flag never
-        // gets set and the next visit bounces in an infinite redirect loop.
         setSaveError(err.message || "We couldn't save your profile. Please check your connection and try again.");
         setSaving(false);
         return;
       }
       setSaving(false);
     }
-    router.push("/customer");
+    
+    if (role === 'partner') {
+      router.push("/partner");
+    } else {
+      router.push("/customer");
+    }
   };
-
-
 
   if (loading || !user) {
     return (
       <div className="min-h-screen bg-slate-50 dark:bg-slate-900 flex flex-col justify-center items-center">
-        <div className="w-16 h-16 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin"></div>
-        <p className="mt-4 text-slate-600 dark:text-slate-400 font-semibold animate-pulse text-lg">Verifying auth status...</p>
+        <div className="w-12 h-12 border-4 border-teal-600 border-t-transparent rounded-full animate-spin"></div>
+        <p className="mt-4 text-slate-600 dark:text-slate-400 font-semibold animate-pulse text-sm">Verifying profile...</p>
       </div>
     );
   }
@@ -115,36 +123,36 @@ export default function OnboardingPage() {
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-slate-200 font-sans py-12 px-4 sm:px-6 lg:px-8 flex flex-col justify-center items-center">
-      <div className="max-w-2xl w-full space-y-8 bg-white dark:bg-slate-800 p-8 rounded-3xl border border-slate-200 dark:border-slate-700 shadow-2xl relative overflow-hidden">
+      <div className="max-w-2xl w-full space-y-6 bg-white dark:bg-slate-800 p-8 rounded-3xl border border-slate-200 dark:border-slate-700 shadow-2xl relative overflow-hidden">
         
         {/* Progress Bar Header */}
         <div className="flex justify-between items-center pb-6 border-b border-slate-100 dark:border-slate-700">
           <div>
-            <h1 className="text-2xl font-black tracking-tight text-emerald-600 dark:text-emerald-500">Account Setup</h1>
-            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 font-semibold">Verify your identity to unlock trust badges</p>
+            <h1 className="text-2xl font-black tracking-tight text-teal-700 dark:text-teal-400">Account Setup</h1>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 font-semibold">Join verified corporate commuters</p>
           </div>
-          <span className="text-sm font-bold text-emerald-500 bg-emerald-50 dark:bg-emerald-950/30 px-3 py-1.5 rounded-full">
+          <span className="text-xs font-bold text-teal-700 dark:text-teal-400 bg-teal-50 dark:bg-teal-950/40 px-3 py-1.5 rounded-full border border-teal-200 dark:border-teal-800/40">
             Step {currentStep + 1} of {TOTAL_STEPS}
           </span>
         </div>
 
         {/* Progress Step Nodes */}
-        <div className="flex items-center justify-between px-2 py-4">
+        <div className="flex items-center justify-between px-2 py-2">
           {Array(TOTAL_STEPS).fill(0).map((_, i) => {
             const isCompleted = i < currentStep;
             const isActive = i === currentStep;
             return (
               <React.Fragment key={i}>
                 <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs border transition-all ${
-                  isCompleted ? "bg-emerald-500 border-emerald-500 text-white" :
-                  isActive ? "bg-emerald-100 dark:bg-emerald-900/50 border-emerald-500 text-emerald-600 dark:text-emerald-400 scale-110 shadow-lg shadow-emerald-500/10" :
+                  isCompleted ? "bg-teal-600 border-teal-600 text-white" :
+                  isActive ? "bg-teal-50 dark:bg-teal-900/50 border-teal-600 text-teal-700 dark:text-teal-400 scale-110 shadow-lg shadow-teal-600/10" :
                   "bg-slate-100 dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-400"
                 }`}>
-                  {isCompleted ? <Check size={12} strokeWidth={3} /> : i + 1}
+                  {isCompleted ? <Check size={14} strokeWidth={3} /> : i + 1}
                 </div>
                 {i < TOTAL_STEPS - 1 && (
                   <div className={`flex-1 h-1 mx-2 rounded-full transition-colors ${
-                    i < currentStep ? "bg-emerald-500" : "bg-slate-200 dark:bg-slate-800"
+                    i < currentStep ? "bg-teal-600" : "bg-slate-200 dark:bg-slate-800"
                   }`} />
                 )}
               </React.Fragment>
@@ -154,54 +162,64 @@ export default function OnboardingPage() {
 
         {/* Step Intro Card */}
         <div className="flex items-center space-x-4 bg-slate-50 dark:bg-slate-900/40 p-4 rounded-2xl border border-slate-100 dark:border-slate-800">
-          <span className="text-3xl">{STEP_ICONS[currentStep]}</span>
+          <div className="w-10 h-10 bg-teal-100 dark:bg-teal-900/40 rounded-xl flex items-center justify-center text-teal-700 dark:text-teal-400">
+            {currentStep === 0 ? <Car size={20} /> : <UserCheck size={20} />}
+          </div>
           <div>
-            <h3 className="font-extrabold text-slate-800 dark:text-white text-md uppercase tracking-wider">{STEP_LABELS[currentStep]}</h3>
+            <h3 className="font-extrabold text-slate-800 dark:text-white text-sm uppercase tracking-wider">{STEP_LABELS[currentStep]}</h3>
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">{STEP_DESCRIPTIONS[currentStep]}</p>
           </div>
         </div>
 
         {/* Dynamic Wizard Steps */}
-        <div className="mt-8 min-h-[300px]">
+        <div className="mt-6 min-h-[280px]">
           
           {/* STEP 1: ROLE */}
           {currentStep === 0 && (
             <div className="space-y-6 animate-in fade-in duration-200">
               <div className="text-center">
                 <h2 className="text-xl font-bold text-slate-800 dark:text-white">Choose Your Commute Role</h2>
-                <p className="text-slate-500 text-sm mt-1">Select your primary mode. You can toggle this anytime later.</p>
+                <p className="text-slate-500 text-sm mt-1">Select your primary mode. You can change this anytime later.</p>
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 pt-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2" role="radiogroup" aria-label="Select commute role">
                 <button 
+                  role="radio"
+                  aria-checked={role === 'rider'}
                   onClick={() => setRole('rider')}
                   className={`p-6 rounded-2xl border-2 text-left transition-all cursor-pointer ${
                     role === 'rider' 
-                    ? 'border-emerald-500 bg-emerald-50/20 dark:bg-emerald-950/20' 
+                    ? 'border-teal-600 bg-teal-50/40 dark:bg-teal-950/20 shadow-md shadow-teal-600/10' 
                     : 'border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600'
                   }`}
                 >
-                  <span className="text-4xl">🧍</span>
-                  <h3 className="font-extrabold text-lg text-slate-800 dark:text-white mt-4">Rider</h3>
+                  <div className="w-10 h-10 bg-teal-100 dark:bg-teal-900/50 rounded-xl flex items-center justify-center text-teal-700 dark:text-teal-400 mb-3">
+                    <UserCheck size={20} />
+                  </div>
+                  <h3 className="font-extrabold text-base text-slate-800 dark:text-white">Rider</h3>
                   <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Book rides, join pools, and split costs. Perfect for daily office commutes.</p>
                 </button>
                 <button 
+                  role="radio"
+                  aria-checked={role === 'partner'}
                   onClick={() => setRole('partner')}
                   className={`p-6 rounded-2xl border-2 text-left transition-all cursor-pointer ${
                     role === 'partner' 
-                    ? 'border-emerald-500 bg-emerald-50/20 dark:bg-emerald-950/20' 
+                    ? 'border-teal-600 bg-teal-50/40 dark:bg-teal-950/20 shadow-md shadow-teal-600/10' 
                     : 'border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600'
                   }`}
                 >
-                  <span className="text-4xl">🚘</span>
-                  <h3 className="font-extrabold text-lg text-slate-800 dark:text-white mt-4">Partner</h3>
+                  <div className="w-10 h-10 bg-teal-100 dark:bg-teal-900/50 rounded-xl flex items-center justify-center text-teal-700 dark:text-teal-400 mb-3">
+                    <Car size={20} />
+                  </div>
+                  <h3 className="font-extrabold text-base text-slate-800 dark:text-white">Partner / Driver</h3>
                   <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Offer spare seats in your vehicle, set recurring routes, and split fuel costs.</p>
                 </button>
               </div>
               <button
                 disabled={!role}
                 onClick={handleNext}
-                className={`w-full py-4 mt-6 bg-slate-900 dark:bg-white text-white dark:text-slate-900 font-bold rounded-xl flex items-center justify-center gap-2 transition-all cursor-pointer ${
-                  !role ? 'opacity-50 cursor-not-allowed' : 'hover:opacity-90'
+                className={`w-full py-4 mt-6 bg-teal-700 hover:bg-teal-800 text-white font-bold rounded-xl flex items-center justify-center gap-2 transition-all cursor-pointer shadow-lg shadow-teal-700/20 ${
+                  !role ? 'opacity-50 cursor-not-allowed' : ''
                 }`}
               >
                 Continue <ArrowRight size={18} />
@@ -212,83 +230,95 @@ export default function OnboardingPage() {
           {/* STEP 2: PROFILE */}
           {currentStep === 1 && (
             <div className="space-y-6 animate-in fade-in duration-200">
-              <div className="grid grid-cols-1 gap-6">
+              <div className="grid grid-cols-1 gap-4">
                 <div>
-                  <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Full Name *</label>
+                  <label htmlFor="ob-fullname" className="block text-xs font-bold text-slate-500 uppercase mb-2">Full Name *</label>
                   <div className="relative">
                     <User className="absolute left-4 top-3.5 text-slate-400" size={18} />
                     <input 
+                      id="ob-fullname"
                       required
                       type="text" 
                       placeholder="e.g. Pooja Yadav"
                       value={name}
                       onChange={(e) => setName(e.target.value)}
-                      className="w-full pl-12 pr-4 py-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:ring-2 focus:ring-emerald-500 font-semibold"
+                      className="w-full pl-12 pr-4 py-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:ring-2 focus:ring-teal-500 font-semibold text-slate-900 dark:text-white"
                     />
                   </div>
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Company / Corporate Employer *</label>
+                  <label htmlFor="ob-company" className="block text-xs font-bold text-slate-500 uppercase mb-2">Company / Corporate Employer *</label>
                   <div className="relative">
                     <Building className="absolute left-4 top-3.5 text-slate-400" size={18} />
                     <input 
+                      id="ob-company"
                       required
                       type="text" 
                       placeholder="e.g. Google, TCS, Infosys"
                       value={company}
                       onChange={(e) => setCompany(e.target.value)}
-                      className="w-full pl-12 pr-4 py-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:ring-2 focus:ring-emerald-500 font-semibold"
+                      className="w-full pl-12 pr-4 py-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:ring-2 focus:ring-teal-500 font-semibold text-slate-900 dark:text-white"
                     />
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Employee / Staff ID (Optional)</label>
+                    <label htmlFor="ob-empid" className="block text-xs font-bold text-slate-500 uppercase mb-2">Employee ID (Optional)</label>
                     <div className="relative">
                       <Briefcase className="absolute left-4 top-3.5 text-slate-400" size={18} />
                       <input 
+                        id="ob-empid"
                         type="text" 
                         placeholder="e.g. 9847192"
                         value={employeeId}
                         onChange={(e) => setEmployeeId(e.target.value)}
-                        className="w-full pl-12 pr-4 py-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:ring-2 focus:ring-emerald-500 font-semibold"
+                        className="w-full pl-12 pr-4 py-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:ring-2 focus:ring-teal-500 font-semibold text-slate-900 dark:text-white"
                       />
                     </div>
                   </div>
                   <div>
-                    <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Work Location / City Hub</label>
+                    <label htmlFor="ob-location" className="block text-xs font-bold text-slate-500 uppercase mb-2">Work Location / City Hub</label>
                     <div className="relative">
                       <MapPin className="absolute left-4 top-3.5 text-slate-400" size={18} />
                       <input 
+                        id="ob-location"
                         type="text" 
                         placeholder="e.g. Cyber City, Gurugram"
                         value={workLocation}
                         onChange={(e) => setWorkLocation(e.target.value)}
-                        className="w-full pl-12 pr-4 py-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:ring-2 focus:ring-emerald-500 font-semibold"
+                        className="w-full pl-12 pr-4 py-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:ring-2 focus:ring-teal-500 font-semibold text-slate-900 dark:text-white"
                       />
                     </div>
                   </div>
                 </div>
               </div>
               
-              <button
-                disabled={!isProfileValid || saving}
-                onClick={handleNext}
-                className={`w-full py-4 mt-6 bg-slate-900 dark:bg-white text-white dark:text-slate-900 font-bold rounded-xl flex items-center justify-center gap-2 transition-all cursor-pointer ${
-                  !isProfileValid || saving ? 'opacity-50 cursor-not-allowed' : 'hover:opacity-90'
-                }`}
-              >
-                {saving ? 'Saving…' : <>Finish <ArrowRight size={18} /></>}
-              </button>
+              <div className="flex gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setCurrentStep(0)}
+                  className="px-5 py-4 border border-slate-200 dark:border-slate-700 font-bold rounded-xl flex items-center justify-center gap-1.5 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors cursor-pointer text-slate-600 dark:text-slate-300"
+                >
+                  <ArrowLeft size={16} /> Back
+                </button>
+                <button
+                  disabled={!isProfileValid || saving}
+                  onClick={handleNext}
+                  className={`flex-1 py-4 bg-teal-700 hover:bg-teal-800 text-white font-bold rounded-xl flex items-center justify-center gap-2 transition-all cursor-pointer shadow-lg shadow-teal-700/20 ${
+                    !isProfileValid || saving ? 'opacity-50 cursor-not-allowed' : ''
+                  }`}
+                >
+                  {saving ? 'Saving Profile…' : <>Complete Setup <ArrowRight size={18} /></>}
+                </button>
+              </div>
 
               {saveError && (
-                <p className="mt-3 text-sm text-red-500 text-center">{saveError}</p>
+                <p className="mt-3 text-xs text-red-500 text-center font-semibold">{saveError}</p>
               )}
             </div>
           )}
-
 
         </div>
 
