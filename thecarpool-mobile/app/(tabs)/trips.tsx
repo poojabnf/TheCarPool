@@ -5,8 +5,8 @@ import {
 } from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Route, MapPin, Clock, CheckCircle, Circle, ChevronRight } from 'lucide-react-native';
-import { c, font, radius, space, shadowSm, rideStatusColors } from '../../theme/tokens';
+import { Route, MapPin, Clock, CheckCircle, Circle, ChevronRight, BadgeCheck, KeyRound } from 'lucide-react-native';
+import { c, font, radius, space, shadowSm, rideStatusColors, icon } from '../../theme/tokens';
 import { apiFetch } from '../services/api';
 import * as haptics from '../services/haptics';
 import HapticPressable from '../components/HapticPressable';
@@ -477,13 +477,19 @@ function BookingCard({ b, onPress, onCancel, onComplete, onDispute }: {
       {b.boarding_otp && !b.boarding_verified && b.booking_status !== 'REQUESTED'
         && b.ride_status !== 'CANCELLED' && !b.completed_at && (
         <View style={styles.otpBox}>
-          <Text style={styles.otpLabel}>Show your driver this code to board</Text>
+          <View style={styles.otpLabelRow}>
+            <KeyRound color={c.textSecondary} size={icon.size.md} strokeWidth={icon.stroke.normal} />
+            <Text style={styles.otpLabel}>Show your driver this code to board</Text>
+          </View>
           <Text style={styles.otpCode}>{b.boarding_otp}</Text>
         </View>
       )}
 
       {b.boarding_verified && (
-        <Text style={styles.otpDoneNote}>✓ Boarding confirmed by your driver</Text>
+        <View style={styles.otpDoneRow}>
+          <BadgeCheck color={c.go} size={icon.size.md} strokeWidth={icon.stroke.emphasis} />
+          <Text style={styles.otpDoneNote}>Boarding confirmed by your driver</Text>
+        </View>
       )}
 
       {b.booking_status === 'REQUESTED' && (
@@ -578,8 +584,10 @@ const styles = StyleSheet.create({
     marginTop: 12, paddingVertical: 12, borderRadius: radius.md, alignItems: 'center',
     backgroundColor: c.bgApp, borderWidth: 1, borderColor: c.borderSubtle,
   },
+  otpLabelRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   otpLabel: { fontFamily: font.sans, fontSize: 12, color: c.textTertiary },
   otpCode: { fontFamily: font.sansBold, fontSize: 30, letterSpacing: 8, color: c.textPrimary, marginTop: 4 },
+  otpDoneRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   otpDoneNote: { fontFamily: font.sansSemibold, fontSize: 12, color: c.go, marginTop: 10 },
   completeBtn: { marginTop: 12, backgroundColor: c.go, borderRadius: radius.md, paddingVertical: 12, alignItems: 'center' },
   completeText: { fontFamily: font.sansSemibold, fontSize: 14, color: '#fff' },

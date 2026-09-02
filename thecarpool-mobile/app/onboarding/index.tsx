@@ -17,6 +17,7 @@ import { auth } from '../services/firebase';
 import { useRouter } from 'expo-router';
 import { useAuthStore } from '../store/authStore';
 import HapticPressable from '../components/HapticPressable';
+import { CarFront, CircleUser } from 'lucide-react-native';
 import { c, font, radius, space } from '../../theme/tokens';
 
 const { width } = Dimensions.get('window');
@@ -61,7 +62,9 @@ function ProgressBar({ currentStep, totalSteps }: { currentStep: number; totalSt
 }
 
 const STEP_LABELS = ['Role', 'Profile'];
-const STEP_ICONS = ['🚗', '👤'];
+// Components, not glyphs: the step marker is tinted by whether the step is
+// current, and an emoji ignores colour entirely.
+const STEP_ICONS = [CarFront, CircleUser] as const;
 const STEP_DESCRIPTIONS = [
   'Choose how you want to use the app',
   'Tell us about yourself',
@@ -290,7 +293,10 @@ export default function OnboardingScreen() {
 
       {/* Step label */}
       <View style={styles.stepLabelRow}>
-        <Text style={styles.stepIcon}>{STEP_ICONS[currentStep]}</Text>
+        {(() => {
+          const StepIcon = STEP_ICONS[currentStep];
+          return <StepIcon color={c.textAccent} size={22} strokeWidth={2.2} />;
+        })()}
         <View>
           <Text style={styles.stepLabelText}>{STEP_LABELS[currentStep]}</Text>
           <Text style={styles.stepLabelDesc}>{STEP_DESCRIPTIONS[currentStep]}</Text>

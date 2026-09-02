@@ -5,7 +5,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import io from 'socket.io-client';
 import * as Location from 'expo-location';
 import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
-import { ShieldAlert, Share2, MapPin, Phone, Mail, Navigation, ChevronUp, ChevronDown, CheckCircle2 } from 'lucide-react-native';
+import { ShieldAlert, Share2, MapPin, Phone, Mail, Navigation, ChevronUp, ChevronDown, CheckCircle2, LocateFixed, CarFront, Siren } from 'lucide-react-native';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -15,7 +15,7 @@ const MAP_PROVIDER = Platform.OS === 'android' ? PROVIDER_GOOGLE : undefined;
 import { auth } from '../services/firebase';
 import { API_URL, apiFetch } from '../services/api';
 import * as haptics from '../services/haptics';
-import { c, font, radius, space, shadowSm } from '../../theme/tokens';
+import { c, font, radius, space, shadowSm, icon } from '../../theme/tokens';
 import HapticPressable from '../components/HapticPressable';
 import Button from '../components/Button';
 import { useI18n } from '../services/i18n';
@@ -484,9 +484,16 @@ export default function TripScreen() {
         {/* Primary Status & ETA Header */}
         <HapticPressable style={styles.statusRow} onPress={toggleSheet} activeOpacity={0.9}>
           <View style={{ flex: 1 }}>
-            <Text style={styles.statusLabel}>
-              {driverLocation ? '🟢 Live Car Tracking' : 'Trip Scheduled'}
-            </Text>
+            <View style={styles.statusHeadingRow}>
+              {/* A live fix is worth drawing, not spelling: the dot has to
+                  match the tracking state's colour, and an emoji cannot. */}
+              {driverLocation && (
+                <LocateFixed color={c.go} size={icon.size.sm} strokeWidth={icon.stroke.emphasis} />
+              )}
+              <Text style={styles.statusLabel}>
+                {driverLocation ? 'Live car tracking' : 'Trip scheduled'}
+              </Text>
+            </View>
             <Text style={styles.eta}>
               {liveEtaMins !== null ? (
                 <>Arriving in <Text style={styles.etaMono}>~{liveEtaMins} min</Text>{liveDistanceKm !== null ? ` (${liveDistanceKm.toFixed(1)} km)` : ''}</>
@@ -527,8 +534,9 @@ export default function TripScreen() {
               </View>
             )}
             <View style={styles.compactDriverPill}>
+              <CarFront color={c.textSecondary} size={icon.size.sm} strokeWidth={icon.stroke.normal} />
               <Text style={styles.compactDriverText} numberOfLines={1}>
-                🚗 {ride?.driver_name || 'Driver'} · Trip #{String(id).slice(0, 6)}
+                {ride?.driver_name || 'Driver'} · Trip #{String(id).slice(0, 6)}
               </Text>
             </View>
             <Text style={styles.compactExpandPrompt}>Details ▴</Text>
@@ -612,7 +620,7 @@ export default function TripScreen() {
                 <View style={[styles.driverContactCard, { borderColor: c.go, borderWidth: 1.5 }]}>
                   <View style={styles.driverInfoRow}>
                     <View style={[styles.driverAvatar, { backgroundColor: c.go }]}>
-                      <Text style={[styles.driverAvatarText, { color: '#fff' }]}>🚗</Text>
+                      <CarFront color="#fff" size={icon.size.xl} strokeWidth={icon.stroke.emphasis} />
                     </View>
                     <View style={{ flex: 1 }}>
                       <Text style={styles.driverName}>Driver Live Cockpit</Text>
@@ -666,7 +674,7 @@ export default function TripScreen() {
               <>
                 <View style={styles.actions}>
                   <HapticPressable style={styles.sos} onPress={triggerSOS} activeOpacity={0.9}>
-                    <ShieldAlert color="#fff" size={18} strokeWidth={2.4} />
+                    <Siren color="#fff" size={18} strokeWidth={icon.stroke.emphasis} />
                     <Text style={styles.sosText}>{t('sos')}</Text>
                   </HapticPressable>
                   <HapticPressable style={styles.share} onPress={shareTrip} activeOpacity={0.9}>
@@ -790,6 +798,7 @@ const styles = StyleSheet.create({
   sheetHandleLabel: { fontFamily: font.sansMedium, fontSize: 11, color: c.textTertiary },
 
   statusRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: space.sm },
+  statusHeadingRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
   statusLabel: { fontFamily: font.sansMedium, fontSize: 12.5, color: c.go },
   eta: { fontFamily: font.sansBold, fontSize: 19, color: c.textPrimary, marginTop: 1 },
   etaMono: { fontFamily: font.monoBold, color: c.textPrimary },

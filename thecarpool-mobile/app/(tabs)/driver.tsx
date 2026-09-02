@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { StyleSheet, View, Text, ScrollView, Dimensions, TextInput, Alert, ActivityIndicator, Modal, Linking, FlatList } from 'react-native';
 import { useRouter, useFocusEffect, useLocalSearchParams } from 'expo-router';
-import { PlusCircle, Activity, MapPin, Calendar, Users, X, Check, Car, Bike, Shield, Phone, Mail, ChevronDown, Search } from 'lucide-react-native';
+import { PlusCircle, Activity, MapPin, Calendar, Users, X, Check, Car, Bike, Shield, Phone, Mail, ChevronDown, Search, Play, Lightbulb, BadgeCheck, HandCoins, KeyRound, Snowflake, Music, Cigarette, Venus } from 'lucide-react-native';
 import { colors } from '../../theme/colors';
 import { apiFetch } from '../services/api';
 import * as haptics from '../services/haptics';
@@ -15,7 +15,7 @@ import io from 'socket.io-client';
 import { API_URL } from '../services/api';
 import * as Location from 'expo-location';
 import { useAuthStore } from '../store/authStore';
-import { rideStatusColors } from '../../theme/tokens';
+import { rideStatusColors, rideStatus, icon, c } from '../../theme/tokens';
 import HapticSwitch from '../components/HapticSwitch';
 import { AppCache } from '../services/cache';
 import { formatPostedAgo } from '../services/datetime';
@@ -1101,9 +1101,9 @@ export default function DriverInterface() {
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, marginBottom: 14 }}>
               {[
                 { key: 'ALL', label: `All (${allRides.length})` },
-                { key: 'SCHEDULED', label: '🟡 Not yet started' },
-                { key: 'ONGOING', label: '🟠 Ongoing' },
-                { key: 'COMPLETED', label: '🟢 Completed' },
+                { key: 'SCHEDULED', label: 'Not yet started', dot: rideStatus.pending.fg },
+                { key: 'ONGOING', label: 'Ongoing', dot: rideStatus.ongoing.fg },
+                { key: 'COMPLETED', label: 'Completed', dot: rideStatus.completed.fg },
               ].map((f) => (
                 <HapticPressable
                   key={f.key}
@@ -1115,10 +1115,19 @@ export default function DriverInterface() {
                       borderWidth: 1,
                       borderColor: '#D6DBE1',
                       backgroundColor: rideFilter === f.key ? '#0B0F14' : '#FFFFFF',
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      gap: 6,
                     },
                   ]}
                   onPress={() => setRideFilter(f.key as any)}
                 >
+                  {/* The lifecycle colour, drawn rather than typed. An emoji
+                      cannot take a tint, so the dot and the card it filters
+                      used to be two different yellows. */}
+                  {f.dot && (
+                    <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: f.dot }} />
+                  )}
                   <Text style={{
                     fontSize: 12,
                     fontWeight: rideFilter === f.key ? '700' : '500',
@@ -1199,7 +1208,7 @@ export default function DriverInterface() {
                               <View style={{ flex: 1 }}>
                                 <Text style={styles.manifestRow}>
                                   {p.rider_name}{p.rider_rating ? ` ★${p.rider_rating}` : ''} · {p.seats_booked} seat{p.seats_booked > 1 ? 's' : ''}
-                                  {p.pays_cash ? ` · 💵 collect ${p.cash_due != null ? formatMoney(Number(p.cash_due), { decimals: 0 }) : 'cash'}` : ''}
+                                  {p.pays_cash ? ` · collect ${p.cash_due != null ? formatMoney(Number(p.cash_due), { decimals: 0 }) : 'cash'} in cash` : ''}
                                 </Text>
                                 {/* Awaiting this driver's decision. Their fare is
                                     already held, so declining refunds it. */}
@@ -1353,7 +1362,8 @@ export default function DriverInterface() {
                         {r.status === 'SCHEDULED' && (
                           <>
                             <HapticPressable haptic="press" style={styles.startBtn} onPress={() => updateRideStatus(r.id, 'STARTED')} activeOpacity={0.9}>
-                              <Text style={styles.startBtnText} numberOfLines={1}>▶  Start trip</Text>
+                              <Play color="#fff" size={icon.size.md} strokeWidth={icon.stroke.emphasis} />
+                              <Text style={styles.startBtnText} numberOfLines={1}>Start trip</Text>
                             </HapticPressable>
                             <HapticPressable haptic="press" style={styles.editRideBtn} onPress={() => openEdit(r)} activeOpacity={0.9}>
                               <Text style={styles.editRideBtnText} numberOfLines={1}>Edit</Text>
@@ -1502,7 +1512,7 @@ export default function DriverInterface() {
                           )}
                         >
                           <Text style={styles.stopPriceHint}>
-                            💡 {formatMoney(sug, { decimals: 0 })} for this leg (tap to use). Left blank,
+                            {formatMoney(sug, { decimals: 0 })} for this leg (tap to use). Left blank,
                             riders boarding here are charged for the distance they actually travel.
                           </Text>
                         </HapticPressable>
@@ -1806,7 +1816,10 @@ export default function DriverInterface() {
               </View>
               {suggestedPrice !== null && (
                 <HapticPressable onPress={() => setCustomPrice(String(Math.round(suggestedPrice)))}>
-                  <Text style={styles.useSuggested}>💡 Suggestion: {formatMoney(suggestedPrice, { decimals: 0 })} (tap to use)</Text>
+                  <View style={styles.suggestRow}>
+                    <Lightbulb color={c.warn} size={icon.size.sm} strokeWidth={icon.stroke.normal} />
+                    <Text style={styles.useSuggested}>Suggestion: {formatMoney(suggestedPrice, { decimals: 0 })} (tap to use)</Text>
+                  </View>
                 </HapticPressable>
               )}
             </View>
@@ -1847,7 +1860,10 @@ export default function DriverInterface() {
             
             {vehicleType === 'CAR' && (
               <View style={styles.prefSwitchRow}>
-                <Text style={styles.prefLabel}>AC Available</Text>
+                <View style={styles.prefLabelRow}>
+                  <Snowflake color={c.info} size={icon.size.lg} strokeWidth={icon.stroke.normal} />
+                  <Text style={styles.prefLabel}>AC available</Text>
+                </View>
                 <HapticSwitch 
                   value={acAvailable} 
                   onValueChange={setAcAvailable}
@@ -1857,7 +1873,10 @@ export default function DriverInterface() {
             )}
 
             <View style={styles.prefSwitchRow}>
-              <Text style={styles.prefLabel}>Music Allowed</Text>
+              <View style={styles.prefLabelRow}>
+                <Music color={c.textSecondary} size={icon.size.lg} strokeWidth={icon.stroke.normal} />
+                <Text style={styles.prefLabel}>Music allowed</Text>
+              </View>
               <HapticSwitch 
                 value={musicAllowed} 
                 onValueChange={setMusicAllowed}
@@ -1866,7 +1885,10 @@ export default function DriverInterface() {
             </View>
 
             <View style={styles.prefSwitchRow}>
-              <Text style={styles.prefLabel}>Smoking Allowed</Text>
+              <View style={styles.prefLabelRow}>
+                <Cigarette color={c.textSecondary} size={icon.size.lg} strokeWidth={icon.stroke.normal} />
+                <Text style={styles.prefLabel}>Smoking allowed</Text>
+              </View>
               <HapticSwitch
                 value={smokingAllowed}
                 onValueChange={setSmokingAllowed}
@@ -1875,7 +1897,10 @@ export default function DriverInterface() {
             </View>
 
             <View style={styles.prefSwitchRow}>
-              <Text style={styles.prefLabel}>♀ Women-only ride</Text>
+              <View style={styles.prefLabelRow}>
+                <Venus color={c.accent} size={icon.size.lg} strokeWidth={icon.stroke.normal} />
+                <Text style={styles.prefLabel}>Women-only ride</Text>
+              </View>
               <HapticSwitch
                 value={womenOnlyRide}
                 onValueChange={setWomenOnlyRide}
@@ -2048,9 +2073,12 @@ export default function DriverInterface() {
                       no-show penalty to fall back on. They must see that
                       before they accept, not after. */}
                   {p.pays_cash ? (
+                    <View style={styles.reqCashRow}>
+                    <HandCoins color="#B45309" size={icon.size.md} strokeWidth={icon.stroke.emphasis} />
                     <Text style={styles.reqCashText}>
-                      💵 Pays cash on board{p.cash_due != null ? ` · collect ${formatMoney(Number(p.cash_due), { decimals: 0 })}` : ''}
+                      Pays cash on board{p.cash_due != null ? ` · collect ${formatMoney(Number(p.cash_due), { decimals: 0 })}` : ''}
                     </Text>
+                    </View>
                   ) : null}
                   {p.pays_cash ? (
                     <Text style={styles.reqCashNote}>
@@ -2097,7 +2125,10 @@ export default function DriverInterface() {
         <View style={styles.otpBackdrop}>
           <View style={styles.otpSheet}>
             <View style={styles.otpHeader}>
-              <Text style={styles.otpTitle}>Verify boarding</Text>
+              <View style={styles.otpTitleRow}>
+                <KeyRound color={colors.text} size={20} strokeWidth={icon.stroke.emphasis} />
+                <Text style={styles.otpTitle}>Verify boarding</Text>
+              </View>
               <HapticPressable onPress={closeBoarding} accessibilityLabel="Close">
                 <X color={colors.textMuted} size={22} />
               </HapticPressable>
@@ -2153,7 +2184,10 @@ export default function DriverInterface() {
                       </Text>
                     </View>
                     {p.boarding_verified ? (
-                      <Text style={styles.otpVerified}>✓ Verified</Text>
+                      <View style={styles.otpVerifiedRow}>
+                        <BadgeCheck color={colors.success} size={icon.size.md} strokeWidth={icon.stroke.emphasis} />
+                        <Text style={styles.otpVerified}>Verified</Text>
+                      </View>
                     ) : (
                       <HapticPressable
                         style={styles.otpVerifyBtn}
@@ -2545,11 +2579,14 @@ const styles = StyleSheet.create({
   otpBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'center', paddingHorizontal: 20 },
   otpSheet: { backgroundColor: colors.card, borderRadius: 16, padding: 18 },
   otpHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 },
+  otpTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   otpTitle: { color: colors.text, fontSize: 18, fontWeight: '700' },
   otpSub: { color: colors.textMuted, fontSize: 13, marginBottom: 14 },
   otpRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: colors.cardBorder },
   otpRowName: { color: colors.text, fontSize: 14, fontWeight: '600' },
   otpRowMeta: { color: colors.textMuted, fontSize: 12, marginTop: 1 },
+  suggestRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 8 },
+  otpVerifiedRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
   otpVerified: { color: colors.success, fontSize: 13, fontWeight: '700' },
   otpVerifyBtn: { backgroundColor: colors.background, borderWidth: 1, borderColor: colors.cardBorder, borderRadius: 8, paddingHorizontal: 14, paddingVertical: 7 },
   otpVerifyText: { color: colors.text, fontSize: 13, fontWeight: '600' },
@@ -2675,6 +2712,7 @@ const styles = StyleSheet.create({
 
   formSectionTitle: { fontSize: 14, fontWeight: 'bold', color: colors.text, marginVertical: 14, textTransform: 'uppercase', letterSpacing: 0.5 },
   prefSwitchRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
+  prefLabelRow: { flexDirection: 'row', alignItems: 'center', gap: 9 },
   prefLabel: { color: colors.textMuted, fontSize: 13 },
   prefHint: { color: colors.textMuted, fontSize: 11, opacity: 0.75, marginTop: 2, paddingRight: 12 },
   chatSelectRow: { flexDirection: 'row', gap: 8 },
@@ -2699,6 +2737,7 @@ const styles = StyleSheet.create({
   reqRoute: { backgroundColor: colors.inputBackground, padding: 11, borderRadius: 10, marginBottom: 12, borderWidth: 1, borderColor: colors.cardBorder },
   reqSeatsText: { color: colors.textMuted, fontSize: 12.5, marginTop: 3 },
   reqLuggageText: { color: colors.text, fontSize: 12.5, marginTop: 6, fontWeight: '600' },
+  reqCashRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 6 },
   reqCashText: { color: '#B45309', fontSize: 12.5, marginTop: 6, fontWeight: '700', lineHeight: 17 },
   reqCashNote: { color: colors.textMuted, fontSize: 11.5, marginTop: 3, lineHeight: 16 },
   reqRouteText: { color: colors.text, fontSize: 13, fontWeight: '600', lineHeight: 18 },

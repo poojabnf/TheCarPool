@@ -206,3 +206,20 @@ export function darken(hex: string, amount: number): string {
   const b = Math.round((n & 255) * k);
   return `#${((1 << 24) | (r << 16) | (g << 8) | b).toString(16).slice(1)}`;
 }
+
+/**
+ * Icon drawing.
+ *
+ * Stroke weight was being chosen per call site -- 1.9, 2.4 and 2.6 all appear
+ * across the screens, none of them wrong, none of them agreeing. Lucide draws
+ * at 2 by default, so anything else is a decision, and a decision made twelve
+ * times separately is not a decision.
+ *
+ * Two weights: normal for an icon sitting beside text, emphasis for one
+ * carrying meaning on its own -- a selected tab, a status mark, a warning.
+ */
+export const icon = {
+  stroke: { normal: 2, emphasis: 2.5 },
+  /** Sizes that sit level with the type they accompany. */
+  size: { sm: 14, md: 16, lg: 18, xl: 22 },
+} as const;

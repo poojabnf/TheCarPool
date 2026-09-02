@@ -5,13 +5,14 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   CreditCard, Settings, HelpCircle, ChevronRight, LogOut, ShieldCheck, Leaf, Receipt, Camera,
   Landmark, Car, Bell,
+  Mail, Headset, Flame, Plus, Minus, ChevronLeft, LifeBuoy,
 } from 'lucide-react-native';
 import { auth } from '../services/firebase';
 import { apiFetch } from '../services/api';
 import { useAuthStore } from '../store/authStore';
 import { chooseAndUploadAvatar } from '../services/avatar';
 import { useI18n } from '../services/i18n';
-import { c, font, radius, space, shadowSm } from '../../theme/tokens';
+import { c, font, radius, space, shadowSm, icon } from '../../theme/tokens';
 import Constants from 'expo-constants';
 import * as haptics from '../services/haptics';
 import HapticPressable from '../components/HapticPressable';
@@ -276,7 +277,10 @@ export default function AccountInterface() {
     return (
       <View style={[styles.screen, { paddingTop: insets.top + space.sm }]}>
         <View style={styles.subHeader}>
-          <HapticPressable onPress={() => setView('menu')}><Text style={styles.back}>← Back</Text></HapticPressable>
+          <HapticPressable onPress={() => setView('menu')} style={styles.backRow}>
+            <ChevronLeft color={c.textPrimary} size={icon.size.lg} strokeWidth={icon.stroke.emphasis} />
+            <Text style={styles.back}>Back</Text>
+          </HapticPressable>
           <Text style={styles.subTitle}>{
             view === 'help' ? 'Help & Support'
               : view === 'history' ? 'Booking history'
@@ -456,14 +460,22 @@ export default function AccountInterface() {
           {view === 'help' && (
             <>
               <View style={{ flexDirection: 'row', gap: space.sm, marginBottom: space.lg }}>
-                <HapticPressable style={styles.helpBtn} onPress={() => Linking.openURL(`mailto:${SUPPORT_EMAIL}`)}><Text style={styles.helpBtnText}>✉  Email us</Text></HapticPressable>
-                <HapticPressable style={styles.helpBtn} onPress={() => Linking.openURL(`tel:${SUPPORT_PHONE}`)}><Text style={styles.helpBtnText}>☎  Call support</Text></HapticPressable>
+                <HapticPressable style={styles.helpBtn} onPress={() => Linking.openURL(`mailto:${SUPPORT_EMAIL}`)}>
+                  <Mail color={c.textPrimary} size={icon.size.md} strokeWidth={icon.stroke.normal} />
+                  <Text style={styles.helpBtnText}>Email us</Text>
+                </HapticPressable>
+                <HapticPressable style={styles.helpBtn} onPress={() => Linking.openURL(`tel:${SUPPORT_PHONE}`)}>
+                  <Headset color={c.textPrimary} size={icon.size.md} strokeWidth={icon.stroke.normal} />
+                  <Text style={styles.helpBtnText}>Call support</Text>
+                </HapticPressable>
               </View>
               {FAQS.map((f, i) => (
                 <HapticPressable key={i} style={styles.faq} onPress={() => setOpenFaq(openFaq === i ? null : i)}>
                   <View style={styles.faqQRow}>
                     <Text style={styles.faqQ}>{f.q}</Text>
-                    <Text style={styles.faqChev}>{openFaq === i ? '−' : '+'}</Text>
+                    {openFaq === i
+                      ? <Minus color={c.textTertiary} size={icon.size.md} strokeWidth={icon.stroke.normal} />
+                      : <Plus color={c.textTertiary} size={icon.size.md} strokeWidth={icon.stroke.normal} />}
                   </View>
                   {openFaq === i && <Text style={styles.faqA}>{f.a}</Text>}
                 </HapticPressable>
@@ -509,7 +521,10 @@ export default function AccountInterface() {
       {streaks && streaks.total_completed_rides > 0 && (
         <View style={styles.streakRow}>
           <View style={styles.streakCell}>
-            <Text style={styles.streakValue}>🔥 {streaks.current_streak_days}</Text>
+            <View style={styles.streakFigure}>
+              <Flame color={c.warn} size={icon.size.lg} strokeWidth={icon.stroke.emphasis} />
+              <Text style={styles.streakValue}>{streaks.current_streak_days}</Text>
+            </View>
             <Text style={styles.streakLabel}>day streak</Text>
           </View>
           <View style={styles.streakCell}>
@@ -552,7 +567,7 @@ export default function AccountInterface() {
       <View style={styles.group}>
         <MenuRow icon={<ShieldCheck color={c.textSecondary} size={20} />} title={t('safety_centre')} sub={t('safety_centre_sub')} onPress={() => router.push('/safety-center')} />
         <MenuRow icon={<Settings color={c.textSecondary} size={20} />} title={t('settings')} sub={t('settings_sub')} onPress={() => setView('settings')} />
-        <MenuRow icon={<HelpCircle color={c.textSecondary} size={20} />} title={t('help_support')} sub={t('help_support_sub')} onPress={() => setView('help')} last />
+        <MenuRow icon={<LifeBuoy color={c.textSecondary} size={20} />} title={t('help_support')} sub={t('help_support_sub')} onPress={() => setView('help')} last />
       </View>
 
       <HapticPressable style={styles.logout} onPress={logout}>
@@ -636,6 +651,8 @@ const styles = StyleSheet.create({
   dangerText: { fontFamily: font.sansBold, fontSize: 14.5, color: c.danger },
 
   helpBtn: { flex: 1, backgroundColor: c.surfaceCard, paddingVertical: 16, borderRadius: radius.md, alignItems: 'center', borderWidth: 1, borderColor: c.borderSubtle },
+  streakFigure: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  backRow: { flexDirection: 'row', alignItems: 'center', gap: 2 },
   helpBtnText: { fontFamily: font.sansSemibold, fontSize: 14, color: c.textPrimary },
   faq: { backgroundColor: c.surfaceCard, padding: space.md, borderRadius: radius.md, marginBottom: space.sm, borderWidth: 1, borderColor: c.borderSubtle },
   faqQRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },

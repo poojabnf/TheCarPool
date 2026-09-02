@@ -2,7 +2,7 @@ import React, { useState, useCallback } from 'react';
 import { StyleSheet, View, Text, FlatList, RefreshControl, ActivityIndicator } from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Bell, ArrowLeft, CheckCheck, Clock, MapPin, ShieldAlert, ShieldCheck, CheckCircle2, XCircle, Wallet, Car, Navigation, Info } from 'lucide-react-native';
+import { Bell, ArrowLeft, CheckCheck, Clock, MapPin, ShieldAlert, Hourglass, Coins, Receipt, Timer, Siren, KeyRound, ShieldCheck, CheckCircle2, XCircle, Wallet, Car, Navigation, Info } from 'lucide-react-native';
 import { c, font, radius, space, shadowSm } from '../theme/tokens';
 import { apiFetch } from './services/api';
 import { AppCache } from './services/cache';
@@ -110,7 +110,7 @@ export default function NotificationsScreen() {
       case 'RIDE_CANCELLED_BY_DRIVER':
         return <XCircle color={c.danger} size={20} strokeWidth={2.4} />;
       case 'BOARDING_SOON':
-        return <MapPin color={c.accent} size={20} strokeWidth={2.4} />;
+        return <KeyRound color={c.accent} size={20} strokeWidth={2.4} />;
       case 'BOARDING_VERIFIED':
         return <ShieldCheck color={c.go} size={20} strokeWidth={2.4} />;
       case 'RIDE_STARTED':
@@ -121,12 +121,21 @@ export default function NotificationsScreen() {
         return <Car color={c.textAccent} size={20} strokeWidth={2.4} />;
       case 'RIDE_UPDATED':
         return <Info color={c.info} size={20} strokeWidth={2.4} />;
+      // Money moving out, money coming back, and money on its way were three
+      // different events drawn as the same wallet, separated only by tint. In
+      // a scrolled list of grey rows that is not a distinction anyone reads.
+      case 'PAYOUT_STARTED':
+        return <Hourglass color={c.accent} size={20} strokeWidth={2.4} />;
       case 'EARNINGS_SETTLED':
-        return <Wallet color={c.go} size={20} strokeWidth={2.4} />;
+        return <Coins color={c.go} size={20} strokeWidth={2.4} />;
       case 'REFUND_CREDITED':
-        return <Wallet color={c.textAccent} size={20} strokeWidth={2.4} />;
+        return <Receipt color={c.textAccent} size={20} strokeWidth={2.4} />;
+      // A ride the system closed out because the driver never did. Distinct
+      // from a cancellation somebody chose.
+      case 'RIDE_AUTO_CLOSED':
+        return <Timer color={c.textTertiary} size={20} strokeWidth={2.4} />;
       case 'EMERGENCY_SOS':
-        return <ShieldAlert color={c.danger} size={20} strokeWidth={2.4} />;
+        return <Siren color={c.danger} size={20} strokeWidth={2.4} />;
       default:
         return <Bell color={c.textAccent} size={20} strokeWidth={2.4} />;
     }

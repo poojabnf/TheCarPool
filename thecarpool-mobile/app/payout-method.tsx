@@ -8,11 +8,11 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   Landmark, Smartphone, CheckCircle2, Clock, AlertCircle,
   ChevronDown, ChevronUp, ArrowUpRight, ShieldCheck, History,
-  Sparkles, RefreshCw, Check,
+  Sparkles, RefreshCw, Check, BadgeCheck,
 } from 'lucide-react-native';
 import { apiFetch } from './services/api';
 import * as haptics from './services/haptics';
-import { c, font, radius, space, shadowSm } from '../theme/tokens';
+import { c, font, radius, space, shadowSm, icon } from '../theme/tokens';
 import HapticPressable from './components/HapticPressable';
 import { formatMoney } from './services/currency';
 
@@ -586,7 +586,10 @@ export default function PayoutMethodScreen() {
             <Text style={styles.label}>PAN Number</Text>
             {kycStatus === 'LINKED' ? (
               <View style={styles.panDone}>
-                <Text style={styles.panDoneText}>✓ {panOnFile} — Verified & Linked</Text>
+                <View style={styles.panDoneRow}>
+                  <BadgeCheck color={c.go} size={icon.size.md} strokeWidth={icon.stroke.emphasis} />
+                  <Text style={styles.panDoneText}>{panOnFile} — Verified & Linked</Text>
+                </View>
               </View>
             ) : (
               <>
@@ -988,6 +991,7 @@ const styles = StyleSheet.create({
     borderRadius: radius.md, paddingVertical: 10, paddingHorizontal: 12, marginBottom: space.md,
     backgroundColor: c.goSoft, borderWidth: 1, borderColor: c.goSoft,
   },
+  panDoneRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   panDoneText: { fontFamily: font.sansSemibold, fontSize: 12.5, color: c.goStrong },
   primaryBtn: { backgroundColor: c.actionPrimary, height: 48, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center', marginTop: space.sm },
   primaryBtnText: { fontFamily: font.sansBold, fontSize: 14.5, color: c.actionPrimaryText },
