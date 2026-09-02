@@ -1128,6 +1128,72 @@ export async function bookingRoutes(fastify: FastifyInstance) {
    * settlement -- after which it is a support conversation, because the money
    * has moved.
    */
+  /**
+   * ── PATCH /:id/dropped-off ───────────────────────────────────────────────
+   * The driver marks one rider as having got out.
+   *
+   * The settlement clock runs from a rider's own drop-off, not from the end of
+   * the ride. On a Jhansi to Delhi run someone alighting at Agra has finished
+   * their journey hours before the driver does, and should not wait on a trip
+   * they are no longer part of. Without this, nothing ever wrote
+   * dropped_off_at and every fare was clocked from the far end.
+   *
+   * Their fifteen minutes to complain start now.
+   */
+  fastify.patch('/:id/dropped-off', { preHandler: [requireAuth] }, async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const uid = String(request.user!.id);
+
+    const ref = db.collection('bookings').doc(id);
+    const snap = await ref.get();
+    if (!snap.exists) return reply.code(404).send({ error: 'Booking not found.' });
+    const booking = snap.data()!;
+
+    const rideSnap = await db.collection('rides').doc(String(booking.ride_id)).get();
+    const driverUid = rideSnap.exists
+      ? String(rideSnap.data()?.driver_uid ?? rideSnap.data()?.driver_id ?? '')
+      : '';
+    if (driverUid !== uid) {
+      return reply.code(403).send({
+        error: 'FORBIDDEN',
+        message: 'Only the driver of this ride can drop a rider off.',
+      });
+    }
+
+    if (!isBookingActive(booking.escrow_status)) {
+      return reply.code(409).send({
+        error: 'NOT_ACTIVE',
+        message: 'This booking is no longer active.',
+      });
+    }
+
+    // Idempotent: a second tap must not restart someone's complaint window,
+    // which would quietly delay their driver being paid.
+    if (booking.dropped_off_at) {
+      return reply.send({
+        id,
+        dropped_off_at: booking.dropped_off_at,
+        settlement_due_at: booking.settlement_due_at ?? null,
+        already: true,
+      });
+    }
+
+    const droppedAt = new Date().toISOString();
+    const dueAt = settlementDueAt(droppedAt);
+    await ref.update({
+      dropped_off_at: droppedAt,
+      settlement_due_at: dueAt,
+      updated_at: droppedAt,
+    });
+
+    return reply.send({
+      id,
+      dropped_off_at: droppedAt,
+      settlement_due_at: dueAt,
+      dispute_window_minutes: DISPUTE_WINDOW_MINUTES,
+    });
+  });
+
   fastify.patch('/:id/no-show', { preHandler: [requireAuth] }, async (request, reply) => {
     const { id } = request.params as { id: string };
     const uid = String(request.user!.id);
@@ -1668,6 +1734,9 @@ export async function bookingRoutes(fastify: FastifyInstance) {
               // Never the code itself — only whether this rider is verified, so
               // the driver UI can show who still needs to board.
               boarding_verified: b.boarding_verified ?? false,
+              // When this rider got out. Drives the driver's drop-off control
+              // and starts their fifteen-minute complaint window.
+              dropped_off_at: b.dropped_off_at ?? null,
               // Whether the driver has declared this rider a no-show. Drives
               // the completion prompt, which must not nag about riders the
               // driver has already accounted for.

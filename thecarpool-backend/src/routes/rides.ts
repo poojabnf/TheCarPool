@@ -12,7 +12,7 @@ import { needsBoardingReminder, minutesUntil as etaMinutesUntil, BOARDING_REMIND
 import { partitionStopsByRoute } from '../lib/stopGeography';
 import { routePosition, isForwardTravel } from '../lib/routeProgress';
 import { isPastCloseDeadline } from '../lib/rideDeadline';
-import { autoCloseRide } from '../lib/rideAutoClose';
+import { autoCloseRide, refundEveryRider, liveBookingsFor } from '../lib/rideAutoClose';
 import {
   notifyBoardingSoon, resolveStopEtasForRide, notifyRideCompleted, deliver,
   notifyRideStarted, notifyDriverCancelledRide, notifyRideOffered,
@@ -518,24 +518,40 @@ export async function rideRoutes(fastify: FastifyInstance) {
       .get();
 
     let cleaned = 0;
-    const batch = db.batch();
+    let refunded = 0;
+    const now = new Date().toISOString();
+    const reason = 'EXPIRED_AUTO_CLEANUP_5_DAYS';
 
+    // Riders first, ride second.
+    //
+    // This used to be a plain batch that flipped the ride to CANCELLED and
+    // touched nothing else, so anyone who had booked an expiring ride simply
+    // lost their fare: escrow stayed HELD forever behind a ride that no longer
+    // existed, and the rider saw only that it had been cancelled. Nobody
+    // travelled on a ride that never departed, so everyone gets their money
+    // back, by the same code that handles an abandoned ride.
     for (const doc of staleSnap.docs) {
-      batch.update(doc.ref, {
-        status: 'CANCELLED',
-        cancellation_reason: 'EXPIRED_AUTO_CLEANUP_5_DAYS',
-        updated_at: new Date().toISOString(),
-      });
-      cleaned += 1;
-    }
-
-    if (cleaned > 0) {
-      await batch.commit();
+      try {
+        const live = await liveBookingsFor(doc.id);
+        if (live.length > 0) {
+          refunded += await refundEveryRider(doc.id, live, reason, now, fastify.log);
+        }
+        await doc.ref.update({
+          status: 'CANCELLED',
+          cancellation_reason: reason,
+          updated_at: now,
+        });
+        cleaned += 1;
+      } catch (err) {
+        // One stubborn ride must not abort the sweep for the rest.
+        fastify.log.error({ err, rideId: doc.id }, 'Expiry cleanup failed for ride');
+      }
     }
 
     return reply.send({
       scanned: staleSnap.size,
       cleaned,
+      refunded,
       cutoff_date: fiveDaysAgo,
     });
   });
@@ -1696,7 +1712,20 @@ export async function rideRoutes(fastify: FastifyInstance) {
       // Stamped on each booking too, so the sweep can select on the booking
       // alone and a per-rider dispute can block just that rider's payout.
       for (const d of toSettle) {
-        batch.update(d.ref, { completed_at: completedAt, settlement_due_at: dueAt });
+        // dropped_off_at is what the settlement clock actually runs from. A
+        // rider the driver already dropped at a stop has one and keeps it --
+        // their fifteen minutes started when they got out, not when the driver
+        // finally reached the far end hours later. Anyone still aboard at the
+        // end is dropped off now, by definition.
+        const already = d.data()?.dropped_off_at;
+        const stamp: Record<string, unknown> = { completed_at: completedAt };
+        if (already) {
+          stamp.settlement_due_at = settlementDueAt(String(already)) ?? dueAt;
+        } else {
+          stamp.dropped_off_at = completedAt;
+          stamp.settlement_due_at = dueAt;
+        }
+        batch.update(d.ref, stamp);
       }
       await batch.commit();
 

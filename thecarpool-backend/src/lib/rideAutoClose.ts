@@ -99,7 +99,39 @@ export async function autoCloseRide(
     };
   }
 
-  // ── Nobody boarded: no evidence of a trip. Everyone gets their money. ────
+  const refunded = await refundEveryRider(rideId, live, reason, closedAt, log);
+
+  await rideRef.update({
+    status: 'CANCELLED',
+    cancellation_reason: reason,
+    ...audit,
+  });
+  log?.info?.({ rideId, refunded }, 'Auto-closed as cancelled: nobody boarded');
+  return {
+    rideId, outcome: 'CANCELLED', bookingsTouched: live.length, refunded, reason,
+  };
+}
+
+/**
+ * Give every rider on a ride their money back, and cancel their bookings.
+ *
+ * Used wherever a ride ends with nobody having travelled: a started ride
+ * closed out with no boarding verified, and a scheduled ride that expired
+ * before it ever set off. The expiry sweep used to cancel such rides while
+ * leaving escrow untouched, so anyone who had booked one simply lost their
+ * fare -- silently, with the ride showing as cancelled.
+ *
+ * Returns how many riders were actually refunded. One failure does not stop
+ * the rest: a rider whose refund failed keeps a live booking, which is
+ * recoverable and visible, where marking it refunded would not be.
+ */
+export async function refundEveryRider(
+  rideId: string,
+  live: FirebaseFirestore.QueryDocumentSnapshot[],
+  reason: string,
+  closedAt: string,
+  log?: Log
+): Promise<number> {
   let refunded = 0;
   for (const doc of live) {
     const b = doc.data();
@@ -173,14 +205,16 @@ export async function autoCloseRide(
     });
     refunded += 1;
   }
+  return refunded;
+}
 
-  await rideRef.update({
-    status: 'CANCELLED',
-    cancellation_reason: reason,
-    ...audit,
+/** The live bookings on a ride: escrowed seats and cash seats alike. */
+export async function liveBookingsFor(
+  rideId: string
+): Promise<FirebaseFirestore.QueryDocumentSnapshot[]> {
+  const snap = await db.collection('bookings').where('ride_id', '==', rideId).get();
+  return snap.docs.filter((d) => {
+    const s = String(d.data().escrow_status ?? '');
+    return s === 'HELD' || s === 'NONE';
   });
-  log?.info?.({ rideId, refunded }, 'Auto-closed as cancelled: nobody boarded');
-  return {
-    rideId, outcome: 'CANCELLED', bookingsTouched: live.length, refunded, reason,
-  };
 }

@@ -461,6 +461,50 @@ export default function DriverInterface() {
     return suggested > 0 ? suggested : null;
   };
 
+  const [dropOffBusy, setDropOffBusy] = useState<string | null>(null);
+
+  /**
+   * Mark a rider as having got out here.
+   *
+   * Their fifteen minutes to raise a problem start now, and the driver is paid
+   * at the end of it. Someone alighting at a mid-route stop should not wait on
+   * a journey that carries on for hours without them.
+   */
+  const dropOffPassenger = async (p: any) => {
+    if (!p?.booking_id) return;
+    setDropOffBusy(p.booking_id);
+    try {
+      const res = await apiFetch(`/api/bookings/${p.booking_id}/dropped-off`, { method: 'PATCH' });
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        Alert.alert('Could not drop off', d?.message || 'Please try again.');
+        return;
+      }
+      // Reflected locally rather than refetched: the manifest is the driver's
+      // working surface mid-trip, and a full reload has wiped it before.
+      const stamp = new Date().toISOString();
+      setManifests((prev) => {
+        const next = { ...prev };
+        for (const rid of Object.keys(next)) {
+          const m = next[rid];
+          if (!m?.passengers) continue;
+          next[rid] = {
+            ...m,
+            passengers: m.passengers.map((q: any) =>
+              q.booking_id === p.booking_id ? { ...q, dropped_off_at: stamp } : q
+            ),
+          };
+        }
+        manifestsRef.current = next;
+        return next;
+      });
+    } catch {
+      Alert.alert('Could not drop off', 'Check your connection and try again.');
+    } finally {
+      setDropOffBusy(null);
+    }
+  };
+
   const boardingPassengers: any[] =
     (boardingRideId && manifests[boardingRideId]?.passengers) || [];
 
@@ -2184,10 +2228,23 @@ export default function DriverInterface() {
                       </Text>
                     </View>
                     {p.boarding_verified ? (
-                      <View style={styles.otpVerifiedRow}>
-                        <BadgeCheck color={colors.success} size={icon.size.md} strokeWidth={icon.stroke.emphasis} />
-                        <Text style={styles.otpVerified}>Verified</Text>
-                      </View>
+                      p.dropped_off_at ? (
+                        <View style={styles.otpVerifiedRow}>
+                          <BadgeCheck color={colors.success} size={icon.size.md} strokeWidth={icon.stroke.emphasis} />
+                          <Text style={styles.otpVerified}>Dropped off</Text>
+                        </View>
+                      ) : (
+                        <HapticPressable
+                          haptic="success"
+                          style={styles.dropOffBtn}
+                          onPress={() => dropOffPassenger(p)}
+                          disabled={dropOffBusy === p.booking_id}
+                        >
+                          {dropOffBusy === p.booking_id
+                            ? <ActivityIndicator size="small" color={colors.text} />
+                            : <Text style={styles.dropOffText}>Drop off</Text>}
+                        </HapticPressable>
+                      )
                     ) : (
                       <HapticPressable
                         style={styles.otpVerifyBtn}
@@ -2588,6 +2645,8 @@ const styles = StyleSheet.create({
   suggestRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 8 },
   otpVerifiedRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
   otpVerified: { color: colors.success, fontSize: 13, fontWeight: '700' },
+  dropOffBtn: { backgroundColor: colors.background, borderWidth: 1, borderColor: colors.success, borderRadius: 8, paddingHorizontal: 14, paddingVertical: 7 },
+  dropOffText: { color: colors.success, fontSize: 13, fontWeight: '700' },
   otpVerifyBtn: { backgroundColor: colors.background, borderWidth: 1, borderColor: colors.cardBorder, borderRadius: 8, paddingHorizontal: 14, paddingVertical: 7 },
   otpVerifyText: { color: colors.text, fontSize: 13, fontWeight: '600' },
   otpInput: { backgroundColor: colors.background, borderWidth: 1, borderColor: colors.cardBorder, borderRadius: 10, color: colors.text, fontSize: 30, letterSpacing: 14, textAlign: 'center', paddingVertical: 12, marginBottom: 14 },
