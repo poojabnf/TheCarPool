@@ -19,12 +19,55 @@ const db = admin.firestore();
  *   { id, driver_id, route_coords, seats_total, price_split,
  *     departure_time_of_day: "HH:MM", days_of_week: number[] (0=Sun), vehicle_type }
  */
+/**
+ * India Standard Time, computed rather than assumed.
+ *
+ * onSchedule's `timeZone` decides WHEN a function fires, not what timezone the
+ * process runs in -- that is UTC. So a job scheduled for 00:05 Asia/Kolkata
+ * woke up while UTC still said 18:35 the previous day, and every date-derived
+ * value was a day behind: getDay() returned yesterday's weekday, so templates
+ * for a given day never fired and the previous day's fired twice; the ride id
+ * carried yesterday's date; and setHours(8, 0) wrote 08:00 UTC, which is 13:30
+ * in Delhi. Recurring rides were generated for the wrong day, at the wrong
+ * time, under an id that collided with the day before.
+ *
+ * IST is UTC+05:30 with no daylight saving, so shifting the instant and then
+ * reading its UTC fields gives the local wall clock exactly.
+ */
+const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
+
+interface IstNow {
+  /** 0 = Sunday, in India. */
+  dow: number;
+  /** YYYYMMDD as written in India. */
+  yyyymmdd: string;
+  year: number; month: number; day: number;
+}
+
+function istParts(now: Date): IstNow {
+  const shifted = new Date(now.getTime() + IST_OFFSET_MS);
+  return {
+    dow: shifted.getUTCDay(),
+    yyyymmdd: shifted.toISOString().slice(0, 10).replace(/-/g, ''),
+    year: shifted.getUTCFullYear(),
+    month: shifted.getUTCMonth(),
+    day: shifted.getUTCDate(),
+  };
+}
+
+/** The instant at which a given IST wall-clock time occurs today. */
+function istWallClockToInstant(p: IstNow, hh: number, mm: number): Date {
+  return new Date(Date.UTC(p.year, p.month, p.day, hh, mm, 0, 0) - IST_OFFSET_MS);
+}
+
 export const instantiateRecurringRides = onSchedule(
   { schedule: 'every day 00:05', timeZone: 'Asia/Kolkata' },
   async () => {
     const now = new Date();
-    const dow = now.getDay(); // 0 = Sunday
-    const yyyymmdd = now.toISOString().slice(0, 10).replace(/-/g, '');
+    // Read in India, where the riders and the schedule both are.
+    const ist = istParts(now);
+    const dow = ist.dow; // 0 = Sunday, IST
+    const yyyymmdd = ist.yyyymmdd;
 
     const snap = await db.collection('recurring_rides').get();
     let created = 0;
@@ -47,9 +90,9 @@ export const instantiateRecurringRides = onSchedule(
       if (!days.includes(dow)) continue;
 
       // Build departure timestamp for today from "HH:MM".
+      // "08:00" means eight in the morning in Delhi, not 08:00 UTC.
       const [hh, mm] = String(t.departure_time_of_day || '08:00').split(':').map((n: string) => parseInt(n, 10));
-      const departure = new Date(now);
-      departure.setHours(hh || 8, mm || 0, 0, 0);
+      const departure = istWallClockToInstant(ist, Number.isFinite(hh) ? hh : 8, Number.isFinite(mm) ? mm : 0);
 
       const rideId = `ride_recurring_${doc.id}_${yyyymmdd}`;
       const rideRef = db.collection('rides').doc(rideId);
@@ -182,51 +225,101 @@ export const resetCorporateBudgets = onSchedule(
 /**
  * Clean up Firestore data when a user account is deleted from Firebase Auth.
  */
+/**
+ * Tidy up after a deleted Firebase Auth user -- without destroying evidence.
+ *
+ * This used to hard-delete the user document, their wallet, every ride they
+ * had driven, every booking they had made and their classifieds. Three things
+ * were wrong with that.
+ *
+ * A ride and a booking are not the user's records; they are shared. Deleting
+ * them takes the counterparty's history with them -- a driver loses the
+ * passenger manifest for a trip that happened, and a rider loses the receipt
+ * for a journey they paid for.
+ *
+ * Money vanished with it. A wallet with a balance, or a booking with escrow
+ * still HELD, was deleted outright: no refund, no record, funds orphaned at
+ * the payment provider with nothing left to reconcile against.
+ *
+ * And it fought the backend. DELETE /api/safety/account refuses to proceed
+ * while escrow is held or a ride has passengers, settles the balance, then
+ * anonymises. This function ran afterwards and deleted what that flow had
+ * deliberately kept -- and when an auth user is removed from the Firebase
+ * console instead, it bypassed those guards entirely.
+ *
+ * So it anonymises, and it never touches money. The backend's flow remains
+ * the way an account is closed properly; this is the safety net beneath it.
+ */
 export const onUserDeleted = auth.user().onDelete(async (user) => {
   const uid = user.uid;
   if (!uid) {
     logger.warn('onUserDeleted: No uid found.');
     return;
   }
-  logger.info(`onUserDeleted: Cleaning up data for deleted user ${uid}`);
+  logger.info(`onUserDeleted: anonymising records for ${uid}`);
 
   try {
-    const userDocRef = db.collection('users').doc(uid);
-    const walletRef = db.collection('wallets').doc(uid);
+    const now = new Date().toISOString();
 
-    // Delete user's rides as a driver
-    const driverRides = await db.collection('rides').where('driver_id', '==', uid).get();
-    // Delete user's bookings
-    const bookings = await db.collection('bookings').where('rider_id', '==', uid).get();
-
-    // Delete user's classifieds
-    const classifieds = await db.collection('classifieds').where('author_id', '==', uid).get();
-
-    // Batched rather than one promise per document.
-    //
-    // This previously fired every delete at once through Promise.all. For a
-    // user with a long history that is hundreds of concurrent requests, which
-    // exhausts sockets and trips Firestore's write rate limit — and a partial
-    // failure leaves the account half-deleted. Batches cap the concurrency and
-    // commit atomically in chunks.
-    const refs = [
-      userDocRef,
-      walletRef,
-      ...driverRides.docs.map((d) => d.ref),
-      ...bookings.docs.map((d) => d.ref),
-      ...classifieds.docs.map((d) => d.ref),
-    ];
-
-    // Firestore allows 500 writes per batch; 490 leaves headroom.
-    const BATCH_LIMIT = 490;
-    for (let i = 0; i < refs.length; i += BATCH_LIMIT) {
-      const batch = db.batch();
-      for (const ref of refs.slice(i, i + BATCH_LIMIT)) batch.delete(ref);
-      await batch.commit();
+    // Loud, because it means the account was removed by a route that skipped
+    // the backend's guards -- most likely straight from the Firebase console
+    // -- and somebody is owed money that nothing will now chase.
+    const [walletSnap, heldSnap] = await Promise.all([
+      db.collection('wallets').doc(uid).get(),
+      db.collection('bookings')
+        .where('rider_id', '==', uid)
+        .where('escrow_status', '==', 'HELD')
+        .get(),
+    ]);
+    const balance = Number(walletSnap.data()?.available_wallet_balance || 0);
+    if (balance > 0 || !heldSnap.empty) {
+      logger.error(
+        `onUserDeleted: ${uid} deleted with money outstanding — ` +
+        `wallet ${balance}, ${heldSnap.size} booking(s) still in escrow. ` +
+        'Records kept for reconciliation; settle manually.'
+      );
     }
 
-    logger.info(`onUserDeleted: Successfully cleaned up all data for user ${uid}`);
+    // The user document is the only thing genuinely theirs alone. Identifying
+    // fields go; the row stays so the rides and bookings pointing at it still
+    // resolve to something rather than dangling.
+    await db.collection('users').doc(uid).set({
+      deleted: true,
+      deleted_at: now,
+      name: 'Deleted user',
+      full_name: 'Deleted user',
+      phone_number: null,
+      phone: null,
+      email: null,
+      corporate_email: null,
+      photo_url: null,
+      avatar_path: null,
+      pan_number: null,
+      pan_name: null,
+      fcm_tokens: [],
+      expo_push_tokens: [],
+    }, { merge: true });
+
+    // Identity indexes must go, or the number and email stay claimed and the
+    // person cannot sign up again.
+    const idx = await Promise.all([
+      db.collection('phone_identities').where('uid', '==', uid).get(),
+      db.collection('email_identities').where('uid', '==', uid).get(),
+    ]);
+    const batch = db.batch();
+    for (const snap of idx) for (const d of snap.docs) batch.delete(d.ref);
+
+    // Classifieds are the user's own postings with no counterparty, so these
+    // do go.
+    const classifieds = await db.collection('classifieds').where('author_id', '==', uid).get();
+    for (const d of classifieds.docs) batch.delete(d.ref);
+    await batch.commit();
+
+    logger.info(
+      `onUserDeleted: ${uid} anonymised; ` +
+      `${classifieds.size} classified(s) removed, rides and bookings retained.`
+    );
   } catch (err: any) {
-    logger.error(`onUserDeleted: Failed to clean up data for user ${uid}`, err);
+    logger.error(`onUserDeleted: Failed to anonymise data for user ${uid}`, err);
   }
 });
