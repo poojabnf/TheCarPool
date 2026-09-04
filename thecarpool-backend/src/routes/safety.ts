@@ -3,7 +3,7 @@ import { defaultCurrency } from '../lib/config';
 import * as admin from 'firebase-admin';
 import { z } from 'zod';
 import { db, storage, redisClient } from '../server';
-import { notificationsQueue } from '../queue/processor';
+import { dispatchEmergencyAlerts } from '../lib/sos';
 import { requireAuth } from '../middleware/auth';
 import { parseOrReply } from '../lib/validate';
 import { createMaskedCall, isMaskingConfigured } from '../lib/masking';
@@ -84,18 +84,34 @@ export async function safetyRoutes(fastify: FastifyInstance) {
 
     fastify.log.warn(`🚨 EMERGENCY SOS TRIGGERED by user ${user_id} on ride ${ride_id}. Silent Mode: ${is_silent}`);
 
-    // Async push to queue to dispatch SMS and notifications reliably in the background
-    await notificationsQueue.addJob('dispatch_emergency_alerts', {
-      type: 'EMERGENCY_SOS',
-      data: { user_id, ride_id, latitude, longitude, is_silent }
-    });
-    
+    // Awaited, not queued.
+    //
+    // This used to push onto a Redis list nothing ever popped, whose only
+    // handler sent one FCM message to a topic named after the victim that no
+    // client subscribes to -- and then returned a hardcoded list claiming the
+    // police had been contacted. Under Cloud Run's CPU throttling, work left
+    // running after the response is frozen anyway, so an emergency is the last
+    // thing that should be handed off and forgotten.
+    const outcome = await dispatchEmergencyAlerts(
+      { uid: String(user_id), rideId: ride_id != null ? String(ride_id) : null, latitude, longitude, silent: is_silent },
+      fastify.log
+    );
+
+    // What actually went out. The app needs to be able to tell the user their
+    // alert reached nobody, because then the only thing that helps is dialling
+    // 112 themselves.
     return reply.send({
-      status: 'CRITICAL_ALERT_DISPATCHED_TO_QUEUE',
+      status: outcome.nobodyReached ? 'NO_CONTACTS_REACHED' : 'CONTACTS_ALERTED',
       silent: is_silent,
       coordinates: { lat: latitude, lng: longitude },
-      dispatched_services: ['Corporate Security', 'Police PCR Control Room', 'Family Emergency Circle'],
-      timestamp: new Date()
+      contacts_found: outcome.contactsFound,
+      contacts_alerted: outcome.contactsAlerted,
+      channels: outcome.channels,
+      // No police integration exists. Saying otherwise is what made the
+      // original dangerous.
+      emergency_number: '112',
+      event_id: outcome.eventId,
+      timestamp: new Date(),
     });
   });
 
