@@ -166,10 +166,20 @@ export async function userRoutes(fastify: FastifyInstance) {
           photo_url = url;
         } catch { /* fall back to the stored URL */ }
       }
+      // Spread, then take the tax number back out.
+      //
+      // `...data` returns the whole user document, and a PAN lives on it. This
+      // is the caller's own record, so it is not exposure to a stranger -- but
+      // a raw tax identifier should not ride along in every profile fetch,
+      // through the client's memory, its logs and any cache in between, when
+      // no screen displays it. payout-method already returns a masked form for
+      // the one place that shows it at all.
+      const { pan_number, ...safe } = data as Record<string, unknown>;
       return reply.send({
         id: uid,
         onboarded: data.onboarded === true,
-        ...data,
+        ...safe,
+        pan_on_file: typeof pan_number === 'string' && pan_number.length > 0,
         name: resolvedName,
         displayName: resolvedName,
         photo_url,

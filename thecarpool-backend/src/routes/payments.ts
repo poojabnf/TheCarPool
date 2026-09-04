@@ -552,6 +552,15 @@ export async function paymentRoutes(fastify: FastifyInstance) {
       }).catch(() => false);
       if (!claimed) continue;
 
+      // Whether the wallet was actually debited.
+      //
+      // The catch below compensates by crediting the amount back, and it used
+      // to do so unconditionally -- including when the debit itself had
+      // thrown. An INSUFFICIENT_WALLET failure therefore *credited* a driver
+      // who did not have the money, and any transient failure in that
+      // transaction minted the payout amount out of nothing. Only a debit
+      // that committed may be reversed.
+      let debited = false;
       try {
         const amount = Number(p.amount || 0);
         const walletRef = db.collection('wallets').doc(String(p.driver_uid));
@@ -564,6 +573,7 @@ export async function paymentRoutes(fastify: FastifyInstance) {
           if (isShortOf(bal, amount)) throw new Error('INSUFFICIENT_WALLET');
           tx.set(walletRef, { available_wallet_balance: round2(bal - amount) }, { merge: true });
         });
+        debited = true;
 
         const result = await createPayout({
           method: p.payout_method,
@@ -575,13 +585,16 @@ export async function paymentRoutes(fastify: FastifyInstance) {
         sent += 1;
       } catch (err: any) {
         // Put the money back and leave a reason. Never leave it in SENDING.
+        // Only if it left in the first place: see `debited` above.
         const amount = Number(p.amount || 0);
-        await db.runTransaction(async (tx) => {
-          const walletRef = db.collection('wallets').doc(String(p.driver_uid));
-          const w = await tx.get(walletRef);
-          const bal = Number(w.data()?.available_wallet_balance || 0);
-          tx.set(walletRef, { available_wallet_balance: round2(bal + amount) }, { merge: true });
-        }).catch(() => {});
+        if (debited) {
+          await db.runTransaction(async (tx) => {
+            const walletRef = db.collection('wallets').doc(String(p.driver_uid));
+            const w = await tx.get(walletRef);
+            const bal = Number(w.data()?.available_wallet_balance || 0);
+            tx.set(walletRef, { available_wallet_balance: round2(bal + amount) }, { merge: true });
+          }).catch(() => {});
+        }
         await doc.ref.update({ status: 'FAILED', error: String(err?.message).slice(0, 200), failed_at: new Date().toISOString() }).catch(() => {});
         fastify.log.error({ err, payout: doc.id }, 'Scheduled payout failed; wallet refunded');
         failed += 1;

@@ -30,7 +30,11 @@ initSentry();
 
 // Default is 1 MiB, which a base64-encoded camera photo (avatars, classified
 // listing photos) blows past routinely — raised to fit those.
-const fastify = Fastify({ logger: true, bodyLimit: 15 * 1024 * 1024 });
+// trustProxy, because Cloud Run terminates TLS in front of us: without it
+// request.ip is the load balancer's address for every caller, so an IP-keyed
+// rate limit becomes one global bucket that any single client can exhaust for
+// everyone.
+const fastify = Fastify({ logger: true, bodyLimit: 15 * 1024 * 1024, trustProxy: true });
 
 // Security headers, CORS allowlist, and a global rate limit. Registered before
 // routes so they apply to every endpoint. The CORS/Socket.IO origin allowlist
@@ -65,18 +69,22 @@ fastify.register(rateLimit, {
     const header = request.headers['x-cron-key'];
     return typeof header === 'string' && header === secret;
   },
-  keyGenerator: (request) => {
-    const auth = request.headers.authorization;
-    if (auth?.startsWith('Bearer ')) {
-      try {
-        const payload = JSON.parse(
-          Buffer.from(auth.split('.')[1] ?? '', 'base64url').toString('utf8')
-        );
-        if (payload?.user_id || payload?.sub) return `uid:${payload.user_id ?? payload.sub}`;
-      } catch { /* fall through to IP */ }
-    }
-    return request.ip;
-  },
+  /**
+   * Keyed on the client address, and only that.
+   *
+   * This used to read the uid out of the JWT payload to give each user their
+   * own budget. The payload was decoded, never verified -- the limiter runs
+   * before authentication, so there is no verified identity to reach for --
+   * which meant anyone could mint a fresh bucket per request by writing a
+   * different `sub` into an unsigned token. A rate limit that an attacker can
+   * opt out of protects nobody; the honest users it was separating were the
+   * only ones it still applied to.
+   *
+   * An address is the one thing that cannot be forged at this point in the
+   * request. The per-user fairness that keying on uid was buying has to come
+   * from limits applied after authentication, not before it.
+   */
+  keyGenerator: (request) => request.ip,
 });
 
 // Forward unhandled route errors to Sentry, then fall through to the default

@@ -1523,9 +1523,19 @@ export async function rideRoutes(fastify: FastifyInstance) {
             const booking = bookingDoc.data();
             const riderUid = String(booking.rider_uid ?? booking.rider_id ?? '');
             if (!riderUid) continue;
-            const refund = round2(
-              (Number(booking.amount_paid) || 0) + (Number(booking.insurance_premium) || 0)
-            );
+            // total_paid is the field bookings actually carry. amount_paid
+            // exists only in a 402 response body and was never written to a
+            // document, so this read was undefined on every booking ever made
+            // -- 0 of 40 sampled in production had it, 40 of 40 had
+            // total_paid. A driver cancelling therefore refunded the
+            // insurance premium and nothing else, confiscating the fare of
+            // every rider they cancelled on.
+            //
+            // fare_amount is the last resort for bookings that predate
+            // total_paid; the premium is added because it is held separately
+            // and is equally owed back.
+            const paid = Number(booking.total_paid ?? booking.fare_amount ?? 0) || 0;
+            const refund = round2(paid + (Number(booking.insurance_premium) || 0));
             const riderWalletRef = db.collection('wallets').doc(riderUid);
 
             // Back the way it came, like every other refund path.
