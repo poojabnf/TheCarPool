@@ -464,6 +464,41 @@ export default function DriverInterface() {
   const [dropOffBusy, setDropOffBusy] = useState<string | null>(null);
 
   /**
+   * Clear the journey, keep the car.
+   *
+   * The post modal's fields are component state and nothing ever reset them,
+   * so closing it after a successful post left every value sitting there --
+   * the next ride opened pre-filled with the last one's route, price, stops
+   * and departure time. A driver offering a genuinely different journey had
+   * to notice and clear each field, and anything they missed shipped as fact.
+   *
+   * The vehicle is deliberately exempt: it is the same car tomorrow, and
+   * loadMyRides prefills it from the last ride for exactly that reason.
+   *
+   * Called after a successful post rather than on open, so closing the sheet
+   * to check something does not throw away a half-written ride.
+   */
+  const resetRideForm = () => {
+    setFormStep(0);
+    setSource(''); setDestination('');
+    setSourceCoords(null); setDestCoords(null);
+    setSourceSug([]); setDestSug([]);
+    setPickupPoints([]); setPickupQuery(''); setPickupSug([]);
+    setDistanceKm(''); setCustomPrice('');
+    setSeatsTotal(3);
+    setRideType('COMMUTE'); setEventTag('');
+    setWomenOnlyRide(false);
+    setRequiresApproval(true);
+    setGeoError('');
+    // Back to the next whole hour, the same default a fresh screen opens with.
+    const d = new Date(); d.setHours(0, 0, 0, 0);
+    setDepDay(d);
+    setDepHour((new Date().getHours() + 1) % 24);
+    setDepMinute(0);
+  };
+
+
+  /**
    * Mark a rider as having got out here.
    *
    * Their fifteen minutes to raise a problem start now, and the driver is paid
@@ -1026,6 +1061,7 @@ export default function DriverInterface() {
       haptics.success(); // route published
       setActiveRideId(String(ride.id || ride.ride_id));
       setShowPostModal(false);
+      resetRideForm();
       await loadMyRides();
       useAuthStore.getState().triggerActivityRefresh();
       Alert.alert(
