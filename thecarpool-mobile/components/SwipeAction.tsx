@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, Animated, PanResponder, LayoutChangeEvent,
-  ActivityIndicator, StyleProp, ViewStyle,
+  ActivityIndicator, Dimensions, StyleProp, ViewStyle,
 } from 'react-native';
 import { ChevronsRight } from 'lucide-react-native';
 import * as haptics from '../services/haptics';
@@ -67,7 +67,20 @@ export default function SwipeAction({
   const firedRef = useRef(false);
   const retryTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => () => { if (retryTimer.current) clearTimeout(retryTimer.current); }, []);
-  const maxTravel = Math.max(0, trackWidth - THUMB_SIZE - THUMB_INSET * 2);
+  /**
+   * How far the thumb can travel.
+   *
+   * Falls back to the screen width when onLayout has not reported one.
+   * Measurement is the single point this control depends on, and when it
+   * returned 0 the slider became silently inert -- haptic on touch, nothing
+   * else. A control that governs finishing a ride should not be one layout
+   * quirk away from unusable, so an approximate width that works beats an
+   * exact one that might never arrive. The real measurement replaces it the
+   * moment it lands.
+   */
+  const FALLBACK_WIDTH = Dimensions.get('window').width - 32;
+  const effectiveWidth = trackWidth > 0 ? trackWidth : FALLBACK_WIDTH;
+  const maxTravel = Math.max(0, effectiveWidth - THUMB_SIZE - THUMB_INSET * 2);
 
   /**
    * Live copies of everything the gesture handlers need.
@@ -150,7 +163,7 @@ export default function SwipeAction({
   const fillWidth = maxTravel > 0
     ? x.interpolate({
         inputRange: [0, maxTravel],
-        outputRange: [THUMB_SIZE + THUMB_INSET * 2, trackWidth],
+        outputRange: [THUMB_SIZE + THUMB_INSET * 2, effectiveWidth],
         extrapolate: 'clamp',
       })
     : (THUMB_SIZE + THUMB_INSET * 2);
