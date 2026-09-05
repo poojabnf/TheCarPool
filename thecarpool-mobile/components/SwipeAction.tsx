@@ -67,8 +67,15 @@ export default function SwipeAction({
   const firedRef = useRef(false);
   const maxTravel = Math.max(0, trackWidth - THUMB_SIZE - THUMB_INSET * 2);
 
+  // JS-driven, not native.
+  //
+  // The same value positions the thumb AND sizes the fill behind it, and width
+  // is a layout property the native driver cannot animate. Driving one node
+  // both ways is rejected outright -- the thumb stopped moving and the control
+  // looked simply broken. A single drag at 60fps on the JS thread is not the
+  // thing worth optimising here.
   const springBack = () => {
-    Animated.spring(x, { toValue: 0, useNativeDriver: true, bounciness: 6 }).start();
+    Animated.spring(x, { toValue: 0, useNativeDriver: false, bounciness: 6 }).start();
   };
 
   const pan = useRef(
@@ -89,7 +96,7 @@ export default function SwipeAction({
           haptics.success();
           // Settle at the end before firing, so the control visibly finishes
           // the gesture rather than snapping back under a spinner.
-          Animated.timing(x, { toValue: maxTravel, duration: 110, useNativeDriver: true })
+          Animated.timing(x, { toValue: maxTravel, duration: 110, useNativeDriver: false })
             .start(() => onComplete());
         } else {
           springBack();
@@ -106,12 +113,26 @@ export default function SwipeAction({
   const labelOpacity = maxTravel > 0
     ? x.interpolate({ inputRange: [0, maxTravel * 0.6], outputRange: [1, 0], extrapolate: 'clamp' })
     : 1;
-  const fillWidth = Animated.add(x, new Animated.Value(THUMB_SIZE + THUMB_INSET * 2));
+  // Interpolated rather than Animated.add with a fresh node per render, which
+  // allocated a new value on every frame of the drag.
+  const fillWidth = maxTravel > 0
+    ? x.interpolate({
+        inputRange: [0, maxTravel],
+        outputRange: [THUMB_SIZE + THUMB_INSET * 2, trackWidth],
+        extrapolate: 'clamp',
+      })
+    : (THUMB_SIZE + THUMB_INSET * 2);
 
   return (
     <View
       testID={testID}
       onLayout={onLayout}
+      // Handlers on the track, not the knob. A 52pt circle is a small target
+      // for a thumb on a phone in a cradle, and a swipe that began anywhere
+      // else did nothing at all -- which reads as a broken control rather than
+      // a missed target. The gesture is measured as a delta, so grabbing the
+      // middle of the track works exactly like grabbing the knob.
+      {...pan.panHandlers}
       style={[styles.track, inert && styles.inert, style]}
     >
       <Animated.View
@@ -126,7 +147,7 @@ export default function SwipeAction({
         {loading ? busyLabel : label}
       </Animated.Text>
       <Animated.View
-        {...pan.panHandlers}
+        pointerEvents="none"
         style={[styles.thumb, { transform: [{ translateX: x }] }]}
         accessibilityRole="adjustable"
         accessibilityLabel={label}
