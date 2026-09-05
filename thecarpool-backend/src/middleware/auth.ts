@@ -10,6 +10,15 @@ declare module 'fastify' {
       id: string;
       role: string;
       email?: string;
+      /**
+       * Whether the provider actually proved this address belongs to them.
+       *
+       * Carried through because identity linking adopts a profile -- including
+       * where earnings are paid and which corporate circle someone belongs to
+       * -- from whoever already holds an address. An address nobody verified
+       * is a claim, not an identity.
+       */
+      emailVerified?: boolean;
       /** E.164 phone from the token, when signed in with OTP or a linked phone. */
       phone?: string;
     };
@@ -43,6 +52,7 @@ export async function requireAuth(request: FastifyRequest, reply: FastifyReply) 
       id: decoded.uid,
       role: (decoded.role as string) || (decoded.admin ? 'ADMIN' : 'USER'),
       email: decoded.email,
+      emailVerified: decoded.email_verified === true,
       phone: (decoded.phone_number as string) || undefined,
     };
   } catch (err: any) {

@@ -2033,6 +2033,23 @@ export async function bookingRoutes(fastify: FastifyInstance) {
         }
       }
 
+      // Unwind the driver's held transfer before the booking is closed.
+      //
+      // A booking funded through Razorpay Route creates a transfer earmarked
+      // for the driver. Driver-decline and driver-cancel-ride both reversed
+      // it; a rider cancelling their own seat did not, so the money sat at
+      // Razorpay against a booking that no longer existed -- invisible to
+      // both parties and to us. Outside the transaction, because an outbound
+      // call inside one is re-issued on every retry.
+      if (b.route_transfer_id) {
+        await reverseTransfer(String(b.route_transfer_id)).catch((err) =>
+          fastify.log.error(
+            { err, booking: id, transfer: b.route_transfer_id },
+            'Rider cancellation: could not reverse the Route transfer'
+          )
+        );
+      }
+
       await db.runTransaction(async (tx) => {
         // Firestore requires ALL reads before ANY writes — read booking, ride
         // and wallets up front, then perform every write.

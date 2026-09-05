@@ -21,11 +21,32 @@ import {
 async function linkByEmail(
   uid: string,
   tokenEmail: string | undefined,
+  emailVerified: boolean,
   existing: Record<string, any> | null,
   log: FastifyInstance['log']
 ): Promise<Record<string, any>> {
   const email = normaliseEmail(tokenEmail) ?? emailOf(existing);
   if (!email) return {};
+
+  // An unverified address is a claim, not an identity.
+  //
+  // Linking adopts a profile from whoever already holds this address --
+  // their name, their corporate_email, and payout_method, the instruction
+  // for where earnings are sent. Firebase will happily issue a token for an
+  // email/password account whose address was never confirmed, so signing up
+  // as someone else's address was enough to inherit their profile and take
+  // over the index entry, leaving their later sign-ins pointing at the
+  // attacker's uid. Nothing in the codebase checked email_verified.
+  //
+  // Only a provider-verified address links. An unverified one is left alone:
+  // the account still works, it simply does not inherit anyone else's.
+  if (tokenEmail && !emailVerified) {
+    log.warn(
+      { uid, email },
+      'Identity linking skipped: the token email is not verified'
+    );
+    return {};
+  }
 
   try {
     const indexRef = db.collection('email_identities').doc(emailKey(email));
@@ -143,7 +164,7 @@ export async function userRoutes(fastify: FastifyInstance) {
       // pass adopted, so it fills only what is still missing.
       const byPhone = await linkByPhone(uid, request.user!.phone, stored, fastify.log);
       const afterPhone = { ...(stored ?? {}), ...byPhone };
-      const byEmail = await linkByEmail(uid, request.user!.email, afterPhone, fastify.log);
+      const byEmail = await linkByEmail(uid, request.user!.email, request.user!.emailVerified === true, afterPhone, fastify.log);
       const adopted = { ...byPhone, ...byEmail };
       const data = { ...(stored ?? {}), ...adopted };
 

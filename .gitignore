@@ -51,3 +51,9 @@ firebase-adminsdk*.json
 # silently pointed builds at the wrong project. The real config lives in
 # thecarpool-mobile/.
 /app.json
+
+# Firebase CLI working directories and debug logs
+.firebase/
+firebase-debug.log
+firestore-debug.log
+ui-debug.log

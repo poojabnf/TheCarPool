@@ -28,6 +28,7 @@
 import { db } from './firestore';
 import { closeDeadline, type RideForDeadline } from './rideDeadline';
 import { refundPaymentToSource } from './razorpay';
+import { reverseTransfer } from './route';
 import { round2 } from './money';
 
 export interface AutoCloseResult {
@@ -140,6 +141,17 @@ export async function refundEveryRider(
     // would fail and strand the rest of the sweep.
     const amount = round2(Number(b.total_due ?? b.fare_amount ?? 0));
     const viaRazorpay = b.payment_method === 'RAZORPAY' && b.razorpay_payment_id;
+
+    // The driver's earmarked transfer, unwound before the seat is closed.
+    // Nobody travelled on this ride, so nothing is owed to the driver, and a
+    // transfer left standing strands the money at Razorpay against a booking
+    // that no longer exists.
+    if (b.route_transfer_id) {
+      await reverseTransfer(String(b.route_transfer_id)).catch((err) =>
+        log?.error({ err, booking: doc.id, transfer: b.route_transfer_id },
+          'Auto-close: could not reverse the Route transfer')
+      );
+    }
 
     let sourceRefund: { refund_id: string; status: string } | null = null;
     if (viaRazorpay && amount > 0) {

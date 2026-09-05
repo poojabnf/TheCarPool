@@ -205,7 +205,6 @@ export default function RootLayout() {
           <Stack.Screen name="safety-center" options={{ headerShown: false }} />
           <Stack.Screen name="confirm" options={{ headerShown: false }} />
           <Stack.Screen name="payout-method" options={{ headerShown: false }} />
-          <Stack.Screen name="components/AiVoiceModal" options={{ presentation: 'modal' }} />
         </Stack>
       </AuthGuard>
     </SafeAreaProvider>
