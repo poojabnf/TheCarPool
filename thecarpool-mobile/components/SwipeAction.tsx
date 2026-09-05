@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, Animated, PanResponder, LayoutChangeEvent,
   ActivityIndicator, StyleProp, ViewStyle,
@@ -65,7 +65,27 @@ export default function SwipeAction({
   // Latched so the spring-back animation cannot re-fire onComplete, and so a
   // second slide during a slow request cannot submit twice.
   const firedRef = useRef(false);
+  const retryTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => { if (retryTimer.current) clearTimeout(retryTimer.current); }, []);
   const maxTravel = Math.max(0, trackWidth - THUMB_SIZE - THUMB_INSET * 2);
+
+  /**
+   * Live copies of everything the gesture handlers need.
+   *
+   * PanResponder.create runs once, inside a ref, so its handlers close over
+   * the values from the FIRST render -- when the track had not been measured
+   * and maxTravel was still 0. Every later frame clamped the thumb to
+   * Math.min(dx, 0) and every release failed the `maxTravel > 0` test, so the
+   * control fired its haptic on touch and then did nothing at all: it felt
+   * alive and was inert. Reading through refs keeps the handlers current
+   * without rebuilding the responder mid-gesture, which would drop the touch.
+   */
+  const maxTravelRef = useRef(maxTravel);
+  const inertRef = useRef(false);
+  const onCompleteRef = useRef(onComplete);
+  maxTravelRef.current = maxTravel;
+  inertRef.current = disabled || loading;
+  onCompleteRef.current = onComplete;
 
   // JS-driven, not native.
   //
@@ -82,22 +102,34 @@ export default function SwipeAction({
     PanResponder.create({
       onStartShouldSetPanResponder: () => true,
       onMoveShouldSetPanResponder: (_e, g) => Math.abs(g.dx) > 4,
-      onPanResponderGrant: () => { if (!inert) haptics.tap(); },
+      onPanResponderGrant: () => { if (!inertRef.current) haptics.tap(); },
       onPanResponderMove: (_e, g) => {
-        if (inert || firedRef.current) return;
+        if (inertRef.current || firedRef.current) return;
         // Clamped both ways: the thumb never leaves the track, and dragging
         // backwards must not push it out of the left edge.
-        x.setValue(Math.max(0, Math.min(g.dx, maxTravel)));
+        x.setValue(Math.max(0, Math.min(g.dx, maxTravelRef.current)));
       },
       onPanResponderRelease: (_e, g) => {
-        if (inert || firedRef.current) return springBack();
-        if (maxTravel > 0 && g.dx >= maxTravel * COMMIT_FRACTION) {
+        if (inertRef.current || firedRef.current) return springBack();
+        const travel = maxTravelRef.current;
+        if (travel > 0 && g.dx >= travel * COMMIT_FRACTION) {
           firedRef.current = true;
           haptics.success();
           // Settle at the end before firing, so the control visibly finishes
           // the gesture rather than snapping back under a spinner.
-          Animated.timing(x, { toValue: maxTravel, duration: 110, useNativeDriver: false })
-            .start(() => onComplete());
+          Animated.timing(x, { toValue: travel, duration: 110, useNativeDriver: false })
+            .start(() => {
+              onCompleteRef.current();
+              // Unlatch after a moment. The latch is there to stop a double
+              // submit, not to retire the control: when the request behind it
+              // fails, the card stays on screen and a permanently dead slider
+              // leaves the driver with no way to finish their ride. On success
+              // the card unmounts long before this runs.
+              retryTimer.current = setTimeout(() => {
+                firedRef.current = false;
+                x.setValue(0);
+              }, 3000);
+            });
         } else {
           springBack();
         }
