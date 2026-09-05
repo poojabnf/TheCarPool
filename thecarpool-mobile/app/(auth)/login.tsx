@@ -9,12 +9,12 @@ import auth from '@react-native-firebase/auth';
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
 import * as AppleAuthentication from 'expo-apple-authentication';
 import { Leaf } from 'lucide-react-native';
-import HapticPressable from '../components/HapticPressable';
+import HapticPressable from '../../components/HapticPressable';
 import { c, font, radius, space, shadowSm } from '../../theme/tokens';
-import * as haptics from '../services/haptics';
+import * as haptics from '../../services/haptics';
 import {
   COUNTRIES, DEFAULT_COUNTRY, Country, maxDigits, isValidNsn, toE164,
-} from '../services/countries';
+} from '../../services/countries';
 
 // Same trap as API_URL: `eas update` does not inline EXPO_PUBLIC_* from the
 // eas.json build profile, so over-the-air bundles saw empty strings here and

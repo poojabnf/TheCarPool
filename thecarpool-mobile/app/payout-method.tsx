@@ -10,11 +10,11 @@ import {
   ChevronDown, ChevronUp, ArrowUpRight, ShieldCheck, History,
   Sparkles, RefreshCw, Check, BadgeCheck,
 } from 'lucide-react-native';
-import { apiFetch } from './services/api';
-import * as haptics from './services/haptics';
+import { apiFetch } from '../services/api';
+import * as haptics from '../services/haptics';
 import { c, font, radius, space, shadowSm, icon } from '../theme/tokens';
-import HapticPressable from './components/HapticPressable';
-import { formatMoney } from './services/currency';
+import HapticPressable from '../components/HapticPressable';
+import { formatMoney } from '../services/currency';
 
 interface PayoutStage {
   id: string;

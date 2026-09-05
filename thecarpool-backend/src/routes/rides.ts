@@ -10,6 +10,7 @@ import { classifyVehicle, listMakes, listModels, VEHICLE_CLASSES } from '../lib/
 import { needsDepartureReminder, minutesUntil } from '../lib/rideNotifications';
 import { needsBoardingReminder, minutesUntil as etaMinutesUntil, BOARDING_REMINDER_MINUTES } from '../lib/eta';
 import { partitionStopsByRoute } from '../lib/stopGeography';
+import { hasValidLicence } from '../lib/licence';
 import { routePosition, isForwardTravel } from '../lib/routeProgress';
 import { isPastCloseDeadline } from '../lib/rideDeadline';
 import { autoCloseRide, refundEveryRider, liveBookingsFor } from '../lib/rideAutoClose';
@@ -678,6 +679,28 @@ export async function rideRoutes(fastify: FastifyInstance) {
           }
         } catch (err: any) {
           fastify.log.error(err, 'Failed to parse route_geojson');
+        }
+      }
+
+      // A licence on file before carrying passengers.
+      //
+      // Nothing checked this at all: dl_number existed only in seed data and
+      // anyone with a phone could publish a ride. What is enforced here is a
+      // DECLARED licence -- shape-checked and in date -- not a verified one.
+      // Nobody has confirmed it belongs to this person, and no screen should
+      // say "verified" on the strength of it.
+      //
+      // Behind a flag, and off by default, because switching it on stops every
+      // existing driver from posting until they have entered one. That is a
+      // rollout decision with a date attached, not something to spring on a
+      // live platform from inside a refactor.
+      if (process.env.REQUIRE_DRIVER_LICENCE === 'true') {
+        const driverProfile = (await db.collection('users').doc(uid).get()).data() ?? {};
+        if (!hasValidLicence(driverProfile as any)) {
+          return reply.code(403).send({
+            error: 'LICENCE_REQUIRED',
+            message: 'Add your driving licence details before offering a ride.',
+          });
         }
       }
 

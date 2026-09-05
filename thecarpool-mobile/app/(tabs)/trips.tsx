@@ -7,12 +7,12 @@ import { useRouter, useFocusEffect } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Route, MapPin, Clock, CheckCircle, Circle, ChevronRight, BadgeCheck, KeyRound } from 'lucide-react-native';
 import { c, font, radius, space, shadowSm, rideStatusColors, icon } from '../../theme/tokens';
-import { apiFetch } from '../services/api';
-import * as haptics from '../services/haptics';
-import HapticPressable from '../components/HapticPressable';
-import { useAuthStore } from '../store/authStore';
-import { useI18n } from '../services/i18n';
-import { formatMoney } from '../services/currency';
+import { apiFetch } from '../../services/api';
+import * as haptics from '../../services/haptics';
+import HapticPressable from '../../components/HapticPressable';
+import { useAuthStore } from '../../store/authStore';
+import { useI18n } from '../../services/i18n';
+import { formatMoney } from '../../services/currency';
 import * as Location from 'expo-location';
 
 interface Booking {
@@ -101,7 +101,7 @@ function formatDate(iso: string | null) {
     ' · ' + d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
 }
 
-import { AppCache } from '../services/cache';
+import { AppCache } from '../../services/cache';
 
 export default function TripsScreen() {
   const router = useRouter();

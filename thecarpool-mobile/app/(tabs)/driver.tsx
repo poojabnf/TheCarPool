@@ -3,22 +3,22 @@ import { StyleSheet, View, Text, ScrollView, Dimensions, TextInput, Alert, Activ
 import { useRouter, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { PlusCircle, Activity, MapPin, Calendar, Users, X, Check, Car, Bike, Shield, Phone, Mail, ChevronDown, Search, Play, Lightbulb, BadgeCheck, HandCoins, KeyRound, Snowflake, Music, Cigarette, Venus } from 'lucide-react-native';
 import { colors } from '../../theme/colors';
-import { apiFetch } from '../services/api';
-import * as haptics from '../services/haptics';
-import HapticPressable from '../components/HapticPressable';
-import Button from '../components/Button';
-import SwipeAction from '../components/SwipeAction';
-import { formatMoney } from '../services/currency';
-import { searchPlaces, MIN_QUERY_LENGTH, SEARCH_DEBOUNCE_MS, warmUp } from '../services/geo';
+import { apiFetch } from '../../services/api';
+import * as haptics from '../../services/haptics';
+import HapticPressable from '../../components/HapticPressable';
+import Button from '../../components/Button';
+import SwipeAction from '../../components/SwipeAction';
+import { formatMoney } from '../../services/currency';
+import { searchPlaces, MIN_QUERY_LENGTH, SEARCH_DEBOUNCE_MS, warmUp } from '../../services/geo';
 import auth from '@react-native-firebase/auth';
 import io from 'socket.io-client';
-import { API_URL } from '../services/api';
+import { API_URL } from '../../services/api';
 import * as Location from 'expo-location';
-import { useAuthStore } from '../store/authStore';
+import { useAuthStore } from '../../store/authStore';
 import { rideStatusColors, rideStatus, icon, c } from '../../theme/tokens';
-import HapticSwitch from '../components/HapticSwitch';
-import { AppCache } from '../services/cache';
-import { formatPostedAgo } from '../services/datetime';
+import HapticSwitch from '../../components/HapticSwitch';
+import { AppCache } from '../../services/cache';
+import { formatPostedAgo } from '../../services/datetime';
 
 // Departure is picked as a real date AND time. Deliberately built from plain
 // chips rather than @react-native-community/datetimepicker: that is a native

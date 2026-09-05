@@ -12,11 +12,11 @@ import {
   Platform,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { apiFetch } from '../services/api';
-import { auth } from '../services/firebase';
+import { apiFetch } from '../../services/api';
+import { auth } from '../../services/firebase';
 import { useRouter } from 'expo-router';
-import { useAuthStore } from '../store/authStore';
-import HapticPressable from '../components/HapticPressable';
+import { useAuthStore } from '../../store/authStore';
+import HapticPressable from '../../components/HapticPressable';
 import { CarFront, CircleUser } from 'lucide-react-native';
 import { c, font, radius, space } from '../../theme/tokens';
 

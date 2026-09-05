@@ -12,17 +12,17 @@ import {
 } from '@expo-google-fonts/manrope';
 import { JetBrainsMono_500Medium, JetBrainsMono_700Bold } from '@expo-google-fonts/jetbrains-mono';
 import { c } from '../theme/tokens';
-import { useAuthStore } from './store/authStore';
-import { auth } from './services/firebase';
+import { useAuthStore } from '../store/authStore';
+import { auth } from '../services/firebase';
 import {
   registerForPushNotifications,
   subscribeToTokenRefresh,
   setupForegroundNotifications,
   setupNotificationResponseListener,
-} from './services/notifications';
-import { apiFetch } from './services/api';
-import { warmUp } from './services/geo';
-import { applyPendingUpdate } from './services/updates';
+} from '../services/notifications';
+import { apiFetch } from '../services/api';
+import { warmUp } from '../services/geo';
+import { applyPendingUpdate } from '../services/updates';
 
 // Cap Dynamic Type scaling app-wide. Text still scales for accessibility, but
 // is bounded to 1.3x so very large system-font settings can't overflow the

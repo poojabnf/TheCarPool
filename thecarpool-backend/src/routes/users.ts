@@ -1,6 +1,7 @@
 import { FastifyInstance } from 'fastify';
 import { db, storage } from '../server';
 import { requireAuth, requireAdmin } from '../middleware/auth';
+import { checkLicence, maskLicence } from '../lib/licence';
 import {
   normalisePhone, phoneKey, phoneOf, portableProfile, decideLink,
   normaliseEmail, emailKey, emailOf,
@@ -195,12 +196,14 @@ export async function userRoutes(fastify: FastifyInstance) {
       // through the client's memory, its logs and any cache in between, when
       // no screen displays it. payout-method already returns a masked form for
       // the one place that shows it at all.
-      const { pan_number, ...safe } = data as Record<string, unknown>;
+      const { pan_number, dl_number, ...safe } = data as Record<string, unknown>;
       return reply.send({
         id: uid,
         onboarded: data.onboarded === true,
         ...safe,
         pan_on_file: typeof pan_number === 'string' && pan_number.length > 0,
+        dl_number_masked: maskLicence(dl_number as string | null),
+        dl_verified: false,
         name: resolvedName,
         displayName: resolvedName,
         photo_url,
@@ -213,6 +216,42 @@ export async function userRoutes(fastify: FastifyInstance) {
 
   // Upload / replace the user's profile photo (base64 JPEG/PNG from the app's
   // camera or gallery). Stored in Storage; a fresh signed read URL is returned.
+  /**
+   * ── POST /licence ────────────────────────────────────────────────────────
+   * Record the caller's driving licence.
+   *
+   * Declared, not verified -- see lib/licence. The number is stored so a KYC
+   * provider can later check it and stamp verified_at; until then nothing in
+   * the app may present this driver as verified.
+   */
+  fastify.post('/licence', { preHandler: [requireAuth] }, async (request, reply) => {
+    const uid = String(request.user!.id);
+    const { dl_number, dl_expiry } = (request.body as {
+      dl_number?: string; dl_expiry?: string;
+    }) || {};
+
+    const check = checkLicence(dl_number, dl_expiry);
+    if (!check.ok) {
+      return reply.code(400).send({ error: 'INVALID_LICENCE', message: check.reason });
+    }
+
+    await db.collection('users').doc(uid).set({
+      dl_number: check.normalised,
+      dl_expiry: new Date(String(dl_expiry)).toISOString(),
+      dl_submitted_at: new Date().toISOString(),
+      // Explicitly null. A field that is absent invites a later reader to
+      // assume it was simply not fetched; null says nobody has checked.
+      dl_verified_at: null,
+    }, { merge: true });
+
+    return reply.send({
+      dl_number_masked: maskLicence(check.normalised),
+      dl_expiry,
+      verified: false,
+      note: 'Recorded. Licence details are not yet independently verified.',
+    });
+  });
+
   fastify.post('/photo', { preHandler: [requireAuth] }, async (request, reply) => {
     const uid = request.user!.id;
     const { image_base64, content_type } = (request.body as { image_base64?: string; content_type?: string }) || {};

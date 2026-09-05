@@ -3,8 +3,8 @@ import { View, Text, StyleSheet, ScrollView, TextInput, Alert, ActivityIndicator
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ShieldAlert, Share2, BadgeCheck, MapPin, PhoneCall, Plus } from 'lucide-react-native';
-import { apiFetch } from './services/api';
-import HapticPressable from './components/HapticPressable';
+import { apiFetch } from '../services/api';
+import HapticPressable from '../components/HapticPressable';
 import { c, font, radius, space, shadowSm } from '../theme/tokens';
 
 const FEATURES = [

@@ -3,9 +3,9 @@ import { View, Text, StyleSheet, ScrollView, ActivityIndicator, RefreshControl }
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Leaf, Trophy } from 'lucide-react-native';
-import { apiFetch } from './services/api';
+import { apiFetch } from '../services/api';
 import { c, font, radius, space, shadowSm } from '../theme/tokens';
-import HapticPressable from './components/HapticPressable';
+import HapticPressable from '../components/HapticPressable';
 
 type Entry = { rank: number; name: string; co2_saved_kg: number; matches: number; points: number };
 

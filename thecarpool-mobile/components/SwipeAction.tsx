@@ -5,7 +5,7 @@ import {
 } from 'react-native';
 import { ChevronsRight } from 'lucide-react-native';
 import * as haptics from '../services/haptics';
-import { c, font, radius } from '../../theme/tokens';
+import { c, font, radius } from '../theme/tokens';
 
 /**
  * Slide to confirm.

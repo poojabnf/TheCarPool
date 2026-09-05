@@ -3,8 +3,8 @@ import { Platform, View, StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Home, Car, Route, Wallet, User } from 'lucide-react-native';
 import { c, font } from '../../theme/tokens';
-import * as haptics from '../services/haptics';
-import { useI18n } from '../services/i18n';
+import * as haptics from '../../services/haptics';
+import { useI18n } from '../../services/i18n';
 
 export default function TabLayout() {
   const insets = useSafeAreaInsets();

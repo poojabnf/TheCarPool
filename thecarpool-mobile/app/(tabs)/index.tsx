@@ -6,18 +6,18 @@ import { useRouter, useFocusEffect } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import auth from '@react-native-firebase/auth';
 import { MapPin, Circle, Search, Wind, Venus, Users, Leaf, Clock, Bell } from 'lucide-react-native';
-import { apiFetch } from '../services/api';
-import { useAuthStore } from '../store/authStore';
-import { useI18n } from '../services/i18n';
-import * as haptics from '../services/haptics';
+import { apiFetch } from '../../services/api';
+import { useAuthStore } from '../../store/authStore';
+import { useI18n } from '../../services/i18n';
+import * as haptics from '../../services/haptics';
 import { c, font, radius, space, shadowSm, brass, rideStatusColors } from '../../theme/tokens';
-import HapticPressable from '../components/HapticPressable';
-import Button from '../components/Button';
-import { formatMoney } from '../services/currency';
-import { searchPlaces, MIN_QUERY_LENGTH, SEARCH_DEBOUNCE_MS, warmUp } from '../services/geo';
-import { formatDeparture, isDepartingSoon, formatPostedAgo } from '../services/datetime';
-import { AppCache } from '../services/cache';
-import VehicleIcon from '../components/VehicleIcon';
+import HapticPressable from '../../components/HapticPressable';
+import Button from '../../components/Button';
+import { formatMoney } from '../../services/currency';
+import { searchPlaces, MIN_QUERY_LENGTH, SEARCH_DEBOUNCE_MS, warmUp } from '../../services/geo';
+import { formatDeparture, isDepartingSoon, formatPostedAgo } from '../../services/datetime';
+import { AppCache } from '../../services/cache';
+import VehicleIcon from '../../components/VehicleIcon';
 
 // Offline-cached search (roadmap Phase 1, session-scoped): module-level so it
 // survives tab switches. A persistent cache needs AsyncStorage, which is a

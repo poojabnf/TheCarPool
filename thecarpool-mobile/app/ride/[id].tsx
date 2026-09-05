@@ -22,13 +22,13 @@ import { View, Text, StyleSheet, ScrollView, ActivityIndicator } from 'react-nat
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ArrowLeft, MapPin, Circle, Clock, Users, Wind, Venus, Route as RouteIcon } from 'lucide-react-native';
-import { apiFetch } from '../services/api';
+import { apiFetch } from '../../services/api';
 import { c, font, radius, space, shadowSm } from '../../theme/tokens';
-import HapticPressable from '../components/HapticPressable';
-import VehicleIcon from '../components/VehicleIcon';
-import { formatMoney } from '../services/currency';
-import { formatDeparture } from '../services/datetime';
-import * as haptics from '../services/haptics';
+import HapticPressable from '../../components/HapticPressable';
+import VehicleIcon from '../../components/VehicleIcon';
+import { formatMoney } from '../../services/currency';
+import { formatDeparture } from '../../services/datetime';
+import * as haptics from '../../services/haptics';
 
 interface Stop {
   label?: string | null;

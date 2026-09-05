@@ -7,17 +7,17 @@ import {
   Landmark, Car, Bell,
   Mail, Headset, Flame, Plus, Minus, ChevronLeft, LifeBuoy,
 } from 'lucide-react-native';
-import { auth } from '../services/firebase';
-import { apiFetch } from '../services/api';
-import { useAuthStore } from '../store/authStore';
-import { chooseAndUploadAvatar } from '../services/avatar';
-import { useI18n } from '../services/i18n';
+import { auth } from '../../services/firebase';
+import { apiFetch } from '../../services/api';
+import { useAuthStore } from '../../store/authStore';
+import { chooseAndUploadAvatar } from '../../services/avatar';
+import { useI18n } from '../../services/i18n';
 import { c, font, radius, space, shadowSm, icon } from '../../theme/tokens';
 import Constants from 'expo-constants';
-import * as haptics from '../services/haptics';
-import HapticPressable from '../components/HapticPressable';
-import { formatMoney } from '../services/currency';
-import HapticSwitch from '../components/HapticSwitch';
+import * as haptics from '../../services/haptics';
+import HapticPressable from '../../components/HapticPressable';
+import { formatMoney } from '../../services/currency';
+import HapticSwitch from '../../components/HapticSwitch';
 
 const SUPPORT_EMAIL = 'soverontech@gmail.com';
 const SUPPORT_PHONE = '+919999002281';

@@ -1,7 +1,7 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { Car, CarFront, Van, Bus, Bike } from 'lucide-react-native';
-import { c, font } from '../../theme/tokens';
+import { c, font } from '../theme/tokens';
 
 /**
  * Vehicle size classes, mirroring lib/vehicles.ts on the backend. The server

@@ -4,12 +4,12 @@ import { useRouter, useFocusEffect } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Bell, ArrowLeft, CheckCheck, Clock, MapPin, ShieldAlert, Hourglass, Coins, Receipt, Timer, Siren, KeyRound, ShieldCheck, CheckCircle2, XCircle, Wallet, Car, Navigation, Info } from 'lucide-react-native';
 import { c, font, radius, space, shadowSm } from '../theme/tokens';
-import { apiFetch } from './services/api';
-import { AppCache } from './services/cache';
-import * as haptics from './services/haptics';
-import HapticPressable from './components/HapticPressable';
-import { formatPostedAgo } from './services/datetime';
-import { handleNotificationNavigation } from './services/notifications';
+import { apiFetch } from '../services/api';
+import { AppCache } from '../services/cache';
+import * as haptics from '../services/haptics';
+import HapticPressable from '../components/HapticPressable';
+import { formatPostedAgo } from '../services/datetime';
+import { handleNotificationNavigation } from '../services/notifications';
 
 interface NotificationItem {
   id: string;

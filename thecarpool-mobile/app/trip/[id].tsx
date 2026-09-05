@@ -12,14 +12,14 @@ if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental
 }
 
 const MAP_PROVIDER = Platform.OS === 'android' ? PROVIDER_GOOGLE : undefined;
-import { auth } from '../services/firebase';
-import { API_URL, apiFetch } from '../services/api';
-import * as haptics from '../services/haptics';
+import { auth } from '../../services/firebase';
+import { API_URL, apiFetch } from '../../services/api';
+import * as haptics from '../../services/haptics';
 import { c, font, radius, space, shadowSm, icon } from '../../theme/tokens';
-import HapticPressable from '../components/HapticPressable';
-import Button from '../components/Button';
-import { useI18n } from '../services/i18n';
-import { useAuthStore } from '../store/authStore';
+import HapticPressable from '../../components/HapticPressable';
+import Button from '../../components/Button';
+import { useI18n } from '../../services/i18n';
+import { useAuthStore } from '../../store/authStore';
 
 const SOCKET_URL = API_URL;
 

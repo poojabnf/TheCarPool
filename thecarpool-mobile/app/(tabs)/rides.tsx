@@ -4,8 +4,8 @@ import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Search, PlusCircle, ChevronRight } from 'lucide-react-native';
 import { c, font, radius, space, shadowSm } from '../../theme/tokens';
-import HapticPressable from '../components/HapticPressable';
-import { useI18n } from '../services/i18n';
+import HapticPressable from '../../components/HapticPressable';
+import { useI18n } from '../../services/i18n';
 
 /**
  * Rides — the Find + Offer hub. Riders search from Home; this hub routes to

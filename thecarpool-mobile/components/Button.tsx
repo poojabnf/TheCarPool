@@ -5,7 +5,7 @@ import {
 } from 'react-native';
 import * as haptics from '../services/haptics';
 import type { HapticStyle } from './HapticPressable';
-import { c, font, button, darken } from '../../theme/tokens';
+import { c, font, button, darken } from '../theme/tokens';
 
 /**
  * The app's button.

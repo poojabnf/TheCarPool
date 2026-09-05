@@ -5,12 +5,12 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import auth from '@react-native-firebase/auth';
 import { ArrowDownLeft, ArrowUpRight, Smartphone, Landmark, CreditCard, Wallet as WalletIcon, X, Check } from 'lucide-react-native';
 import RazorpayCheckout from 'react-native-razorpay';
-import { apiFetch } from '../services/api';
+import { apiFetch } from '../../services/api';
 import { c, font, radius, space, shadowSm } from '../../theme/tokens';
-import HapticPressable from '../components/HapticPressable';
-import { formatMoney, currencySymbol, useCurrency } from '../services/currency';
-import { useI18n } from '../services/i18n';
-import { useAuthStore } from '../store/authStore';
+import HapticPressable from '../../components/HapticPressable';
+import { formatMoney, currencySymbol, useCurrency } from '../../services/currency';
+import { useI18n } from '../../services/i18n';
+import { useAuthStore } from '../../store/authStore';
 
 interface Txn { id: string; type: string; label: string; amount: number; status: string; at: string | null; }
 

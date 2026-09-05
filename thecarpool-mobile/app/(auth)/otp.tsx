@@ -4,8 +4,8 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import auth from '@react-native-firebase/auth';
 import { c, font, radius, space } from '../../theme/tokens';
-import HapticPressable from '../components/HapticPressable';
-import { findCountry, toE164 } from '../services/countries';
+import HapticPressable from '../../components/HapticPressable';
+import { findCountry, toE164 } from '../../services/countries';
 
 const OTP_LENGTH = 6;
 const RESEND_SECONDS = 30;

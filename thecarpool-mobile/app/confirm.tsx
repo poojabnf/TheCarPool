@@ -5,14 +5,14 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import auth from '@react-native-firebase/auth';
 import { Lock, ChevronLeft, Circle, MapPin, Footprints, Clock } from 'lucide-react-native';
 import RazorpayCheckout from 'react-native-razorpay';
-import { apiFetch } from './services/api';
-import * as haptics from './services/haptics';
-import { useAuthStore } from './store/authStore';
+import { apiFetch } from '../services/api';
+import * as haptics from '../services/haptics';
+import { useAuthStore } from '../store/authStore';
 import { c, font, radius, space, shadowSm } from '../theme/tokens';
-import HapticPressable from './components/HapticPressable';
-import Button from './components/Button';
-import { formatMoney } from './services/currency';
-import { formatDeparture } from './services/datetime';
+import HapticPressable from '../components/HapticPressable';
+import Button from '../components/Button';
+import { formatMoney } from '../services/currency';
+import { formatDeparture } from '../services/datetime';
 
 function initials(name?: string) {
   if (!name) return 'D';
