@@ -153,6 +153,34 @@ export default function SwipeAction({
 
   const onLayout = (e: LayoutChangeEvent) => setTrackWidth(e.nativeEvent.layout.width);
 
+  /**
+   * A slow nudge on the chevron while the control sits untouched.
+   *
+   * A pill with a round knob reads as a button, and a driver who taps it and
+   * sees nothing happen concludes it is broken -- which is exactly the report
+   * that came back. Movement is the only thing that says "drag me" without
+   * adding a line of text nobody reads.
+   *
+   * Its own value, deliberately: sharing the drag's would mean an idle
+   * animation fighting the gesture for the same node. Stops while the user is
+   * actually dragging, because by then it has done its job.
+   */
+  const hint = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    if (inert) return;
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(hint, { toValue: 1, duration: 700, useNativeDriver: true }),
+        Animated.timing(hint, { toValue: 0, duration: 700, useNativeDriver: true }),
+        Animated.delay(900),
+      ])
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [inert, hint]);
+
+  const hintShift = hint.interpolate({ inputRange: [0, 1], outputRange: [0, 5] });
+
   // The instruction fades as the thumb covers it; the filled tint behind grows
   // with the gesture so progress is legible without a separate indicator.
   const labelOpacity = maxTravel > 0
@@ -201,7 +229,11 @@ export default function SwipeAction({
       >
         {loading
           ? <ActivityIndicator size="small" color={tint} />
-          : <ChevronsRight color={tint} size={22} strokeWidth={2.6} />}
+          : (
+            <Animated.View style={{ transform: [{ translateX: hintShift }] }}>
+              <ChevronsRight color={tint} size={22} strokeWidth={2.6} />
+            </Animated.View>
+          )}
       </Animated.View>
     </View>
   );
@@ -211,7 +243,15 @@ const styles = StyleSheet.create({
   track: {
     height: TRACK_HEIGHT,
     borderRadius: radius.pill,
-    backgroundColor: c.surfaceInset,
+    // Tinted, not neutral grey.
+    //
+    // On the inset surface this read as a disabled field rather than the one
+    // action left on a running trip -- a driver looking for "complete" did not
+    // see a control at all. The wash and the outline are the same green the
+    // fill uses, so the resting state announces what the gesture will do.
+    backgroundColor: c.goSoft,
+    borderWidth: 1.5,
+    borderColor: c.go,
     justifyContent: 'center',
     overflow: 'hidden',
   },
@@ -223,9 +263,12 @@ const styles = StyleSheet.create({
   label: {
     position: 'absolute',
     left: THUMB_SIZE + 16, right: 16,
-    fontFamily: font.sansSemibold,
-    fontSize: 15,
-    color: c.textSecondary,
+    // Bold and in the action's own colour: secondary grey on a tinted track
+    // is the weight given to a caption, not to an instruction.
+    fontFamily: font.sansBold,
+    fontSize: 15.5,
+    color: c.goStrong,
+    letterSpacing: 0.1,
   },
   thumb: {
     position: 'absolute',
@@ -234,10 +277,12 @@ const styles = StyleSheet.create({
     borderRadius: THUMB_SIZE / 2,
     backgroundColor: c.bgBase,
     alignItems: 'center', justifyContent: 'center',
+    // A lifted knob against the tint, so the thing you are meant to grab is
+    // the most solid object in the control.
     shadowColor: '#0B0F14',
-    shadowOpacity: 0.16, shadowRadius: 6,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 3,
+    shadowOpacity: 0.22, shadowRadius: 7,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 5,
   },
   inert: { opacity: 0.5 },
 });
