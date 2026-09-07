@@ -1736,22 +1736,37 @@ export default function DriverInterface() {
                 })}
               </ScrollView>
 
+              {/* Wrapped, not scrolled sideways.
+                  Twenty-four chips in one horizontal strip hides most of them
+                  behind an edge with nothing to say more exist, and nothing
+                  scrolled the selected hour into view -- so a driver posting
+                  at eleven at night opened a row that appeared to begin at
+                  midnight, with their actual selection off-screen to the
+                  right. A grid shows every hour at once and costs four rows.
+                  The am/pm split is labelled, because 24 undifferentiated
+                  chips read as a wall of numbers. */}
               <Text style={styles.formSubLabel}>Hour</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 10 }}>
-                {Array.from({ length: 24 }, (_, h) => h).map((h) => {
-                  const active = h === depHour;
-                  const label = `${((h % 12) || 12)}${h < 12 ? 'am' : 'pm'}`;
-                  return (
-                    <HapticPressable
-                      key={h}
-                      style={[styles.depChip, active && styles.depChipActive]}
-                      onPress={() => setDepHour(h)}
-                    >
-                      <Text style={[styles.depChipText, active && styles.depChipTextActive]}>{label}</Text>
-                    </HapticPressable>
-                  );
-                })}
-              </ScrollView>
+              {([['Morning', 0, 12], ['Afternoon & evening', 12, 24]] as const).map(([band, from, to]) => (
+                <View key={band} style={{ marginBottom: 8 }}>
+                  <Text style={styles.depBandLabel}>{band}</Text>
+                  <View style={styles.depRow}>
+                    {Array.from({ length: to - from }, (_, i) => from + i).map((h) => {
+                      const active = h === depHour;
+                      const label = `${((h % 12) || 12)}${h < 12 ? 'am' : 'pm'}`;
+                      return (
+                        <HapticPressable
+                          key={h}
+                          style={[styles.depChip, active && styles.depChipActive]}
+                          onPress={() => setDepHour(h)}
+                          accessibilityState={{ selected: active }}
+                        >
+                          <Text style={[styles.depChipText, active && styles.depChipTextActive]}>{label}</Text>
+                        </HapticPressable>
+                      );
+                    })}
+                  </View>
+                </View>
+              ))}
 
               <Text style={styles.formSubLabel}>Minutes</Text>
               <View style={styles.depRow}>
@@ -2758,6 +2773,7 @@ const styles = StyleSheet.create({
   seatBtnText: { color: colors.text, fontSize: 22, fontWeight: '800' },
   seatCount: { color: colors.text, fontSize: 18, fontWeight: '800', minWidth: 48, textAlign: 'center' },
   depRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  depBandLabel: { fontSize: 11.5, color: colors.textMuted, marginBottom: 6, fontWeight: '600' },
   depChip: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8, backgroundColor: colors.inputBackground, borderWidth: 1, borderColor: colors.cardBorder },
   depChipActive: { backgroundColor: colors.primary, borderColor: colors.primary },
   depChipText: { color: colors.textMuted, fontWeight: '700', fontSize: 12 },

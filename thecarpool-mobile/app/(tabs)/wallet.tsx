@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, ScrollView, RefreshControl, ActivityIndicator, 
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import auth from '@react-native-firebase/auth';
-import { ArrowDownLeft, ArrowUpRight, Smartphone, Landmark, CreditCard, Wallet as WalletIcon, X, Check } from 'lucide-react-native';
+import { ArrowDownLeft, ArrowUpRight, Smartphone, Landmark, CreditCard, Wallet as WalletIcon, X, Check, Receipt } from 'lucide-react-native';
 import RazorpayCheckout from 'react-native-razorpay';
 import { apiFetch } from '../../services/api';
 import { c, font, radius, space, shadowSm } from '../../theme/tokens';
@@ -164,7 +164,20 @@ export default function WalletScreen() {
 
       <Text style={styles.sectionTitle}>{t('transactions')}</Text>
       {txns.length === 0 && !loading && (
-        <Text style={styles.empty}>No transactions yet.</Text>
+        // Matches the shape Trips and Notifications already use: a marked
+        // icon, a title, and a line saying what will appear here. This screen
+        // answered with one grey sentence, which reads as a system that has
+        // nothing to say rather than an account that has not been used yet --
+        // and it was the odd one out among three otherwise identical empties.
+        <View style={styles.emptyBox}>
+          <View style={styles.emptyIconBg}>
+            <Receipt color={c.textDisabled} size={28} strokeWidth={1.8} />
+          </View>
+          <Text style={styles.emptyTitle}>No transactions yet</Text>
+          <Text style={styles.emptySub}>
+            Fares, refunds and earnings will show up here as you ride.
+          </Text>
+        </View>
       )}
       {txns.map((t) => {
         const credit = t.amount >= 0;
@@ -254,6 +267,18 @@ const styles = StyleSheet.create({
   actionSecondary: { backgroundColor: 'rgba(255,255,255,0.12)' },
   actionSecondaryText: { fontFamily: font.sansBold, fontSize: 14, color: '#fff' },
   sectionTitle: { fontFamily: font.sansBold, fontSize: 15, color: c.textPrimary, marginBottom: space.md },
+  emptyBox: { alignItems: 'center', paddingVertical: space.xl },
+  emptyIconBg: {
+    width: 64, height: 64, borderRadius: 32,
+    backgroundColor: c.surfaceInset,
+    alignItems: 'center', justifyContent: 'center',
+    marginBottom: space.md,
+  },
+  emptyTitle: { fontFamily: font.sansBold, fontSize: 15, color: c.textPrimary, marginBottom: 4 },
+  emptySub: {
+    fontFamily: font.sans, fontSize: 13, color: c.textTertiary,
+    textAlign: 'center', lineHeight: 19, paddingHorizontal: space.xl,
+  },
   empty: { fontFamily: font.sans, fontSize: 13, color: c.textTertiary },
   txnRow: {
     flexDirection: 'row', alignItems: 'center', gap: space.md, paddingVertical: space.md,
