@@ -5,14 +5,15 @@ import {
 import { useRouter, useFocusEffect } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import auth from '@react-native-firebase/auth';
-import { MapPin, Circle, Search, Wind, Venus, Users, Leaf, Clock, Bell } from 'lucide-react-native';
+import { MapPin, Circle, Search, Wind, Venus, Users, Leaf, Clock, Bell, Medal, Building2, Milestone, Ticket, History, Check } from 'lucide-react-native';
 import { apiFetch } from '../../services/api';
 import { useAuthStore } from '../../store/authStore';
 import { useI18n } from '../../services/i18n';
 import * as haptics from '../../services/haptics';
-import { c, font, radius, space, shadowSm, brass, rideStatusColors } from '../../theme/tokens';
+import { c, font, radius, space, shadowSm, brass, rideStatusColors, icon } from '../../theme/tokens';
 import HapticPressable from '../../components/HapticPressable';
 import Button from '../../components/Button';
+import RideCardSkeleton from '../../components/RideCardSkeleton';
 import { formatMoney } from '../../services/currency';
 import { searchPlaces, MIN_QUERY_LENGTH, SEARCH_DEBOUNCE_MS, warmUp } from '../../services/geo';
 import { formatDeparture, isDepartingSoon, formatPostedAgo } from '../../services/datetime';
@@ -524,6 +525,17 @@ export default function HomeScreen() {
         />
       </View>
 
+      {/* A search in flight, before there is anything to show.
+          Gated on `rides === null` so it appears only for a first search and
+          not over results the rider is already reading -- a list replaced by
+          placeholders mid-scroll is worse than a list that updates. */}
+      {searching && rides === null && (
+        <View style={{ marginTop: space.xl }}>
+          <Text style={styles.sectionTitle}>{t('finding_rides')}</Text>
+          <RideCardSkeleton />
+        </View>
+      )}
+
       {/* Results */}
       {rides !== null && (
         <View style={{ marginTop: space.xl }}>
@@ -594,31 +606,44 @@ export default function HomeScreen() {
                   </Text>
                 )}
                 {ride.created_at && (
-                  <Text style={{ fontFamily: font.sans, fontSize: 12, color: c.textTertiary, marginLeft: 'auto' }}>
-                    🕒 {formatPostedAgo(ride.created_at)}
-                  </Text>
+                  <View style={styles.postedAgoRow}>
+                    <History color={c.textTertiary} size={11} strokeWidth={icon.stroke.normal} />
+                    <Text style={{ fontFamily: font.sans, fontSize: 12, color: c.textTertiary }}>
+                      {formatPostedAgo(ride.created_at)}
+                    </Text>
+                  </View>
                 )}
               </View>
 
               <View style={styles.badgeRow}>
-                {['GOLD', 'SILVER', 'BRONZE'].includes((ride as any).driver_trust_level) && (
-                  <View style={styles.badge}>
-                    <Text style={styles.badgeText}>
-                      {(ride as any).driver_trust_level === 'GOLD' ? '🥇 Gold' : (ride as any).driver_trust_level === 'SILVER' ? '🥈 Silver' : '🥉 Bronze'}
-                    </Text>
-                  </View>
-                )}
+                {['GOLD', 'SILVER', 'BRONZE'].includes((ride as any).driver_trust_level) && (() => {
+                  // One medal, tinted by tier. Three separate emoji could not
+                  // take the badge's colour, so a trust level -- the thing a
+                  // rider weighs a stranger by -- was rendered in whatever hue
+                  // the operating system happened to ship.
+                  const tier = (ride as any).driver_trust_level;
+                  const tint = tier === 'GOLD' ? c.accent : tier === 'SILVER' ? c.textTertiary : '#B45309';
+                  return (
+                    <View style={styles.badge}>
+                      <Medal color={tint} size={12} strokeWidth={icon.stroke.emphasis} />
+                      <Text style={[styles.badgeText, { color: tint }]}>
+                        {tier === 'GOLD' ? 'Gold' : tier === 'SILVER' ? 'Silver' : 'Bronze'}
+                      </Text>
+                    </View>
+                  );
+                })()}
                 {ride.ac_available && <View style={styles.badge}><Wind color={c.info} size={12} strokeWidth={2.4} /><Text style={styles.badgeText}>AC</Text></View>}
                 {(ride as any).women_only && <View style={styles.badge}><Venus color={c.textAccent} size={12} strokeWidth={2.4} /><Text style={styles.badgeText}>{t('women_only')}</Text></View>}
                 {(ride as any).metro_match && (
                   <View style={[styles.badge, { backgroundColor: c.accentSoft }]}>
+                    <Building2 color={c.textAccent} size={12} strokeWidth={icon.stroke.emphasis} />
                     <Text style={[styles.badgeText, { color: c.textAccent }]}>
-                      🏙️ {(ride as any).metro_region || 'Metro match'}
+                      {(ride as any).metro_region || 'Metro match'}
                     </Text>
                   </View>
                 )}
-                {(ride as any).ride_type === 'INTERCITY' && <View style={styles.badge}><Text style={styles.badgeText}>🛣️ Intercity</Text></View>}
-                {(ride as any).ride_type === 'EVENT' && <View style={styles.badge}><Text style={styles.badgeText}>🎪 {(ride as any).event_tag || 'Event'}</Text></View>}
+                {(ride as any).ride_type === 'INTERCITY' && <View style={styles.badge}><Milestone color={c.textSecondary} size={12} strokeWidth={icon.stroke.emphasis} /><Text style={styles.badgeText}>Intercity</Text></View>}
+                {(ride as any).ride_type === 'EVENT' && <View style={styles.badge}><Ticket color={c.textSecondary} size={12} strokeWidth={icon.stroke.emphasis} /><Text style={styles.badgeText}>{(ride as any).event_tag || 'Event'}</Text></View>}
                 {ride.pickup_deviation != null && (
                   <Text style={styles.detour}>
                     {ride.pickup_deviation >= 1000
@@ -633,7 +658,8 @@ export default function HomeScreen() {
                 // trip, so it drops to secondary weight rather than competing
                 // with the bookable cards around it.
                 <Button
-                  label="✓ Booked · View trip"
+                  label="Booked · View trip"
+                  icon={({ color, size }) => <Check color={color} size={size} strokeWidth={icon.stroke.emphasis} />}
                   variant="secondary"
                   haptic="tap"
                   onPress={() => router.push(`/trip/${ride.id}`)}
@@ -771,6 +797,7 @@ const styles = StyleSheet.create({
   whenSoon: { color: c.go },
   seatsLeft: { fontFamily: font.sans, fontSize: 12.5, color: c.textTertiary },
   seatsLow: { color: c.danger, fontFamily: font.sansSemibold },
+  postedAgoRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginLeft: 'auto' },
   badgeRow: { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginTop: space.md },
   badge: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: c.surfaceSunken, borderRadius: radius.pill, paddingHorizontal: 8, paddingVertical: 4 },
   badgeText: { fontFamily: font.sansSemibold, fontSize: 11, color: c.textSecondary },
