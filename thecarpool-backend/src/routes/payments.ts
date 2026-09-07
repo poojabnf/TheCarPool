@@ -28,6 +28,14 @@ import {
 import { round2, isShortOf } from '../lib/money';
 
 
+/**
+ * The smallest order Razorpay will create, in rupees.
+ *
+ * Their floor, not ours. Enforced here so the rider gets a sentence they can
+ * act on instead of a gateway error relayed as a 502.
+ */
+const MIN_ORDER_RUPEES = 1;
+
 const OrderSchema = z.object({
   amount: z.number().positive(),
   currency: z.string().length(3).optional().default(defaultCurrency()),
@@ -146,6 +154,26 @@ export async function paymentRoutes(fastify: FastifyInstance) {
     if (!isRazorpayConfigured()) {
       return reply.code(503).send({ error: 'Payments are not configured on this server.' });
     }
+
+    // Razorpay will not accept an order below one rupee, and said so only
+    // through a BAD_REQUEST that we relayed as "Failed to create payment
+    // order" -- a rider saw a payment failure with no hint that the fare
+    // itself was the problem, and retrying could never work.
+    //
+    // Reachable with real pricing, not just test data: proportional stop
+    // fares divide a ride's price across its legs, so a short hop on an
+    // inexpensive route lands under a rupee legitimately. The answer points at
+    // the two ways to pay that have no floor rather than leaving them stuck.
+    if (amount < MIN_ORDER_RUPEES) {
+      return reply.code(400).send({
+        error: 'AMOUNT_BELOW_MINIMUM',
+        message:
+          `Card and UPI payments start at ₹${MIN_ORDER_RUPEES}.00. `
+          + 'For a fare this small, pay the driver directly or use your wallet.',
+        minimum: MIN_ORDER_RUPEES,
+      });
+    }
+
     try {
       const order = await getRazorpay().orders.create({
         amount: Math.round(amount * 100), // paise
