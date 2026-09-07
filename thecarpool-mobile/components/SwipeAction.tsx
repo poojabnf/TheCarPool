@@ -52,7 +52,19 @@ const THUMB_SIZE = TRACK_HEIGHT - THUMB_INSET * 2;
  * gesture is unmistakably deliberate and still forgiving of a thumb that runs
  * out of screen.
  */
-const COMMIT_FRACTION = 0.72;
+const COMMIT_FRACTION = 0.55;
+
+/**
+ * A confident flick counts even when it stops short.
+ *
+ * At 0.72 of the track and distance alone, a deliberate swipe that ran out of
+ * thumb at two thirds sprang back, and the driver tried again -- reported as
+ * "works, but takes a few goes". Distance OR speed commits now: someone who
+ * throws the knob is as certain as someone who walks it to the end, and the
+ * accidental brush this control exists to prevent has neither.
+ */
+const FLICK_VELOCITY = 0.6;
+const FLICK_MIN_FRACTION = 0.3;
 
 export default function SwipeAction({
   label, onComplete, busyLabel = 'Working…', loading = false,
@@ -65,6 +77,7 @@ export default function SwipeAction({
   // Latched so the spring-back animation cannot re-fire onComplete, and so a
   // second slide during a slow request cannot submit twice.
   const firedRef = useRef(false);
+  const armedRef = useRef(false);
   const retryTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => () => { if (retryTimer.current) clearTimeout(retryTimer.current); }, []);
   /**
@@ -108,6 +121,7 @@ export default function SwipeAction({
   // looked simply broken. A single drag at 60fps on the JS thread is not the
   // thing worth optimising here.
   const springBack = () => {
+    armedRef.current = false;
     Animated.spring(x, { toValue: 0, useNativeDriver: false, bounciness: 6 }).start();
   };
 
@@ -115,17 +129,37 @@ export default function SwipeAction({
     PanResponder.create({
       onStartShouldSetPanResponder: () => true,
       onMoveShouldSetPanResponder: (_e, g) => Math.abs(g.dx) > 4,
+      // Never hand the gesture back once it is ours.
+      //
+      // The card sits in a scrolling list, and a drag with any vertical
+      // component let the ScrollView ask for the responder and take it
+      // mid-swipe. The thumb stopped dead and the ride did not complete --
+      // intermittently, depending on how straight the thumb travelled, which
+      // is exactly how "works sometimes" is produced.
+      onPanResponderTerminationRequest: () => false,
       onPanResponderGrant: () => { if (!inertRef.current) haptics.tap(); },
       onPanResponderMove: (_e, g) => {
         if (inertRef.current || firedRef.current) return;
         // Clamped both ways: the thumb never leaves the track, and dragging
         // backwards must not push it out of the left edge.
-        x.setValue(Math.max(0, Math.min(g.dx, maxTravelRef.current)));
+        const travel = maxTravelRef.current;
+        x.setValue(Math.max(0, Math.min(g.dx, travel)));
+        // One tick as the thumb crosses the point of no return. Without it the
+        // only way to know the swipe had gone far enough was to let go and
+        // find out, which is why a short swipe felt like a broken control
+        // rather than an incomplete one.
+        const past = travel > 0 && g.dx >= travel * COMMIT_FRACTION;
+        if (past !== armedRef.current) {
+          armedRef.current = past;
+          if (past) haptics.tap();
+        }
       },
       onPanResponderRelease: (_e, g) => {
         if (inertRef.current || firedRef.current) return springBack();
         const travel = maxTravelRef.current;
-        if (travel > 0 && g.dx >= travel * COMMIT_FRACTION) {
+        const far = g.dx >= travel * COMMIT_FRACTION;
+        const flicked = g.vx >= FLICK_VELOCITY && g.dx >= travel * FLICK_MIN_FRACTION;
+        if (travel > 0 && (far || flicked)) {
           firedRef.current = true;
           haptics.success();
           // Settle at the end before firing, so the control visibly finishes
@@ -184,10 +218,23 @@ export default function SwipeAction({
   // The instruction fades as the thumb covers it; the filled tint behind grows
   // with the gesture so progress is legible without a separate indicator.
   const labelOpacity = maxTravel > 0
-    ? x.interpolate({ inputRange: [0, maxTravel * 0.6], outputRange: [1, 0], extrapolate: 'clamp' })
+    ? x.interpolate({ inputRange: [0, maxTravel * 0.45], outputRange: [1, 0], extrapolate: 'clamp' })
     : 1;
   // Interpolated rather than Animated.add with a fresh node per render, which
   // allocated a new value on every frame of the drag.
+  /**
+   * The label gives way, and the knob brightens, once the swipe is far enough
+   * to land. Paired with the haptic tick: one cue for the hand, one for the
+   * eye, so nobody has to let go to discover whether they went far enough.
+   */
+  const armedTint = maxTravel > 0
+    ? x.interpolate({
+        inputRange: [0, maxTravel * COMMIT_FRACTION, maxTravel],
+        outputRange: [c.bgBase, c.bgBase, c.goSoft],
+        extrapolate: 'clamp',
+      })
+    : c.bgBase;
+
   const fillWidth = maxTravel > 0
     ? x.interpolate({
         inputRange: [0, maxTravel],
@@ -221,7 +268,7 @@ export default function SwipeAction({
       </Animated.Text>
       <Animated.View
         pointerEvents="none"
-        style={[styles.thumb, { transform: [{ translateX: x }] }]}
+        style={[styles.thumb, { backgroundColor: armedTint, transform: [{ translateX: x }] }]}
         accessibilityRole="adjustable"
         accessibilityLabel={label}
         accessibilityHint="Swipe right to confirm"
