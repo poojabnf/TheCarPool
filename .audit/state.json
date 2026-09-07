@@ -1,0 +1,30 @@
+{
+  "run": 1,
+  "totalRuns": 10,
+  "startedAt": "2026-09-06",
+  "note": "Competitive audit cycle. Each run increments `run` and records what it changed.",
+  "coveredAreas": [
+    "run1: search/home ride card — badge iconography, search loading state. Apps: BlaBlaCar, Quick Ride, sRide, Uber, Ola."
+  ],
+  "shipped": [
+    "run1: OTA d1219e22 (runtime 1.5.14) — Medal/Building2/Milestone/Ticket/History/Check replace emoji badges on the ride card; RideCardSkeleton shown while a first search runs; finding_rides key added in en+hi."
+  ],
+  "notYetCovered": [
+    "trip/[id] live-tracking layout and bottom sheet",
+    "confirm & pay screen visual hierarchy",
+    "driver dashboard information density",
+    "empty states across tabs",
+    "wallet and payout screens",
+    "onboarding and auth visual polish",
+    "trips list",
+    "safety centre",
+    "typography scale consistency",
+    "dark mode support (none today)"
+  ],
+  "openItemsForUser": [
+    "rider can cancel after boarding verified on a moving trip — needs a product decision",
+    "pay-the-driver settlement never exercised end to end in production",
+    "REQUIRE_DRIVER_LICENCE off by default — rollout date needed",
+    "real KYC verification needs a vendor decision"
+  ]
+}
