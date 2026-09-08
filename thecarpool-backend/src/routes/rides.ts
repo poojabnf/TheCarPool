@@ -801,10 +801,19 @@ export async function rideRoutes(fastify: FastifyInstance) {
         } catch (emailErr) {
           fastify.log.error(emailErr, 'Failed to send ride offer confirmation email');
         }
-
-        // Push confirmation to driver
-        await deliver(notifyRideOffered(rideId, uid, newRide, fastify.log), fastify.log);
       })();
+
+      // Awaited out here, not inside the email block above.
+      //
+      // deliver() exists to hold the response open until the push has left,
+      // because Cloud Run throttles this container's CPU to near-zero the
+      // moment the response flushes and freezes whatever is still running.
+      // Wrapping it in a fire-and-forget IIFE cancelled exactly that: the
+      // email ran first, took a network round trip, and the notification
+      // behind it was the most likely thing to be frozen. Same failure the
+      // rest of the notification call sites were fixed for -- this one had
+      // the fix applied and then defeated by the block it sat in.
+      await deliver(notifyRideOffered(rideId, uid, newRide, fastify.log), fastify.log);
 
       return reply.code(201).send(newRide);
     } catch (err: any) {

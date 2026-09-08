@@ -627,7 +627,12 @@ export default function DriverInterface() {
           body: JSON.stringify({ decision }),
         }, { timeoutMs: 25000 });
         const data = await res.json().catch(() => ({} as any));
-        if (!res.ok) {
+        // A 409 means the request was already decided -- almost always by
+        // this driver's own earlier press, which is the very double-press the
+        // comment below describes. The decision stands, so treat it as done
+        // and let the refresh below show the true state, rather than telling
+        // someone their accept failed when it did not.
+        if (!res.ok && res.status !== 409) {
           Alert.alert('Could not update', data.message || data.error || 'Please try again.');
           return;
         }
@@ -824,7 +829,14 @@ export default function DriverInterface() {
           method: 'PATCH',
           body: JSON.stringify({ status: 'COMPLETED' }),
         });
-        if (res.ok) {
+        // 409 here means the ride is already COMPLETED -- which is the
+        // outcome the driver asked for, reached by an earlier request. It was
+        // being reported as a failure, with an error buzz and an alert saying
+        // "Could not update", for a trip that had in fact just been completed.
+        // Easy to hit while the slider needed more than one attempt: the first
+        // swipe landed, the second met the server's own guard.
+        const alreadyDone = res.status === 409;
+        if (res.ok || alreadyDone) {
           haptics.success();
           setActiveRideId(null);
           loadMyRides();
