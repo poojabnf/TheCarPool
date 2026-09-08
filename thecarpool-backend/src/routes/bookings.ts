@@ -990,12 +990,21 @@ export async function bookingRoutes(fastify: FastifyInstance) {
     try {
       const snap = await db.collection('bookings').where('rider_id', '==', uid).get();
       const allowance = cashAllowance(snap.docs.map((d) => d.data() as any));
-      return reply.send(allowance);
+      // Infinity has no JSON representation -- JSON.stringify turns it into
+      // null, which a client could just as easily read as "none left" as
+      // "no ceiling". Say it in a field that survives the wire.
+      const unlimited = !Number.isFinite(allowance.limit);
+      return reply.send({
+        ...allowance,
+        limit: unlimited ? null : allowance.limit,
+        remaining: unlimited ? null : allowance.remaining,
+        unlimited,
+      });
     } catch (err: any) {
       fastify.log.error({ err, uid }, 'Failed to compute cash allowance');
       // Fail closed. Guessing generously here would hand out a free ride on a
       // Firestore hiccup; guessing meanly only asks someone to pay as normal.
-      return reply.send({ limit: 0, used: 0, remaining: 0, eligible: false });
+      return reply.send({ limit: 0, used: 0, remaining: 0, eligible: false, unlimited: false });
     }
   });
 

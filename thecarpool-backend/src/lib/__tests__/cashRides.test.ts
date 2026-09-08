@@ -40,23 +40,28 @@ describe('what consumes a pay-the-driver allowance', () => {
 });
 
 describe('cashAllowance', () => {
+  // The cap is off in production -- the operator lifted it while the platform
+  // establishes itself -- so these pass the limit explicitly. The behaviour
+  // has to stay correct for the day it is switched back on, and a rule only
+  // exercised when enabled is one nobody can trust at that moment.
+  const CAP = 5;
   const cash = (n: number) =>
     Array.from({ length: n }, () => ({ payment_method: 'PAY_DRIVER', booking_status: 'CONFIRMED' }));
 
   it('gives a brand new rider the full allowance', () => {
-    const a = cashAllowance([]);
-    expect(a.limit).toBe(CASH_RIDE_LIMIT);
+    const a = cashAllowance([], CAP);
+    expect(a.limit).toBe(CAP);
     expect(a.used).toBe(0);
-    expect(a.remaining).toBe(CASH_RIDE_LIMIT);
+    expect(a.remaining).toBe(CAP);
     expect(a.eligible).toBe(true);
   });
 
   it('counts down as they are used', () => {
-    expect(cashAllowance(cash(3)).remaining).toBe(CASH_RIDE_LIMIT - 3);
+    expect(cashAllowance(cash(3), CAP).remaining).toBe(CAP - 3);
   });
 
   it('stops at the limit', () => {
-    const a = cashAllowance(cash(CASH_RIDE_LIMIT));
+    const a = cashAllowance(cash(CAP), CAP);
     expect(a.remaining).toBe(0);
     expect(a.eligible).toBe(false);
   });
@@ -64,32 +69,32 @@ describe('cashAllowance', () => {
   // The counter is derived, so it can never go negative or wrap round even if
   // more cash bookings somehow exist than the limit allows.
   it('never reports a negative remainder', () => {
-    const a = cashAllowance(cash(CASH_RIDE_LIMIT + 4));
+    const a = cashAllowance(cash(CAP + 4), CAP);
     expect(a.remaining).toBe(0);
     expect(a.eligible).toBe(false);
   });
 
   it('hands the allowance back when a booking is declined or cancelled', () => {
     const mixed = [
-      ...cash(CASH_RIDE_LIMIT),
+      ...cash(CAP),
       { payment_method: 'PAY_DRIVER', booking_status: 'DECLINED' },
       { payment_method: 'PAY_DRIVER', escrow_status: 'CANCELLED' },
     ];
     // The two dead ones do not add to the count.
-    expect(cashAllowance(mixed).used).toBe(CASH_RIDE_LIMIT);
+    expect(cashAllowance(mixed, CAP).used).toBe(CAP);
 
     const withRefusals = [
       ...cash(2),
       { payment_method: 'PAY_DRIVER', booking_status: 'DECLINED' },
     ];
-    expect(cashAllowance(withRefusals).remaining).toBe(CASH_RIDE_LIMIT - 2);
+    expect(cashAllowance(withRefusals, CAP).remaining).toBe(CAP - 2);
   });
 
   it('is not affected by rides paid for through the app', () => {
     const paid = Array.from({ length: 20 }, () => ({
       payment_method: 'RAZORPAY', booking_status: 'COMPLETED',
     }));
-    expect(cashAllowance(paid).remaining).toBe(CASH_RIDE_LIMIT);
+    expect(cashAllowance(paid, CAP).remaining).toBe(CAP);
   });
 });
 
@@ -100,12 +105,13 @@ describe('cashBookingRefusal', () => {
 
   it('refuses once the allowance is spent, and says so', () => {
     const spent = cashAllowance(
-      Array.from({ length: CASH_RIDE_LIMIT }, () => ({
+      Array.from({ length: 5 }, () => ({
         payment_method: 'PAY_DRIVER', booking_status: 'CONFIRMED',
-      }))
+      })),
+      5
     );
     const reason = cashBookingRefusal(spent, 1);
-    expect(reason).toContain(String(CASH_RIDE_LIMIT));
+    expect(reason).toContain('5');
     expect(reason).toContain('Pay through the app');
   });
 
@@ -140,5 +146,38 @@ describe('isBookingActive', () => {
     expect(isBookingActive(undefined)).toBe(false);
     expect(isBookingActive(null)).toBe(false);
     expect(isBookingActive('')).toBe(false);
+  });
+});
+
+
+describe('the cap, lifted', () => {
+  // The operator's decision: unlimited while the platform establishes itself.
+  // Paying through the app is untouched; only the ceiling on the alternative
+  // is gone.
+  const many = Array.from({ length: 50 }, () => ({
+    payment_method: 'PAY_DRIVER', booking_status: 'CONFIRMED',
+  }));
+
+  it('never runs out by default', () => {
+    const a = cashAllowance(many);
+    expect(a.eligible).toBe(true);
+    expect(a.remaining).toBe(Infinity);
+  });
+
+  // Still counted, because how often riders take this route is worth knowing
+  // whether or not it is capped.
+  it('keeps counting what has been used', () => {
+    expect(cashAllowance(many).used).toBe(50);
+  });
+
+  it('refuses nothing on the count alone', () => {
+    expect(cashBookingRefusal(cashAllowance(many), 1)).toBeNull();
+  });
+
+  // The one-seat rule is a separate protection and was not lifted: booking
+  // several seats on a trust allowance hands strangers an unfunded seat that
+  // the driver carries.
+  it('still refuses more than one seat', () => {
+    expect(cashBookingRefusal(cashAllowance(many), 2)).toContain('one seat');
   });
 });

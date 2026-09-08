@@ -171,7 +171,7 @@ function describeDistance(metres: number, minutes: number): string {
   // Asked before the option is shown, not after it is chosen: offering a
   // choice and then refusing it at the last step of checkout is worse than
   // never offering it. The server decides -- this only decides what to draw.
-  const [cashAllowance, setCashAllowance] = useState<{ remaining: number; limit: number } | null>(null);
+  const [cashAllowance, setCashAllowance] = useState<{ remaining: number | null; limit: number | null } | null>(null);
   const [payDriver, setPayDriver] = useState(false);
   useEffect(() => {
     (async () => {
@@ -183,7 +183,11 @@ function describeDistance(metres: number, minutes: number): string {
   }, []);
 
   // One seat only, per the server's rule.
-  const cashAvailable = (cashAllowance?.remaining ?? 0) > 0 && seats === 1;
+  // `remaining` is Infinity while the cap is lifted, and JSON has no Infinity
+  // -- it serialises to null. A missing remainder means "no ceiling", not
+  // zero; reading it as zero would hide the option entirely.
+  const cashRemaining = cashAllowance?.remaining ?? Infinity;
+  const cashAvailable = cashAllowance !== null && cashRemaining > 0 && seats === 1;
   useEffect(() => { if (!cashAvailable) setPayDriver(false); }, [cashAvailable]);
 
   const pay = async () => {
@@ -560,7 +564,15 @@ function describeDistance(metres: number, minutes: number): string {
                 Hand over {num(seatFare)} when you board — nothing is charged now.
                 The driver reviews your request first.
                 {'\n'}
-                {cashAllowance?.remaining} of {cashAllowance?.limit} free rides left on your account.
+                {/* The count only appears when there is a ceiling to count
+                    towards. With no cap it reads as "Infinity of Infinity",
+                    and it warns of a limit that is not there. */}
+                {Number.isFinite(cashAllowance?.limit ?? Infinity) && (
+                  <>
+                    {'\n'}
+                    {cashAllowance?.remaining} of {cashAllowance?.limit} free rides left on your account.
+                  </>
+                )}
               </Text>
             </View>
           </HapticPressable>

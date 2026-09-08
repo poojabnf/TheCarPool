@@ -20,13 +20,28 @@
  */
 
 /**
- * How many rides a new rider may settle directly with the driver.
+ * How many rides a rider may settle directly with the driver.
  *
- * Five is enough to see the service work several times over -- a booking, a
- * driver accepting, a code at the kerb, a completed trip -- without being so
- * many that the platform carries a stranger's risk indefinitely.
+ * Unlimited for now, at the operator's instruction: while the platform is
+ * establishing itself, the friction of being cut off after five rides costs
+ * more than the risk it was avoiding. Paying through the app stays available
+ * and unchanged -- this only removes the ceiling on the alternative.
+ *
+ * A number rather than a deletion. The allowance machinery still counts what
+ * has been used, so turning a limit back on is one environment variable and
+ * no code, and the counting keeps working in the meantime. CASH_RIDE_LIMIT=5
+ * restores the original behaviour exactly.
+ *
+ * Infinity, deliberately, rather than a very large number: the intent is "no
+ * ceiling", and a sentinel like 9999 reads as a real limit to whoever finds it
+ * next and invites a bug at the boundary.
  */
-export const CASH_RIDE_LIMIT = 5;
+export const CASH_RIDE_LIMIT: number = (() => {
+  const raw = process.env.CASH_RIDE_LIMIT;
+  if (raw === undefined || raw === '') return Infinity;
+  const n = Number(raw);
+  return Number.isFinite(n) && n >= 0 ? n : Infinity;
+})();
 
 /** Payment methods a booking can carry. */
 export type PaymentMethod = 'RAZORPAY' | 'WALLET' | 'PAY_DRIVER';
@@ -72,11 +87,25 @@ export interface CashAllowance {
  * finds out. Recomputing from the bookings themselves cannot drift, and a
  * cancellation automatically hands the allowance back with no code to write.
  */
-export function cashAllowance(bookings: CashBookingLike[]): CashAllowance {
+export function cashAllowance(
+  bookings: CashBookingLike[],
+  /**
+   * Overrides the configured ceiling. Exists so the capping behaviour stays
+   * under test while the cap itself is switched off in production -- a rule
+   * that is only exercised when it is enabled is a rule nobody can trust the
+   * day it is turned back on.
+   */
+  limit: number = CASH_RIDE_LIMIT
+): CashAllowance {
   const used = bookings.filter(consumesAllowance).length;
-  const remaining = Math.max(0, CASH_RIDE_LIMIT - used);
+  // Still counted when the limit is off: how often riders take this route is
+  // worth knowing whether or not it is capped, and it is what a future limit
+  // would be judged against.
+  const remaining = Number.isFinite(limit)
+    ? Math.max(0, limit - used)
+    : Infinity;
   return {
-    limit: CASH_RIDE_LIMIT,
+    limit,
     used,
     remaining,
     eligible: remaining > 0,
@@ -94,9 +123,15 @@ export function cashBookingRefusal(
   allowance: CashAllowance,
   seats: number
 ): string | null {
+  // Unreachable while the limit is off -- remaining is Infinity and eligible
+  // is always true -- but written so it cannot say "all Infinity of your
+  // rides" if someone sets a strange value.
   if (!allowance.eligible) {
-    return `You've used all ${allowance.limit} of your pay-the-driver rides. `
-      + 'Pay through the app to book this one.';
+    return Number.isFinite(allowance.limit)
+      ? `You've used all ${allowance.limit} of your pay-the-driver rides. `
+        + 'Pay through the app to book this one.'
+      : 'Pay-the-driver is not available for this booking. '
+        + 'Pay through the app to book it.';
   }
   // One seat per cash booking. The allowance is a trust measure for the person
   // using it, and booking four seats on it hands three strangers an unfunded
