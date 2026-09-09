@@ -1,11 +1,11 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
-  View, Text, StyleSheet, TextInput, ScrollView, Alert, Image,
+  View, Text, StyleSheet, TextInput, ScrollView, Alert, Image, Animated,
 } from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import auth from '@react-native-firebase/auth';
-import { MapPin, Circle, Search, Wind, Venus, Users, Leaf, Clock, Bell, Medal, Building2, Milestone, Ticket, History, Check } from 'lucide-react-native';
+import { MapPin, Circle, Search, Wind, Venus, Users, Leaf, Clock, Bell, Medal, Building2, Milestone, Ticket, History, Check, ArrowUpDown } from 'lucide-react-native';
 import { apiFetch } from '../../services/api';
 import { useAuthStore } from '../../store/authStore';
 import { useI18n } from '../../services/i18n';
@@ -160,6 +160,38 @@ export default function HomeScreen() {
   const [originSug, setOriginSug] = useState<any[]>([]);
   const [destSug, setDestSug] = useState<any[]>([]);
   const [seats, setSeats] = useState(1);
+
+  /**
+   * Reverse the journey.
+   *
+   * The same two places, the other way round, is the single most common second
+   * search anyone makes -- the trip home. Without this it meant retyping both
+   * fields and picking both suggestions again, four interactions to express
+   * something the app already knew.
+   *
+   * Swaps the coordinates alongside the text. Moving only the visible strings
+   * would leave the pins pointing at the old places, and the search runs on
+   * coordinates -- the rider would get results for the journey they had just
+   * reversed, with no way to see why.
+   */
+  const swapRotation = useRef(new Animated.Value(0)).current;
+  // Counted here rather than read back off the animated value: __getValue is
+  // internal API and untyped, and the turn count is ours to know anyway.
+  const swapTurns = useRef(0);
+  const swapEnds = () => {
+    setOrigin(destination);
+    setDestination(origin);
+    setOriginCoords(destCoords);
+    setDestCoords(originCoords);
+    // Any open dropdown belongs to the field that just changed underneath it.
+    setOriginSug([]);
+    setDestSug([]);
+    Animated.timing(swapRotation, {
+      toValue: ++swapTurns.current,
+      duration: 220,
+      useNativeDriver: true,
+    }).start();
+  };
   const [womenOnly, setWomenOnly] = useState(false);
   const [when, setWhen] = useState<WhenKey>('ANY');
   const [rides, setRides] = useState<Ride[] | null>(null);
@@ -461,7 +493,41 @@ export default function HomeScreen() {
         <Suggestions items={originSug} onPick={(s) => {
           setOrigin(s.place_name); setOriginCoords({ lat: s.latitude ?? s.lat ?? 0, lng: s.longitude ?? s.lng ?? 0 }); setOriginSug([]);
         }} />
-        <View style={styles.divider} />
+        {/* The button lives in the divider row rather than floating over the
+            card. Positioned absolutely it stayed put while an opening
+            suggestion list pushed the fields down, and ended up sitting on
+            top of the dropdown. As a flex child it tracks the layout instead
+            of assuming it.
+
+            Disabled until there is something to exchange -- an enabled button
+            that does nothing teaches people it is decorative. */}
+        <View style={styles.dividerRow}>
+          <View style={styles.divider} />
+          <HapticPressable
+            haptic="tap"
+            style={styles.swapBtn}
+            onPress={swapEnds}
+            disabled={!origin && !destination}
+            accessibilityLabel="Swap pickup and destination"
+            accessibilityRole="button"
+          >
+            <Animated.View style={{
+              transform: [{
+                rotate: swapRotation.interpolate({
+                  inputRange: [0, 1],
+                  outputRange: ['0deg', '180deg'],
+                  extrapolate: 'extend',
+                }),
+              }],
+            }}>
+              <ArrowUpDown
+                color={(!origin && !destination) ? c.textDisabled : c.textPrimary}
+                size={15}
+                strokeWidth={icon.stroke.emphasis}
+              />
+            </Animated.View>
+          </HapticPressable>
+        </View>
         <View style={styles.field}>
           <MapPin color={c.danger} size={14} strokeWidth={2.4} />
           <TextInput
@@ -473,6 +539,7 @@ export default function HomeScreen() {
         <Suggestions items={destSug} onPick={(s) => {
           setDestination(s.place_name); setDestCoords({ lat: s.latitude ?? s.lat ?? 0, lng: s.longitude ?? s.lng ?? 0 }); setDestSug([]);
         }} />
+
 
         {/* Why the dropdown is empty — a blank list otherwise reads as a broken
             field, which is exactly how the auth-race 401 presented. */}
@@ -757,8 +824,16 @@ const styles = StyleSheet.create({
 
   card: { backgroundColor: c.surfaceCard, borderRadius: radius.lg, padding: space.lg, borderWidth: 1, borderColor: c.borderSubtle, ...shadowSm },
   field: { flexDirection: 'row', alignItems: 'center', gap: space.sm, height: 40 },
+  dividerRow: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
+  swapBtn: {
+    width: 32, height: 32, borderRadius: 16,
+    backgroundColor: c.surfaceCard,
+    borderWidth: 1, borderColor: c.borderDefault,
+    alignItems: 'center', justifyContent: 'center',
+    ...shadowSm,
+  },
   input: { flex: 1, fontFamily: font.sansMedium, fontSize: 15, color: c.textPrimary, padding: 0 },
-  divider: { height: 1, backgroundColor: c.borderSubtle, marginLeft: 22, marginVertical: 2 },
+  divider: { flex: 1, height: 1, backgroundColor: c.borderSubtle, marginLeft: 22 },
   suggBox: { backgroundColor: c.surfaceSunken, borderRadius: radius.sm, borderWidth: 1, borderColor: c.borderSubtle, marginTop: 4 },
   suggItem: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 9, paddingHorizontal: 10, borderBottomWidth: 1, borderBottomColor: c.borderSubtle },
   suggText: { flex: 1, fontFamily: font.sans, fontSize: 13, color: c.textSecondary },
