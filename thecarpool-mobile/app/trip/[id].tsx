@@ -690,7 +690,11 @@ export default function TripScreen() {
                     escrow and is entirely real, so gating on HELD alone left
                     cash riders with no way out of a seat they had taken. The
                     server already accepts both -- see isBookingActive. */}
+                {/* Not once on board: the server refuses it (ALREADY_BOARDED),
+                    and offering a button that can only fail is worse than
+                    not offering it. */}
                 {bookingId && (escrowStatus === 'HELD' || escrowStatus === 'NONE')
+                  && !boardingVerified
                   && ride?.status !== 'COMPLETED' && ride?.status !== 'CANCELLED' && (
                   <Button
                     label={cancelling

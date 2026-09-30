@@ -1931,6 +1931,14 @@ export async function bookingRoutes(fastify: FastifyInstance) {
       if (!isBookingActive(b.escrow_status)) {
         return reply.code(400).send({ error: 'This booking is no longer cancellable.' });
       }
+      // Not once the rider is in the car. After departure a cancel still
+      // refunds 40% of the fare and the whole insurance premium, so a rider
+      // could take the trip and cancel before the driver completed it -- and
+      // hand back a seat on a car already moving. Problems during a trip are
+      // what disputes are for.
+      if (b.boarding_verified === true) {
+        return reply.code(400).send({ error: 'ALREADY_BOARDED', message: "You're on board -- this trip can no longer be cancelled. If something is wrong, report it from the trip screen." });
+      }
 
       const rideDoc = await db.collection('rides').doc(String(b.ride_id)).get();
       const ride = rideDoc.exists ? rideDoc.data()! : {};
@@ -2023,6 +2031,14 @@ export async function bookingRoutes(fastify: FastifyInstance) {
       if (b.escrow_status === 'SETTLED' || b.escrow_status === 'CANCELLED') {
         return reply.code(400).send({ error: `Cannot cancel booking. Escrow status is already ${b.escrow_status}.` });
       }
+      // Not once the rider is in the car. After departure a cancel still
+      // refunds 40% of the fare and the whole insurance premium, so a rider
+      // could take the trip and cancel before the driver completed it -- and
+      // hand back a seat on a car already moving. Problems during a trip are
+      // what disputes are for.
+      if (b.boarding_verified === true) {
+        return reply.code(400).send({ error: 'ALREADY_BOARDED', message: "You're on board -- this trip can no longer be cancelled. If something is wrong, report it from the trip screen." });
+      }
 
       const rideRef = db.collection('rides').doc(String(b.ride_id));
       const rideDoc = await rideRef.get();
@@ -2107,6 +2123,12 @@ export async function bookingRoutes(fastify: FastifyInstance) {
         if (!isBookingActive(freshB.escrow_status)) {
           throw new Error('ALREADY_PROCESSED');
         }
+        if (freshB.boarding_verified === true) {
+          // Boarded in the moment between the check above and here. The source
+          // refund has already gone out (it must precede the transaction), so
+          // carry it on the error for the handler to record.
+          throw Object.assign(new Error('ALREADY_BOARDED'), { refundIssued: cancelSourceRefund });
+        }
 
         const freshRideDoc = await tx.get(rideRef);
         const freshRide = freshRideDoc.data()!;
@@ -2190,6 +2212,19 @@ export async function bookingRoutes(fastify: FastifyInstance) {
       fastify.log.error(err, 'Failed to cancel booking');
       if (err.message === 'ALREADY_PROCESSED') {
         return reply.code(400).send({ error: 'Booking has already been processed.' });
+      }
+      if (err.message === 'ALREADY_BOARDED') {
+        if (err.refundIssued) {
+          // Money went back for a seat that stands. Rare -- the driver entered
+          // the boarding code during the second the refund was in flight --
+          // but it must reach a person rather than vanish into a log.
+          fastify.log.error({ booking: id, refund: err.refundIssued }, 'Cancel refund issued for a rider who boarded meanwhile');
+          await db.collection('refund_reconciliation').doc(`cancel_${id}`).set({
+            booking_id: id, refund_id: err.refundIssued.refund_id,
+            reason: 'BOARDED_DURING_CANCEL', created_at: new Date().toISOString(),
+          }, { merge: true }).catch(() => { /* logged above */ });
+        }
+        return reply.code(400).send({ error: 'ALREADY_BOARDED', message: "You're on board -- this trip can no longer be cancelled. If something is wrong, report it from the trip screen." });
       }
       return reply.code(500).send({ error: 'Failed to cancel booking.' });
     }
