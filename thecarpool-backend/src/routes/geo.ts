@@ -82,7 +82,15 @@ function memoSet(key: string, payload: any): void {
 export async function geoRoutes(fastify: FastifyInstance) {
 
   // 1. Search for a postal code or place name in Firestore (public top-of-funnel discovery)
-  fastify.get('/search', async (request, reply) => {
+  // Public on purpose -- requiring auth here produced a 401 on cold start,
+  // before the token was ready (a4d51f5). But every uncached query is a billed
+  // Google Places Text Search call, and the global budget of 300 a minute per
+  // address would let one client run up roughly 430,000 of them a day. Real
+  // use is debounced typing: a handful of calls per field, so 30 a minute
+  // leaves people untouched and takes the bill off the table.
+  fastify.get('/search', {
+    config: { rateLimit: { max: Number(process.env.GEO_RATE_LIMIT_MAX || 30), timeWindow: '1 minute' } },
+  }, async (request, reply) => {
     const { query = '' } = request.query as SearchQuery;
 
     if (query.trim().length < 2) {

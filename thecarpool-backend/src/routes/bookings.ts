@@ -644,6 +644,23 @@ export async function bookingRoutes(fastify: FastifyInstance) {
         return reply.code(402).send({ error: 'INSUFFICIENT_WALLET', message: 'Your wallet balance does not cover this booking.', amount_due: totalDue });
       }
       if (err.message === 'PAYMENT_ALREADY_USED') {
+        // A retry of a booking that already succeeded. apiFetch retries a POST
+        // that times out, and this route can run close to its 15s limit --
+        // a Razorpay fetch, a transaction, and deliver() holding the response
+        // for notifications. The first attempt booked the seat; the retry met
+        // the claim and told the rider their booking had failed while they
+        // held it. Same payment, same rider, same ride: answer with the
+        // booking it bought.
+        if (payment_method === 'RAZORPAY' && razorpay_payment_id) {
+          const pay = await db.collection('payments').doc(String(razorpay_payment_id)).get().catch(() => null);
+          const pd = pay?.exists ? pay.data()! : null;
+          if (pd?.consumed_by_booking && String(pd.user_id) === String(rider_id)) {
+            const prior = await db.collection('bookings').doc(String(pd.consumed_by_booking)).get().catch(() => null);
+            if (prior?.exists && String(prior.data()!.ride_id) === String(ride_id)) {
+              return reply.code(200).send({ id: prior.id, ...prior.data(), replayed: true });
+            }
+          }
+        }
         return reply.code(409).send({
           error: 'PAYMENT_ALREADY_USED',
           message: 'That payment has already been used. If it did not buy a seat, it is in your wallet -- book again paying from your wallet.',

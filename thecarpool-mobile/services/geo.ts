@@ -85,7 +85,12 @@ export async function searchPlaces(query: string, attempt = 0): Promise<GeoOutco
         status: 'error',
         message: res.status === 401
           ? 'Not signed in yet — try again in a moment.'
-          : 'Could not load places. Check your connection.',
+          // The place search has its own tighter limit (it is billed per
+          // call). Blaming the connection would send people to fix the wrong
+          // thing.
+          : res.status === 429
+            ? 'Too many searches just now — wait a few seconds and try again.'
+            : 'Could not load places. Check your connection.',
       };
     }
 
