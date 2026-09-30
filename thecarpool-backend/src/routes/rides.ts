@@ -3,6 +3,7 @@ import { defaultCurrency } from '../lib/config';
 import { randomUUID } from 'crypto';
 import { db, redisClient } from '../server';
 import { requireAuth, requireAdmin, requireCronOrAdmin } from '../middleware/auth';
+import { creditOrphanedBookingPayments } from '../lib/wallet';
 import { canTransition, isSettableStatus, SETTABLE_STATUSES } from '../lib/rideLifecycle';
 import { noShowOutcome } from '../lib/fees';
 import { planPayout, maskPayoutMethod } from '../lib/payouts';
@@ -467,7 +468,17 @@ export async function rideRoutes(fastify: FastifyInstance) {
       if (outcome.paid > 0 || outcome.no_shows > 0) ridesSettled += 1;
     }
 
-    return reply.send({ scanned: snap.size, rides_settled: ridesSettled, ...totals });
+    // Seat payments no booking ever claimed -- a rider whose app died between
+    // paying and booking. Here because this sweep runs every ten minutes and
+    // is already the one about money owed; the daily cleanup would leave
+    // someone's fare invisible for up to a day.
+    const orphans = await creditOrphanedBookingPayments(fastify.log)
+      .catch((err) => { fastify.log.error({ err }, 'Orphaned payment sweep failed'); return { scanned: 0, credited: 0 }; });
+
+    return reply.send({
+      scanned: snap.size, rides_settled: ridesSettled, ...totals,
+      orphan_payments_credited: orphans.credited,
+    });
   });
 
   /**

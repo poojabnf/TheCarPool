@@ -34,7 +34,7 @@ export function claimPaymentInTransaction(
   const { paymentId, uid, bookingId, amountRupees, requiredRupees } = opts;
   const existing = payDoc.exists ? payDoc.data()! : null;
 
-  if (existing?.wallet_credited === true) {
+  if (existing?.wallet_credited === true || existing?.refunded_to_source === true) {
     throw new Error('PAYMENT_ALREADY_USED');
   }
   if (existing?.consumed_by_booking && existing.consumed_by_booking !== bookingId) {
@@ -83,8 +83,11 @@ export async function creditWalletForPayment(opts: {
     // All reads before any writes (Firestore transaction requirement).
     const [payDoc, walletDoc] = await Promise.all([tx.get(payRef), tx.get(walletRef)]);
 
-    if (payDoc.exists && (payDoc.data()?.wallet_credited === true || Boolean(payDoc.data()?.consumed_by_booking))) {
-      return { credited: false }; // already applied or directly funded a booking — no-op
+    const p = payDoc.exists ? payDoc.data()! : null;
+    // Already applied, funded a booking, or went back to the card -- in every
+    // case the money is accounted for and crediting it again would mint it.
+    if (p && (p.wallet_credited === true || Boolean(p.consumed_by_booking) || p.refunded_to_source === true)) {
+      return { credited: false };
     }
 
     const cur = walletDoc.exists
@@ -111,4 +114,54 @@ export async function creditWalletForPayment(opts: {
 
     return { credited: true };
   });
+}
+
+
+/**
+ * Put ride payments that never became a booking into the rider's wallet.
+ *
+ * The webhook no longer credits a booking payment on arrival -- it raced the
+ * app's own booking call, and when it won the rider was paid twice (see
+ * payments.ts). But it was also the safety net for a rider whose app died
+ * between paying and booking. This keeps the net: a payment still unclaimed
+ * after a grace period far longer than any real checkout goes to the wallet,
+ * where the rider can see it and spend it.
+ *
+ * Safe against a booking arriving at the same moment: creditWalletForPayment
+ * and the booking claim both run in transactions on the same payment document
+ * and each refuses what the other has taken.
+ */
+export async function creditOrphanedBookingPayments(
+  log?: { info: Function; error: Function },
+  graceMs = 20 * 60 * 1000
+): Promise<{ scanned: number; credited: number }> {
+  const snap = await db.collection('payments')
+    .where('awaiting_booking', '==', true)
+    .limit(100)
+    .get();
+  const cutoff = Date.now() - graceMs;
+  let credited = 0;
+  for (const doc of snap.docs) {
+    const d = doc.data();
+    const at = Date.parse(d.captured_at || '');
+    if (Number.isFinite(at) && at > cutoff) continue; // still within checkout
+    try {
+      if (d.user_id && !d.consumed_by_booking && !d.wallet_credited && !d.refunded_to_source) {
+        const r = await creditWalletForPayment({
+          paymentId: doc.id,
+          orderId: d.order_id ?? null,
+          uid: String(d.user_id),
+          amountRupees: Number(d.amount),
+        });
+        if (r.credited) {
+          credited += 1;
+          log?.info({ payment_id: doc.id, uid: d.user_id }, 'Orphaned ride payment credited to wallet');
+        }
+      }
+      await doc.ref.set({ awaiting_booking: false }, { merge: true });
+    } catch (err) {
+      log?.error({ err, payment_id: doc.id }, 'Could not settle orphaned ride payment');
+    }
+  }
+  return { scanned: snap.size, credited };
 }

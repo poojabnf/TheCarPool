@@ -244,6 +244,15 @@ export async function bookingRoutes(fastify: FastifyInstance) {
         if (!payment || (payment.status !== 'captured' && payment.status !== 'authorized')) {
           return reply.code(400).send({ error: 'PAYMENT_NOT_CAPTURED', message: 'That payment has not completed.' });
         }
+        // Whose money is this? Every order is created with the payer's uid in
+        // its notes, and nothing checked it: the claim below compares owners
+        // against our own payments record, and a payment the webhook has not
+        // recorded yet has no owner there to compare. A payment id that
+        // reached someone else could buy them a seat with its payer's money.
+        const payer = payment?.notes?.user_id;
+        if (payer && String(payer) !== String(rider_id)) {
+          return reply.code(403).send({ error: 'PAYMENT_NOT_YOURS', message: 'That payment belongs to another account.' });
+        }
         capturedAmount = Number(payment.amount) / 100;
       } catch (err: any) {
         fastify.log.error(err, 'Could not fetch payment for booking');
@@ -572,7 +581,13 @@ export async function bookingRoutes(fastify: FastifyInstance) {
       // exists and is later cancelled.) The claim transaction rolled back, so
       // the payment is still unconsumed and safe to refund in full.
       let refunded: { refund_id: string; status: string } | null = null;
-      if (payment_method === 'RAZORPAY' && razorpay_payment_id && capturedAmount > 0) {
+      // Never refund a payment this booking does not own. ALREADY_USED means it
+      // funds another booking or sits in the wallet; NOT_YOURS means it is a
+      // stranger's. Refunding either handed money back for a seat that was
+      // kept -- resubmit a paid booking's payment id and the fare came back
+      // to the card while the seat stood.
+      const notOurs = err?.message === 'PAYMENT_ALREADY_USED' || err?.message === 'PAYMENT_NOT_YOURS';
+      if (payment_method === 'RAZORPAY' && razorpay_payment_id && capturedAmount > 0 && !notOurs) {
         try {
           const r = await refundPaymentToSource({
             paymentId: razorpay_payment_id,
@@ -580,6 +595,11 @@ export async function bookingRoutes(fastify: FastifyInstance) {
             notes: { reason: err.message || 'BOOKING_FAILED', ride_id: String(ride_id) },
           });
           refunded = r;
+          // Marked so neither the orphan sweep nor a replayed booking can
+          // spend what has already gone back to the card.
+          await db.collection('payments').doc(String(razorpay_payment_id)).set({
+            refunded_to_source: true, awaiting_booking: false, refund_id: r.refund_id,
+          }, { merge: true }).catch(() => { /* the gateway refund is what counts */ });
           fastify.log.info(
             { payment_id: razorpay_payment_id, refund_id: r.refund_id },
             'Refunded to source after failed booking'
@@ -601,7 +621,7 @@ export async function bookingRoutes(fastify: FastifyInstance) {
       }
       const refundNote = refunded
         ? ' Your payment has been refunded to your original payment method.'
-        : (payment_method === 'RAZORPAY' && capturedAmount > 0
+        : (payment_method === 'RAZORPAY' && capturedAmount > 0 && !notOurs
           ? ' Your payment will be refunded to your original payment method.'
           : '');
 
@@ -624,7 +644,10 @@ export async function bookingRoutes(fastify: FastifyInstance) {
         return reply.code(402).send({ error: 'INSUFFICIENT_WALLET', message: 'Your wallet balance does not cover this booking.', amount_due: totalDue });
       }
       if (err.message === 'PAYMENT_ALREADY_USED') {
-        return reply.code(409).send({ error: 'PAYMENT_ALREADY_USED', message: 'That payment has already been used.' });
+        return reply.code(409).send({
+          error: 'PAYMENT_ALREADY_USED',
+          message: 'That payment has already been used. If it did not buy a seat, it is in your wallet -- book again paying from your wallet.',
+        });
       }
       if (err.message === 'PAYMENT_NOT_YOURS') {
         return reply.code(403).send({ error: 'PAYMENT_NOT_YOURS', message: 'That payment belongs to another account.' });

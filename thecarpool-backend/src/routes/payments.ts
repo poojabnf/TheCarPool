@@ -241,7 +241,24 @@ export async function paymentRoutes(fastify: FastifyInstance) {
       if (event.event === 'payment.captured') {
         const payment = event.payload?.payment?.entity;
         const uid = payment?.notes?.user_id || null;
-        if (payment?.id && uid) {
+        // Orders for a seat carry the ride in notes.booking_id; wallet top-ups
+        // carry ''. A seat payment is the booking call's to claim, not ours to
+        // credit. Crediting it here raced that call: when the webhook won, the
+        // claim was refused, the booking failed, and the failure path refunded
+        // the card -- the rider had the fare in their wallet and back on their
+        // card. Record it instead; if no booking ever claims it, the settle
+        // sweep moves it to the wallet (creditOrphanedBookingPayments).
+        const forSeat = Boolean(payment?.notes?.booking_id);
+        if (payment?.id && uid && forSeat) {
+          await db.collection('payments').doc(payment.id).set({
+            user_id: uid,
+            order_id: payment.order_id,
+            amount: Number(payment.amount) / 100,
+            status: 'CAPTURED',
+            awaiting_booking: true,
+            captured_at: new Date().toISOString(),
+          }, { merge: true });
+        } else if (payment?.id && uid) {
           // Source-of-truth credit. Idempotent: if /verify already credited
           // this payment, creditWalletForPayment is a no-op.
           await creditWalletForPayment({
