@@ -460,9 +460,11 @@ export default function HomeScreen() {
     >
       {/* Greeting & Quick Actions */}
       <View style={styles.header}>
-        <View>
-          <Text style={styles.greeting}>{t(greetingKey())}</Text>
-          <Text style={styles.name}>{name}</Text>
+        {/* The question leads, the greeting supports it: the screen exists
+            to answer "where to?", and the name is the warmer half-line. */}
+        <View style={{ flex: 1 }}>
+          <Text style={styles.greeting}>{t(greetingKey())}, {name.split(' ')[0]}</Text>
+          <Text style={styles.title}>{t('where_to')}</Text>
         </View>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
           <HapticPressable
@@ -483,7 +485,10 @@ export default function HomeScreen() {
       {/* Search card */}
       <View style={styles.card}>
         <View style={styles.field}>
-          <Circle color={c.go} size={11} strokeWidth={3} fill={c.go} />
+          {/* Route Line markers: a hollow ring for where you start, an ink
+              square for where you end -- the same pair drawn on results, the
+              booking screen and the live map. */}
+          <View style={styles.markerStart} />
           <TextInput
             style={styles.input} value={origin}
             onChangeText={(t) => { setOrigin(t); setOriginCoords(null); searchGeo(t, setOriginSug, originTimeoutRef); }}
@@ -529,7 +534,7 @@ export default function HomeScreen() {
           </HapticPressable>
         </View>
         <View style={styles.field}>
-          <MapPin color={c.danger} size={14} strokeWidth={2.4} />
+          <View style={styles.markerEnd} />
           <TextInput
             style={styles.input} value={destination}
             onChangeText={(t) => { setDestination(t); setDestCoords(null); searchGeo(t, setDestSug, destTimeoutRef); }}
@@ -577,7 +582,7 @@ export default function HomeScreen() {
             style={[styles.womenChip, womenOnly && styles.womenChipOn]}
             onPress={() => setWomenOnly((v) => !v)} activeOpacity={0.85}
           >
-            <Venus color={womenOnly ? '#fff' : c.textAccent} size={14} strokeWidth={2.4} />
+            <Venus color={womenOnly ? c.textInverse : c.textPrimary} size={14} strokeWidth={2.4} />
             <Text style={[styles.womenChipText, womenOnly && { color: '#fff' }]}>{t('women_only')}</Text>
           </HapticPressable>
         </View>
@@ -623,12 +628,55 @@ export default function HomeScreen() {
               activeOpacity={0.92}
               accessibilityLabel={`View ride details from ${ride.driver_name}`}
             >
+              {/* Leads with what riders compare: when it leaves and what it
+                  costs. The driver used to come first and the departure sat in
+                  a small grey line further down. */}
               <View style={styles.rideTop}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.rideTime}>{formatDeparture(ride.departure_time)}</Text>
+                  <View style={styles.rideMeta}>
+                    {isDepartingSoon(ride.departure_time) && (
+                      <View style={styles.soonChip}><Text style={styles.soonChipText}>Leaves soon</Text></View>
+                    )}
+                    {ride.created_at && (
+                      <View style={styles.postedAgoRow}>
+                        <History color={c.textTertiary} size={11} strokeWidth={icon.stroke.normal} />
+                        <Text style={{ fontFamily: font.sans, fontSize: 12, color: c.textTertiary }}>
+                          {formatPostedAgo(ride.created_at)}
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+                </View>
+                <View style={{ alignItems: 'flex-end' }}>
+                  <Text style={styles.fare}>{formatMoney(Number(ride.price_split), { decimals: 0 })}</Text>
+                  <Text style={styles.perSeat}>per seat</Text>
+                </View>
+              </View>
+
+              {/* The route, drawn the Route Line way: ring to square. Older
+                  rides were stored as coordinates only and have no names, so
+                  this appears when there is something real to show. */}
+              {(ride.source || ride.destination) && (
+                <View style={styles.rideRoute}>
+                  <View style={styles.railCol}>
+                    <View style={styles.markerStart} />
+                    <View style={styles.railLine} />
+                    <View style={styles.markerEnd} />
+                  </View>
+                  <View style={{ flex: 1, gap: 10 }}>
+                    <Text style={styles.rideRouteText} numberOfLines={1}>{ride.source || 'Pickup'}</Text>
+                    <Text style={styles.rideRouteText} numberOfLines={1}>{ride.destination || 'Destination'}</Text>
+                  </View>
+                </View>
+              )}
+
+              <View style={styles.driverRow}>
                 <View style={styles.driverDisc}><Text style={styles.driverDiscText}>{initials(ride.driver_name)}</Text></View>
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.driverName}>
+                  <Text style={styles.driverName} numberOfLines={1}>
                     {ride.driver_name}
-                    {(ride as any).driver_rating ? `  ★ ${(ride as any).driver_rating}` : ''}
+                    {(ride as any).driver_rating ? <Text style={styles.driverRating}>{`  ★ ${(ride as any).driver_rating}`}</Text> : null}
                   </Text>
                   <View style={styles.vehicleRow}>
                     <VehicleIcon vehicleClass={ride.vehicle_class} />
@@ -638,45 +686,10 @@ export default function HomeScreen() {
                     </Text>
                   </View>
                 </View>
-                <View style={{ alignItems: 'flex-end' }}>
-                  <Text style={styles.fare}>{formatMoney(Number(ride.price_split), { decimals: 0 })}</Text>
-                  <Text style={styles.perSeat}>per seat</Text>
-                </View>
-              </View>
-              {/* The route itself. Older rides were stored as coordinates
-                  only and have no names, so this appears when there is
-                  something real to show rather than as an empty arrow. */}
-              {(ride.source || ride.destination) && (
-                <View style={styles.rideRouteRow}>
-                  <MapPin color={c.textSecondary} size={13} strokeWidth={2.4} />
-                  <Text style={styles.rideRouteText} numberOfLines={2}>
-                    {ride.source || 'Pickup'} → {ride.destination || 'Destination'}
-                  </Text>
-                </View>
-              )}
-
-              {/* When it leaves and how many seats are left were both returned
-                  by the API but never shown — riders were choosing between
-                  rides, and paying, without either fact. */}
-              <View style={styles.whenRow}>
-                <Clock
-                  color={isDepartingSoon(ride.departure_time) ? c.go : c.textSecondary}
-                  size={13}
-                  strokeWidth={2.4}
-                />
-                <Text style={[styles.whenText, isDepartingSoon(ride.departure_time) && styles.whenSoon]}>
-                  {formatDeparture(ride.departure_time)}
-                </Text>
                 {ride.seats_available != null && (
-                  <Text style={[styles.seatsLeft, ride.seats_available <= 1 && styles.seatsLow]}>
-                    · {ride.seats_available} seat{ride.seats_available === 1 ? '' : 's'} left
-                  </Text>
-                )}
-                {ride.created_at && (
-                  <View style={styles.postedAgoRow}>
-                    <History color={c.textTertiary} size={11} strokeWidth={icon.stroke.normal} />
-                    <Text style={{ fontFamily: font.sans, fontSize: 12, color: c.textTertiary }}>
-                      {formatPostedAgo(ride.created_at)}
+                  <View style={[styles.seatsChip, ride.seats_available <= 1 && styles.seatsChipLow]}>
+                    <Text style={[styles.seatsChipText, ride.seats_available <= 1 && styles.seatsChipTextLow]}>
+                      {ride.seats_available} seat{ride.seats_available === 1 ? '' : 's'} left
                     </Text>
                   </View>
                 )}
@@ -804,9 +817,24 @@ export default function HomeScreen() {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: c.bgApp },
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: space.lg },
-  greeting: { fontFamily: font.sansMedium, fontSize: 13, color: c.textTertiary },
-  name: { fontFamily: font.sansExtrabold, fontSize: 22, color: c.textPrimary, letterSpacing: -0.4 },
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: space.lg },
+  greeting: { fontFamily: font.sansMedium, fontSize: 14, color: c.textSecondary },
+  title: { fontFamily: font.display, fontSize: 34, lineHeight: 38, color: c.textPrimary, letterSpacing: -0.5, marginTop: 2 },
+  markerStart: { width: 12, height: 12, borderRadius: 6, borderWidth: 3, borderColor: c.route, backgroundColor: c.surfaceCard },
+  markerEnd: { width: 12, height: 12, borderRadius: 3, backgroundColor: c.routeEnd },
+  rideTime: { fontFamily: font.display, fontSize: 22, lineHeight: 26, color: c.textPrimary },
+  rideMeta: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 4, flexWrap: 'wrap' },
+  soonChip: { backgroundColor: c.signal, borderRadius: radius.sm, paddingHorizontal: 8, paddingVertical: 3 },
+  soonChipText: { fontFamily: font.sansBold, fontSize: 12, color: c.textPrimary },
+  rideRoute: { flexDirection: 'row', gap: 12, marginTop: space.md },
+  railCol: { width: 12, alignItems: 'center', paddingVertical: 4 },
+  railLine: { flex: 1, width: 3, backgroundColor: c.route, marginVertical: 3, borderRadius: 2 },
+  driverRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: space.md, paddingTop: space.md, borderTopWidth: 1, borderTopColor: c.borderSubtle },
+  driverRating: { fontFamily: font.sansMedium, color: c.textSecondary },
+  seatsChip: { backgroundColor: c.goSoft, borderRadius: radius.sm, paddingHorizontal: 9, paddingVertical: 5 },
+  seatsChipLow: { backgroundColor: c.signalSoft },
+  seatsChipText: { fontFamily: font.sansBold, fontSize: 12, color: c.goStrong },
+  seatsChipTextLow: { color: c.signalText },
   bellBtn: {
     width: 42,
     height: 42,
@@ -818,11 +846,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     ...shadowSm,
   },
-  avatar: { width: 42, height: 42, borderRadius: radius.pill, backgroundColor: c.textPrimary, alignItems: 'center', justifyContent: 'center' },
+  avatar: { width: 44, height: 44, borderRadius: radius.pill, backgroundColor: c.go, alignItems: 'center', justifyContent: 'center' },
   avatarImg: { width: 42, height: 42, borderRadius: radius.pill },
   avatarText: { fontFamily: font.sansBold, fontSize: 14, color: '#fff' },
 
-  card: { backgroundColor: c.surfaceCard, borderRadius: radius.lg, padding: space.lg, borderWidth: 1, borderColor: c.borderSubtle, ...shadowSm },
+  card: { backgroundColor: c.surfaceCard, borderRadius: radius.xl, padding: space.lg, ...shadowSm },
   field: { flexDirection: 'row', alignItems: 'center', gap: space.sm, height: 40 },
   dividerRow: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
   swapBtn: {
@@ -832,7 +860,7 @@ const styles = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
     ...shadowSm,
   },
-  input: { flex: 1, fontFamily: font.sansMedium, fontSize: 15, color: c.textPrimary, padding: 0 },
+  input: { flex: 1, fontFamily: font.sansSemibold, fontSize: 16, color: c.textPrimary, padding: 0 },
   divider: { flex: 1, height: 1, backgroundColor: c.borderSubtle, marginLeft: 22 },
   suggBox: { backgroundColor: c.surfaceSunken, borderRadius: radius.sm, borderWidth: 1, borderColor: c.borderSubtle, marginTop: 4 },
   suggItem: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 9, paddingHorizontal: 10, borderBottomWidth: 1, borderBottomColor: c.borderSubtle },
@@ -840,33 +868,33 @@ const styles = StyleSheet.create({
   geoError: { fontFamily: font.sans, fontSize: 12, color: c.textTertiary, marginTop: 6, marginBottom: 2 },
 
   optRow: { flexDirection: 'row', alignItems: 'center', gap: space.sm, marginTop: space.md },
-  seatBox: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: c.surfaceSunken, borderRadius: radius.sm, paddingHorizontal: 12, height: 38, borderWidth: 1, borderColor: c.borderSubtle },
+  seatBox: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: c.surfaceSunken, borderRadius: radius.md, paddingHorizontal: 12, height: 44, borderWidth: 1, borderColor: c.borderDefault },
   stepper: { fontFamily: font.sansBold, fontSize: 18, color: c.textSecondary, width: 16, textAlign: 'center' },
   seatCount: { fontFamily: font.monoBold, fontSize: 14, color: c.textPrimary, minWidth: 14, textAlign: 'center' },
-  womenChip: { flexDirection: 'row', alignItems: 'center', gap: 6, height: 38, paddingHorizontal: 12, borderRadius: radius.sm, borderWidth: 1, borderColor: brass[300], backgroundColor: c.accentSoft },
-  womenChipOn: { backgroundColor: c.textAccent, borderColor: c.textAccent },
-  womenChipText: { fontFamily: font.sansSemibold, fontSize: 12.5, color: c.textAccent },
+  womenChip: { flexDirection: 'row', alignItems: 'center', gap: 6, height: 44, paddingHorizontal: 14, borderRadius: radius.pill, borderWidth: 1, borderColor: c.borderDefault, backgroundColor: c.surfaceCard },
+  womenChipOn: { backgroundColor: c.textPrimary, borderColor: c.textPrimary },
+  womenChipText: { fontFamily: font.sansSemibold, fontSize: 13, color: c.textPrimary },
 
   offlineBanner: { backgroundColor: c.accentSoft, borderRadius: radius.md, padding: space.md, borderWidth: 1, borderColor: brass[300] },
   offlineText: { fontFamily: font.sansMedium, fontSize: 12.5, color: c.textAccent, textAlign: 'center' },
   sectionTitle: { fontFamily: font.sansBold, fontSize: 16, color: c.textPrimary, marginBottom: space.md, marginTop: space.lg },
   muted: { fontFamily: font.sans, fontSize: 13, color: c.textTertiary },
 
-  rideCard: { backgroundColor: c.surfaceCard, borderRadius: radius.lg, padding: space.lg, borderWidth: 1, borderColor: c.borderSubtle, marginBottom: space.md, ...shadowSm },
-  rideTop: { flexDirection: 'row', alignItems: 'center', gap: space.md },
-  driverDisc: { width: 44, height: 44, borderRadius: radius.pill, backgroundColor: c.surfaceInset, alignItems: 'center', justifyContent: 'center' },
-  driverDiscText: { fontFamily: font.sansBold, fontSize: 14, color: c.textSecondary },
+  rideCard: { backgroundColor: c.surfaceCard, borderRadius: radius.lg, padding: space.lg, marginBottom: space.md, ...shadowSm },
+  rideTop: { flexDirection: 'row', alignItems: 'flex-start', gap: space.md },
+  driverDisc: { width: 40, height: 40, borderRadius: radius.pill, backgroundColor: c.goSoft, alignItems: 'center', justifyContent: 'center' },
+  driverDiscText: { fontFamily: font.sansBold, fontSize: 14, color: c.goStrong },
   driverName: { fontFamily: font.sansBold, fontSize: 15.5, color: c.textPrimary },
   vehicle: { fontFamily: font.sans, fontSize: 12.5, color: c.textTertiary, marginTop: 1 },
-  fare: { fontFamily: font.monoBold, fontSize: 19, color: c.textPrimary, letterSpacing: -0.4 },
+  fare: { fontFamily: font.monoBold, fontSize: 22, color: c.textPrimary, letterSpacing: -0.4 },
   perSeat: { fontFamily: font.sans, fontSize: 11, color: c.textTertiary },
   whenPicker: { flexDirection: 'row', gap: 6, marginTop: space.md },
-  whenChip: { flex: 1, paddingVertical: 8, borderRadius: radius.sm, borderWidth: 1, borderColor: c.borderDefault, alignItems: 'center' },
-  whenChipOn: { backgroundColor: c.go, borderColor: c.go },
-  whenChipText: { fontFamily: font.sansMedium, fontSize: 12.5, color: c.textSecondary },
+  whenChip: { flex: 1, height: 36, justifyContent: 'center', borderRadius: radius.pill, borderWidth: 1, borderColor: c.borderDefault, alignItems: 'center' },
+  whenChipOn: { backgroundColor: c.textPrimary, borderColor: c.textPrimary },
+  whenChipText: { fontFamily: font.sansSemibold, fontSize: 13, color: c.textPrimary },
   whenChipTextOn: { color: '#fff', fontFamily: font.sansSemibold },
   rideRouteRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 6, marginTop: space.md },
-  rideRouteText: { flex: 1, fontFamily: font.sansSemibold, fontSize: 13, color: c.textPrimary, lineHeight: 18 },
+  rideRouteText: { fontFamily: font.sansSemibold, fontSize: 14, color: c.textPrimary, lineHeight: 18 },
   whenRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: space.md },
   whenText: { fontFamily: font.sansSemibold, fontSize: 13, color: c.textSecondary },
   whenSoon: { color: c.go },

@@ -2,15 +2,19 @@ import React, { useEffect } from 'react';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { StatusBar, View, ActivityIndicator, Text as RNText, TextInput as RNTextInput } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+// Route Line typefaces: Figtree for reading, Bricolage Grotesque for the few
+// headings that set a screen's voice, IBM Plex Mono for what people read out
+// loud -- boarding codes, fares, number plates.
 import {
   useFonts,
-  Manrope_400Regular,
-  Manrope_500Medium,
-  Manrope_600SemiBold,
-  Manrope_700Bold,
-  Manrope_800ExtraBold,
-} from '@expo-google-fonts/manrope';
-import { JetBrainsMono_500Medium, JetBrainsMono_700Bold } from '@expo-google-fonts/jetbrains-mono';
+  Figtree_400Regular,
+  Figtree_500Medium,
+  Figtree_600SemiBold,
+  Figtree_700Bold,
+  Figtree_800ExtraBold,
+} from '@expo-google-fonts/figtree';
+import { BricolageGrotesque_700Bold, BricolageGrotesque_800ExtraBold } from '@expo-google-fonts/bricolage-grotesque';
+import { IBMPlexMono_500Medium, IBMPlexMono_600SemiBold } from '@expo-google-fonts/ibm-plex-mono';
 import { c } from '../theme/tokens';
 import { useAuthStore } from '../store/authStore';
 import { auth } from '../services/firebase';
@@ -170,13 +174,15 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
 
 export default function RootLayout() {
   const [fontsLoaded, fontError] = useFonts({
-    Manrope_400Regular,
-    Manrope_500Medium,
-    Manrope_600SemiBold,
-    Manrope_700Bold,
-    Manrope_800ExtraBold,
-    JetBrainsMono_500Medium,
-    JetBrainsMono_700Bold,
+    Figtree_400Regular,
+    Figtree_500Medium,
+    Figtree_600SemiBold,
+    Figtree_700Bold,
+    Figtree_800ExtraBold,
+    BricolageGrotesque_700Bold,
+    BricolageGrotesque_800ExtraBold,
+    IBMPlexMono_500Medium,
+    IBMPlexMono_600SemiBold,
   });
 
   // Proceed once fonts resolve OR fail — never hard-block the app on font

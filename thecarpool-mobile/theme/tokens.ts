@@ -1,60 +1,72 @@
 /**
- * TheCarPool Redesign — design tokens.
+ * TheCarPool -- design tokens, "Route Line".
  *
- * Ported from the "TheCarPool Redesign" system: a light, premium
- * "data-terminal" palette with a cool-gray neutral scale, a single restrained
- * brass accent (premium / verified), green = go/confirm, red = SOS/cancel, and
- * monospace (JetBrains Mono) for all figures. Sans is Manrope.
+ * Every journey is drawn the same way: a line in route green from a ring
+ * (pickup) to a square (destination). Green is the one brand colour and the
+ * colour of every primary action. Amber is reserved for live, time-sensitive
+ * moments -- "leaves in 25 min", "4 min away", requests waiting -- so it keeps
+ * its pull. Red is for SOS and leaving, nothing else.
  *
- * Screens migrate to these tokens incrementally; the legacy `theme/colors.ts`
- * (dark) stays until each screen is redesigned.
+ * Neutrals carry a faint green cast so the ground, cards and ink read as one
+ * family with the route colour rather than a grey UI with a green button.
+ *
+ * Names are kept from the previous system so screens restyle in place:
+ * `brass`/`accent` (formerly the metal accent) now resolve to route green.
  */
 
-// ── Neutral scale (cool, faint blue cast) ──────────────────────────────────
+// ── Neutral scale (green-tinted) ───────────────────────────────────────────
 export const gray = {
   0: '#FFFFFF',
-  25: '#FAFBFC',
-  50: '#F4F6F8',
-  100: '#ECEFF2',
-  150: '#E2E6EA',
-  200: '#D6DBE1',
-  300: '#BCC4CC',
-  400: '#97A1AB',
-  500: '#6B7682',
-  600: '#4D5862',
-  700: '#364049',
-  800: '#212931',
-  900: '#141A20',
-  950: '#0B0F14',
+  25: '#F6F8F7',
+  50: '#EEF2F0', // the app ground
+  100: '#E4EAE7',
+  150: '#D9E0DD',
+  200: '#CBD4D0',
+  300: '#AEBAB5',
+  400: '#8A9893',
+  500: '#64736E',
+  600: '#56645F',
+  700: '#3A4D47',
+  800: '#1F302B',
+  900: '#0F1D1A', // ink
+  950: '#08120F',
 } as const;
 
-// ── Brass — the single metal accent, used sparingly (premium / verified) ────
-export const brass = {
-  50: '#F7F0E0',
-  100: '#EEE0C2',
-  300: '#D8B673',
-  500: '#B8893A',
-  600: '#9A7130',
-  700: '#7C5A26',
+// ── Route green -- the brand and every primary action ──────────────────────
+export const route = {
+  50: '#E3F1EB',
+  100: '#C5E3D5',
+  300: '#6FBF9C',
+  500: '#0A6B4F',
+  600: '#06523C',
+  700: '#043D2D',
 } as const;
 
-// ── Semantics: green = up/go/confirm/book, red = down/SOS/cancel ────────────
-export const up = { 50: '#E6F4EE', 500: '#0E8A5F', 600: '#0B6E4C', 700: '#085639' } as const;
-export const down = { 50: '#FBEAE8', 500: '#D1453B', 600: '#B0352C', 700: '#8C2A23' } as const;
-export const amber = { 50: '#FBF1DD', 500: '#C9851A', 600: '#A66C12' } as const;
-export const blue = { 50: '#E8F0FB', 500: '#2563B8', 600: '#1D4F95' } as const;
+// Kept under its old name so existing references restyle rather than break.
+export const brass = route;
+
+// ── Semantics ─────────────────────────────────────────────────────────────
+export const up = route;
+export const down = { 50: '#FDECEA', 500: '#B42318', 600: '#8A1C12', 700: '#6E160E' } as const;
+// Amber fills carry ink text; amber AS text uses 700 -- 500 on white fails
+// contrast.
+export const amber = { 50: '#FFF3DC', 500: '#F5A524', 600: '#A66C12', 700: '#7A4A00' } as const;
+export const blue = { 50: '#E6E9F7', 500: '#1E4FD8', 600: '#24307A' } as const;
 
 // ── Semantic aliases (light) ────────────────────────────────────────────────
 export const c = {
-  bgApp: gray[25],
+  bgApp: gray[50],
   bgBase: gray[0],
   surfaceCard: gray[0],
-  surfaceSunken: gray[50],
+  surfaceSunken: gray[25],
   surfaceInset: gray[100],
-  surfaceHover: gray[50],
+  surfaceHover: gray[25],
+  // Dark panels: the next-trip card, boarding code, ride in progress.
+  surfaceInk: gray[900],
+  surfaceInkRaised: gray[800],
 
-  borderSubtle: gray[150],
-  borderDefault: gray[200],
+  borderSubtle: gray[100],
+  borderDefault: gray[150],
   borderStrong: gray[300],
 
   textPrimary: gray[900],
@@ -62,48 +74,61 @@ export const c = {
   textTertiary: gray[500],
   textDisabled: gray[400],
   textInverse: gray[0],
-  textAccent: brass[600],
+  textInverseMuted: '#B9C6C1',
+  textAccent: route[600],
 
-  // Primary action = ink; secondary = white surface.
-  actionPrimary: gray[900],
+  actionPrimary: route[500],
   actionPrimaryText: gray[0],
   actionSecondary: gray[0],
   actionSecondaryText: gray[900],
 
-  accent: brass[500],
-  accentSoft: brass[50],
+  accent: route[500],
+  accentSoft: route[50],
 
-  go: up[500], // confirm / book / available
-  goStrong: up[600],
-  goSoft: up[50],
+  // The route line itself.
+  route: route[500],
+  routeEnd: gray[900],
+
+  go: route[500], // confirm / book / available
+  goStrong: route[600],
+  goSoft: route[50],
   danger: down[500], // SOS / cancel
   dangerStrong: down[600],
   dangerSoft: down[50],
-  warn: amber[500],
+  // Live and time-sensitive. A fill, with ink text on it.
+  signal: amber[500],
+  signalSoft: amber[50],
+  signalText: amber[700],
+  warn: amber[700],
   warnSoft: amber[50],
   info: blue[500],
   infoSoft: blue[50],
 } as const;
 
 // ── Typography ──────────────────────────────────────────────────────────────
-// Loaded via expo-font (see app/_layout.tsx). `mono` is used for ALL figures
-// (fares, distances, counts, times) per the design.
+// Loaded in app/_layout.tsx. Figtree to read; Bricolage Grotesque for the
+// heading that sets a screen's voice (one per screen, not every title); IBM
+// Plex Mono for figures people read aloud or match by eye -- boarding codes,
+// fares, number plates, times.
 export const font = {
-  sans: 'Manrope_400Regular',
-  sansMedium: 'Manrope_500Medium',
-  sansSemibold: 'Manrope_600SemiBold',
-  sansBold: 'Manrope_700Bold',
-  sansExtrabold: 'Manrope_800ExtraBold',
-  mono: 'JetBrainsMono_500Medium',
-  monoBold: 'JetBrainsMono_700Bold',
+  sans: 'Figtree_400Regular',
+  sansMedium: 'Figtree_500Medium',
+  sansSemibold: 'Figtree_600SemiBold',
+  sansBold: 'Figtree_700Bold',
+  sansExtrabold: 'Figtree_800ExtraBold',
+  display: 'BricolageGrotesque_800ExtraBold',
+  displayBold: 'BricolageGrotesque_700Bold',
+  mono: 'IBMPlexMono_500Medium',
+  monoBold: 'IBMPlexMono_600SemiBold',
 } as const;
 
 // ── Radii / spacing ───────────────────────────────────────────────────────
-export const radius = { sm: 8, md: 12, lg: 16, xl: 22, pill: 9999 } as const;
+// Softer than before: cards 20, sheets 24, buttons 16.
+export const radius = { sm: 10, md: 14, lg: 20, xl: 24, pill: 9999 } as const;
 export const space = { xs: 6, sm: 10, md: 14, lg: 18, xl: 24 } as const;
 
 export const shadowSm = {
-  shadowColor: '#0B0F14',
+  shadowColor: '#0F1D1A',
   shadowOpacity: 0.06,
   shadowRadius: 8,
   shadowOffset: { width: 0, height: 2 },
@@ -111,7 +136,7 @@ export const shadowSm = {
 } as const;
 
 export const shadowLg = {
-  shadowColor: '#0B0F14',
+  shadowColor: '#0F1D1A',
   shadowOpacity: 0.1,
   shadowRadius: 24,
   shadowOffset: { width: 0, height: 10 },
