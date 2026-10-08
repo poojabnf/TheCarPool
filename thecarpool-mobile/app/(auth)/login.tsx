@@ -152,7 +152,11 @@ export default function LoginScreen() {
             <Text style={styles.ccText}>{country.flag} +{country.dial} ▾</Text>
           </HapticPressable>
           <TextInput
-            style={styles.phoneInput}
+            // Mono for the digits, which people check against their phone; the
+            // hint stays in the body face -- set in Plex Mono it read like a
+            // typewriter. Android cannot style a placeholder separately, so
+            // the face switches once there is something typed.
+            style={[styles.phoneInput, !phone && styles.phoneInputEmpty]}
             placeholder="Mobile number" placeholderTextColor={c.textDisabled}
             keyboardType="phone-pad" maxLength={maxDigits(country)} value={phone}
             onChangeText={(t) => setPhone(t.replace(/\D/g, ''))}
@@ -248,6 +252,7 @@ const styles = StyleSheet.create({
   cc: { backgroundColor: c.surfaceCard, borderRadius: radius.md, paddingHorizontal: 14, justifyContent: 'center', borderWidth: 1, borderColor: c.borderDefault },
   ccText: { fontFamily: font.sansSemibold, fontSize: 15, color: c.textPrimary },
   phoneInput: { flex: 1, backgroundColor: c.surfaceCard, borderRadius: radius.md, paddingHorizontal: 16, height: 54, fontFamily: font.monoBold, fontSize: 17, color: c.textPrimary, borderWidth: 1, borderColor: c.borderDefault, letterSpacing: 1 },
+  phoneInputEmpty: { fontFamily: font.sansMedium, letterSpacing: 0 },
 
   primaryBtn: { backgroundColor: c.actionPrimary, borderRadius: radius.md, height: 54, alignItems: 'center', justifyContent: 'center', marginBottom: 18 },
   disabled: { opacity: 0.4 },
