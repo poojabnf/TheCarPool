@@ -4,6 +4,10 @@ import type { FastifyBaseLogger } from 'fastify';
 import { db } from '../server';
 import { sendPushToUser } from '../lib/fcm';
 import { isArrivingAtPickup } from '../lib/rideNotifications';
+import { isBookingActive } from '../lib/cashRides';
+
+// Telemetry is accepted at most this often per socket.
+const TELEMETRY_MIN_INTERVAL_MS = 2000;
 
 // Route-deviation escalation: a single out-of-corridor ping can be GPS noise,
 // but this many consecutive breaches means the vehicle has genuinely left the
@@ -82,6 +86,11 @@ export function setupTelemetrySocket(io: SocketIOServer, log: FastifyBaseLogger)
     // One "driver is arriving" push per booking, per connection. Without this
     // it would repeat on every telemetry tick while the driver sits waiting.
     const arrivalNotified = new Set<string>();
+    // Rides this socket is the driver of, recorded on ride:join. Only the
+    // driver may publish a ride's location; anyone else could otherwise push
+    // fake positions, geofence alerts and rider notifications into any ride.
+    const drivenRides = new Set<string>();
+    let lastTelemetryAt = 0;
 
     // Join ride-specific room for broadcasts (restricted to ride participants)
     socket.on('ride:join', async (rideId: number | string) => {
@@ -110,6 +119,7 @@ export function setupTelemetrySocket(io: SocketIOServer, log: FastifyBaseLogger)
 
         if (isDriver || isPassenger || (socket as any).userRole === 'ADMIN') {
           socket.join(`ride_${rideId}`);
+          if (isDriver) drivenRides.add(String(rideId));
           log.info({ socketId: socket.id, rideId, authedUid }, 'Authorized socket joined ride channel');
         } else {
           log.warn({ socketId: socket.id, rideId, authedUid }, 'Unauthorized socket rejected from ride channel');
@@ -125,6 +135,20 @@ export function setupTelemetrySocket(io: SocketIOServer, log: FastifyBaseLogger)
 
       if ((socket as any).userId !== userId) {
         log.warn({ authedUser: (socket as any).userId, claimedUser: userId }, 'Telemetry user-id spoof attempt blocked');
+        return;
+      }
+      if (
+        typeof lat !== 'number' || typeof lng !== 'number' ||
+        !Number.isFinite(lat) || !Number.isFinite(lng) ||
+        lat < -90 || lat > 90 || lng < -180 || lng > 180
+      ) {
+        return;
+      }
+      const nowMs = Date.now();
+      if (nowMs - lastTelemetryAt < TELEMETRY_MIN_INTERVAL_MS) return;
+      lastTelemetryAt = nowMs;
+      if (rideId && !drivenRides.has(String(rideId))) {
+        log.warn({ authedUser: userId, rideId }, 'Telemetry for a ride the sender does not drive blocked');
         return;
       }
 
@@ -243,7 +267,7 @@ export function setupTelemetrySocket(io: SocketIOServer, log: FastifyBaseLogger)
                   .get();
                 const riderUids = [...new Set(
                   bookings.docs
-                    .filter((b) => b.data().status !== 'CANCELLED')
+                    .filter((b) => isBookingActive(b.data().escrow_status))
                     .map((b) => String(b.data().rider_id))
                 )];
                 await Promise.allSettled(riderUids.map((rider) =>

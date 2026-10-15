@@ -96,7 +96,8 @@ export async function creditWalletForPayment(opts: {
 
     tx.set(
       walletRef,
-      { ...cur, available_wallet_balance: (cur.available_wallet_balance || 0) + amount },
+      // A top-up only pays for rides; it never becomes withdrawable cash.
+      { ...cur, ...creditRideOnly(cur, amount) },
       { merge: true }
     );
     tx.set(
@@ -164,4 +165,54 @@ export async function creditOrphanedBookingPayments(
     }
   }
   return { scanned: snap.size, credited };
+}
+
+/**
+ * Wallet money comes in two kinds. Ride earnings (and refunds of failed
+ * payouts) may leave the platform; card top-ups and promo credits (referral
+ * bonuses) may only pay for rides. `withdrawable_balance` tracks the first
+ * kind and is always <= `available_wallet_balance`.
+ *
+ * A wallet written before the field existed has no `withdrawable_balance`; it
+ * is treated as fully withdrawable so existing drivers are not locked out.
+ */
+type WalletLike = { available_wallet_balance?: number; withdrawable_balance?: number } | undefined;
+
+const r2 = (n: number) => Math.round(n * 100) / 100;
+
+export function withdrawableOf(w: WalletLike): number {
+  const available = Number(w?.available_wallet_balance || 0);
+  if (w?.withdrawable_balance == null) return available;
+  return Math.max(0, Math.min(available, Number(w.withdrawable_balance)));
+}
+
+/** Patch that credits money the user may later withdraw (earnings). */
+export function creditWithdrawable(w: WalletLike, amount: number) {
+  return {
+    available_wallet_balance: r2(Number(w?.available_wallet_balance || 0) + amount),
+    withdrawable_balance: r2(withdrawableOf(w) + amount),
+  };
+}
+
+/** Patch that credits ride-only money (top-ups, promo, ride refunds). */
+export function creditRideOnly(w: WalletLike, amount: number) {
+  return {
+    available_wallet_balance: r2(Number(w?.available_wallet_balance || 0) + amount),
+    withdrawable_balance: withdrawableOf(w),
+  };
+}
+
+/**
+ * Patch that debits the wallet. Ride-only money is spent first; a payout
+ * (`fromWithdrawable`) must come entirely out of the withdrawable part.
+ */
+export function debitWallet(w: WalletLike, amount: number, fromWithdrawable = false) {
+  const available = r2(Number(w?.available_wallet_balance || 0) - amount);
+  const withdrawable = fromWithdrawable
+    ? withdrawableOf(w) - amount
+    : Math.min(withdrawableOf(w), available);
+  return {
+    available_wallet_balance: available,
+    withdrawable_balance: r2(Math.max(0, withdrawable)),
+  };
 }

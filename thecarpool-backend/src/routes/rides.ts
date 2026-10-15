@@ -529,10 +529,36 @@ export async function rideRoutes(fastify: FastifyInstance) {
       .limit(100)
       .get();
 
+    // The autoExpireStaleRides Cloud Function marks never-started rides
+    // EXPIRED and refunds nobody, and nothing else ever looked at EXPIRED, so
+    // escrow on those rides stayed held forever. Sweep them here too; this
+    // also clears any backlog left by earlier runs.
+    const expiredSnap = await db.collection('rides')
+      .where('status', '==', 'EXPIRED')
+      .limit(100)
+      .get();
+
     let cleaned = 0;
     let refunded = 0;
     const now = new Date().toISOString();
     const reason = 'EXPIRED_AUTO_CLEANUP_5_DAYS';
+
+    for (const doc of expiredSnap.docs) {
+      try {
+        const live = await liveBookingsFor(doc.id);
+        if (live.length > 0) {
+          refunded += await refundEveryRider(doc.id, live, 'RIDE_EXPIRED_NOT_STARTED', now, fastify.log);
+        }
+        await doc.ref.update({
+          status: 'CANCELLED',
+          cancellation_reason: 'RIDE_EXPIRED_NOT_STARTED',
+          updated_at: now,
+        });
+        cleaned += 1;
+      } catch (err) {
+        fastify.log.error({ err, rideId: doc.id }, 'Expired-ride refund failed for ride');
+      }
+    }
 
     // Riders first, ride second.
     //
@@ -561,7 +587,7 @@ export async function rideRoutes(fastify: FastifyInstance) {
     }
 
     return reply.send({
-      scanned: staleSnap.size,
+      scanned: staleSnap.size + expiredSnap.size,
       cleaned,
       refunded,
       cutoff_date: fiveDaysAgo,

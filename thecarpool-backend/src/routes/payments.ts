@@ -15,7 +15,7 @@ import {
 } from '../lib/payouts';
 import { validatePan, normalisePan, maskPan, panStatus, nameMatchesPan } from '../lib/kyc';
 import { isRouteConfigured, createLinkedAccount } from '../lib/route';
-import { creditWalletForPayment } from '../lib/wallet';
+import { creditWalletForPayment, creditWithdrawable, debitWallet, withdrawableOf, creditRideOnly } from '../lib/wallet';
 import { calculateSplit, suggestPricing, fuelSavings } from '../lib/pricing';
 import {
   getRazorpay,
@@ -24,6 +24,7 @@ import {
   verifyPaymentSignature,
   verifyWebhookSignature,
   createPayout,
+  ensureCaptured,
 } from '../lib/razorpay';
 import { round2, isShortOf } from '../lib/money';
 
@@ -87,7 +88,10 @@ const ReferralSchema = z.object({
   referral_code: z.string().min(3),
 });
 
-const REFERRAL_BONUS = 100; // ₹ credited to a user redeeming a valid referral.
+const REFERRAL_BONUS = 100; // ₹ ride-only credit for a user redeeming a valid referral.
+// One referrer's code pays out at most this many bonuses, so a farm of fresh
+// accounts behind one code cannot mint unlimited ride credit.
+const REFERRAL_MAX_PER_REFERRER = 20;
 // A cancellation counts as "late" within this window before departure.
 const LATE_CANCEL_WINDOW_MS = 2 * 60 * 60 * 1000;
 const LATE_CANCEL_FEE = 50;
@@ -202,12 +206,14 @@ export async function paymentRoutes(fastify: FastifyInstance) {
     try {
       // Trust Razorpay for the amount/status, never the client. This closes the
       // hole where a client could pay ₹1 and claim a large wallet credit.
-      const payment: any = await getRazorpay().payments.fetch(razorpay_payment_id);
-      if (!payment || payment.order_id !== razorpay_order_id) {
+      const fetched: any = await getRazorpay().payments.fetch(razorpay_payment_id);
+      if (!fetched || fetched.order_id !== razorpay_order_id) {
         return reply.code(400).send({ status: 'ORDER_MISMATCH' });
       }
-      if (payment.status !== 'captured' && payment.status !== 'authorized') {
-        return reply.code(400).send({ status: 'NOT_CAPTURED', payment_status: payment.status });
+      // Only captured money counts; an authorization is auto-refunded later.
+      const payment = await ensureCaptured(fetched);
+      if (!payment) {
+        return reply.code(400).send({ status: 'NOT_CAPTURED', payment_status: fetched.status });
       }
       const amountRupees = Number(payment.amount) / 100;
       const { credited } = await creditWalletForPayment({
@@ -614,9 +620,8 @@ export async function paymentRoutes(fastify: FastifyInstance) {
         // refund below; the reverse order could pay out money we never held.
         await db.runTransaction(async (tx) => {
           const w = await tx.get(walletRef);
-          const bal = Number(w.data()?.available_wallet_balance || 0);
-          if (isShortOf(bal, amount)) throw new Error('INSUFFICIENT_WALLET');
-          tx.set(walletRef, { available_wallet_balance: round2(bal - amount) }, { merge: true });
+          if (isShortOf(withdrawableOf(w.data()), amount)) throw new Error('INSUFFICIENT_WALLET');
+          tx.set(walletRef, debitWallet(w.data(), amount, true), { merge: true });
         });
         debited = true;
 
@@ -636,8 +641,7 @@ export async function paymentRoutes(fastify: FastifyInstance) {
           await db.runTransaction(async (tx) => {
             const walletRef = db.collection('wallets').doc(String(p.driver_uid));
             const w = await tx.get(walletRef);
-            const bal = Number(w.data()?.available_wallet_balance || 0);
-            tx.set(walletRef, { available_wallet_balance: round2(bal + amount) }, { merge: true });
+            tx.set(walletRef, creditWithdrawable(w.data(), amount), { merge: true });
           }).catch(() => {});
         }
         await doc.ref.update({ status: 'FAILED', error: String(err?.message).slice(0, 200), failed_at: new Date().toISOString() }).catch(() => {});
@@ -698,11 +702,12 @@ export async function paymentRoutes(fastify: FastifyInstance) {
       await db.runTransaction(async (tx) => {
         const walletRef = db.collection('wallets').doc(uid);
         const walletDoc = await tx.get(walletRef);
-        const available = Number(walletDoc.data()?.available_wallet_balance || 0);
-        if (available < amount) {
+        // Only earnings can leave the platform. Top-ups and promo credit
+        // stay in the wallet to pay for rides.
+        if (isShortOf(withdrawableOf(walletDoc.data()), amount)) {
           throw new Error('INSUFFICIENT_FUNDS');
         }
-        tx.set(walletRef, { available_wallet_balance: available - amount }, { merge: true });
+        tx.set(walletRef, debitWallet(walletDoc.data(), amount, true), { merge: true });
         tx.set(db.collection('payouts').doc(payoutRef), {
           booking_id: booking_id != null ? String(booking_id) : null,
           upi_payout_id,
@@ -720,7 +725,10 @@ export async function paymentRoutes(fastify: FastifyInstance) {
       });
     } catch (err: any) {
       if (err.message === 'INSUFFICIENT_FUNDS') {
-        return reply.code(402).send({ error: 'Insufficient wallet balance for this payout.' });
+        return reply.code(402).send({
+          error: 'Insufficient withdrawable balance for this payout.',
+          message: 'Only ride earnings can be withdrawn. Top-ups and promo credit can be used to pay for rides.',
+        });
       }
       fastify.log.error(err, 'Payout fund reservation failed');
       return reply.code(500).send({ error: 'Failed to reserve payout funds.' });
@@ -731,8 +739,7 @@ export async function paymentRoutes(fastify: FastifyInstance) {
       await db.runTransaction(async (tx) => {
         const walletRef = db.collection('wallets').doc(uid);
         const walletDoc = await tx.get(walletRef);
-        const available = Number(walletDoc.data()?.available_wallet_balance || 0);
-        tx.set(walletRef, { available_wallet_balance: available + amount }, { merge: true });
+        tx.set(walletRef, creditWithdrawable(walletDoc.data(), amount), { merge: true });
       });
     };
 
@@ -996,7 +1003,7 @@ export async function paymentRoutes(fastify: FastifyInstance) {
         // Credit the late fee to the driver's wallet.
         if (walletRef) {
           const cur = walletDoc?.exists ? walletDoc.data()! : { available_wallet_balance: 0, escrow_locked_balance: 0, currency: defaultCurrency() };
-          tx.set(walletRef, { ...cur, available_wallet_balance: (cur.available_wallet_balance || 0) + fee }, { merge: true });
+          tx.set(walletRef, { ...cur, ...creditWithdrawable(cur, fee) }, { merge: true });
         }
       });
 
@@ -1029,15 +1036,13 @@ export async function paymentRoutes(fastify: FastifyInstance) {
     const uid = request.user!.id;
 
     try {
-      // Resolve the referral code to its owner. Codes are stored on user docs as
-      // `referral_code`; fall back to treating the code as a user id.
+      // Resolve the referral code to its owner. Only a real `referral_code`
+      // counts: a user id is not a code, and accepting one let anyone who knew
+      // a uid redeem.
       let referrerUid: string | null = null;
       const byCode = await db.collection('users').where('referral_code', '==', code).limit(1).get();
       if (!byCode.empty) {
         referrerUid = byCode.docs[0].id;
-      } else {
-        const asUser = await db.collection('users').doc(code).get();
-        if (asUser.exists) referrerUid = asUser.id;
       }
 
       if (!referrerUid) {
@@ -1047,19 +1052,42 @@ export async function paymentRoutes(fastify: FastifyInstance) {
         return reply.code(400).send({ error: 'You cannot redeem your own referral code.' });
       }
 
+      // The bonus is earned by a real trip: a fresh OTP sign-up gets nothing
+      // until it has completed a paid ride.
+      const completed = await db.collection('bookings')
+        .where('rider_id', '==', uid)
+        .where('escrow_status', '==', 'SETTLED')
+        .limit(1)
+        .get();
+      if (completed.empty) {
+        return reply.code(403).send({
+          error: 'REFERRAL_NEEDS_RIDE',
+          message: 'Complete your first paid ride, then redeem your referral code.',
+        });
+      }
+
       const redemptionRef = db.collection('referral_redemptions').doc(uid);
+      const referrerStatsRef = db.collection('referral_stats').doc(referrerUid);
       const walletRef = db.collection('wallets').doc(uid);
       let newBalance = 0;
 
       await db.runTransaction(async (tx) => {
-        const redemptionDoc = await tx.get(redemptionRef);
+        const [redemptionDoc, statsDoc, walletDoc] = await Promise.all([
+          tx.get(redemptionRef), tx.get(referrerStatsRef), tx.get(walletRef),
+        ]);
         if (redemptionDoc.exists) {
           throw new Error('ALREADY_REDEEMED');
         }
-        const walletDoc = await tx.get(walletRef);
+        const used = Number(statsDoc.data()?.redemptions || 0);
+        if (used >= REFERRAL_MAX_PER_REFERRER) {
+          throw new Error('REFERRER_CAPPED');
+        }
         const cur = walletDoc.exists ? walletDoc.data()! : { available_wallet_balance: 0, escrow_locked_balance: 0, currency: defaultCurrency() };
-        newBalance = (cur.available_wallet_balance || 0) + REFERRAL_BONUS;
-        tx.set(walletRef, { ...cur, available_wallet_balance: newBalance }, { merge: true });
+        // Ride-only credit: it can pay for seats but can never be withdrawn.
+        const patch = creditRideOnly(cur, REFERRAL_BONUS);
+        newBalance = patch.available_wallet_balance;
+        tx.set(walletRef, { ...cur, ...patch }, { merge: true });
+        tx.set(referrerStatsRef, { redemptions: used + 1, updated_at: new Date().toISOString() }, { merge: true });
         tx.set(redemptionRef, {
           user_id: uid,
           referrer_uid: referrerUid,
@@ -1079,6 +1107,9 @@ export async function paymentRoutes(fastify: FastifyInstance) {
     } catch (err: any) {
       if (err.message === 'ALREADY_REDEEMED') {
         return reply.code(409).send({ error: 'You have already redeemed a referral bonus.' });
+      }
+      if (err.message === 'REFERRER_CAPPED') {
+        return reply.code(409).send({ error: 'This referral code has reached its limit.' });
       }
       fastify.log.error(err, 'Referral redemption failed');
       return reply.code(500).send({ error: 'Failed to redeem referral code.' });

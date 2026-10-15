@@ -171,3 +171,23 @@ export function verifyWebhookSignature(rawBody: string, signature: string): bool
     return false;
   }
 }
+
+/**
+ * Return the payment as captured, capturing it first if it is only
+ * authorized. An authorized payment is not money we hold: Razorpay refunds it
+ * automatically unless it is captured, so it must never fund a wallet or a
+ * seat on its own. Returns null when the payment cannot be captured.
+ */
+export async function ensureCaptured(payment: any): Promise<any | null> {
+  if (!payment) return null;
+  if (payment.status === 'captured') return payment;
+  if (payment.status !== 'authorized') return null;
+  try {
+    const captured: any = await getRazorpay().payments.capture(payment.id, payment.amount, payment.currency || 'INR');
+    return captured?.status === 'captured' ? captured : null;
+  } catch {
+    // A concurrent capture (webhook, retry) may have won; re-read to be sure.
+    const fresh: any = await getRazorpay().payments.fetch(payment.id).catch(() => null);
+    return fresh?.status === 'captured' ? fresh : null;
+  }
+}

@@ -16,8 +16,8 @@ import {
 } from '../lib/settlement';
 
 import { getUserEmail, buildRiderBookingEmail, buildDriverPassengerBookedEmail, sendEmail } from '../lib/email';
-import { claimPaymentInTransaction } from '../lib/wallet';
-import { getRazorpay, isRazorpayConfigured, refundPaymentToSource } from '../lib/razorpay';
+import { claimPaymentInTransaction, creditWithdrawable, debitWallet } from '../lib/wallet';
+import { getRazorpay, isRazorpayConfigured, refundPaymentToSource, ensureCaptured } from '../lib/razorpay';
 import { isRouteConfigured, createHeldTransfer, reverseTransfer } from '../lib/route';
 import { cashAllowance, cashBookingRefusal, consumesAllowance, isBookingActive } from '../lib/cashRides';
 import {
@@ -240,8 +240,9 @@ export async function bookingRoutes(fastify: FastifyInstance) {
         return reply.code(503).send({ error: 'Payments are not configured on this server.' });
       }
       try {
-        const payment: any = await getRazorpay().payments.fetch(razorpay_payment_id);
-        if (!payment || (payment.status !== 'captured' && payment.status !== 'authorized')) {
+        // Only captured money counts; an authorization is auto-refunded later.
+        const payment: any = await ensureCaptured(await getRazorpay().payments.fetch(razorpay_payment_id));
+        if (!payment) {
           return reply.code(400).send({ error: 'PAYMENT_NOT_CAPTURED', message: 'That payment has not completed.' });
         }
         // Whose money is this? Every order is created with the payer's uid in
@@ -356,7 +357,7 @@ export async function bookingRoutes(fastify: FastifyInstance) {
           }
           transaction.set(riderWalletRef, {
             ...cur,
-            available_wallet_balance: round2(available - totalDue),
+            ...debitWallet(cur, totalDue),
           }, { merge: true });
         }
 
@@ -1491,7 +1492,7 @@ export async function bookingRoutes(fastify: FastifyInstance) {
           settled_at: new Date().toISOString(),
         });
         const cur = walletDoc.exists ? walletDoc.data()! : { available_wallet_balance: 0, escrow_locked_balance: 0, currency: defaultCurrency() };
-        tx.set(driverWalletRef, { ...cur, available_wallet_balance: (cur.available_wallet_balance || 0) + fareAmount }, { merge: true });
+        tx.set(driverWalletRef, { ...cur, ...creditWithdrawable(cur, fareAmount) }, { merge: true });
       });
 
       return reply.send({
@@ -2178,7 +2179,7 @@ export async function bookingRoutes(fastify: FastifyInstance) {
             : { available_wallet_balance: 0, escrow_locked_balance: 0, currency: defaultCurrency() };
           tx.set(driverWalletRef, {
             ...dcur,
-            available_wallet_balance: round2((dcur.available_wallet_balance || 0) + outcome.driver_share),
+            ...creditWithdrawable(dcur, outcome.driver_share),
           }, { merge: true });
         }
       });

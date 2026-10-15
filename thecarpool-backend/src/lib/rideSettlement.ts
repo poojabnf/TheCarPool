@@ -23,6 +23,7 @@ import { releaseTransfer } from './route';
 import { notifySettlement, notifyPayoutStarted, deliver } from './bookingNotifications';
 import { isRazorpayXConfigured } from './razorpay';
 import { round2 } from './money';
+import { creditWithdrawable } from './wallet';
 
 
 export interface SettleOutcome {
@@ -208,7 +209,7 @@ export async function settleDueBookingsForRide(
 
       tx.set(driverWalletRef, {
         ...cur,
-        available_wallet_balance: round2((cur.available_wallet_balance || 0) + driverTotal),
+        ...creditWithdrawable(cur, driverTotal),
         withdrawable_after: null,
       }, { merge: true });
 

@@ -1,4 +1,5 @@
 import Fastify from 'fastify';
+import { timingSafeEqual } from 'crypto';
 import helmet from '@fastify/helmet';
 import cors from '@fastify/cors';
 import rateLimit from '@fastify/rate-limit';
@@ -33,7 +34,13 @@ initSentry();
 // request.ip is the load balancer's address for every caller, so an IP-keyed
 // rate limit becomes one global bucket that any single client can exhaust for
 // everyone.
-const fastify = Fastify({ logger: true, bodyLimit: 15 * 1024 * 1024, trustProxy: true });
+//
+// A hop count, not `true`. With `true` every X-Forwarded-For entry is trusted
+// and request.ip is the leftmost one, which the client writes: a forged header
+// gave a fresh rate-limit bucket per request. Cloud Run adds exactly one hop,
+// so request.ip is now the address that proxy saw.
+const TRUST_PROXY_HOPS = Number(process.env.TRUST_PROXY_HOPS ?? 1);
+const fastify = Fastify({ logger: true, bodyLimit: 15 * 1024 * 1024, trustProxy: TRUST_PROXY_HOPS });
 
 // Security headers, CORS allowlist, and a global rate limit. Registered before
 // routes so they apply to every endpoint. The CORS/Socket.IO origin allowlist
@@ -61,12 +68,15 @@ fastify.register(rateLimit, {
   // /notify-boarding in a single session, meaning neither reminder went out at
   // all. They carry CRON_SECRET, run a handful of times an hour, and cannot be
   // triggered by a user, so they have no business sharing a user's budget.
+  // No localhost exemption: behind a proxy a loopback address is just another
+  // value a client could get into request.ip.
   allowList: (request) => {
-    if (request.ip === '127.0.0.1') return true;
     const secret = process.env.CRON_SECRET;
-    if (!secret) return false;
     const header = request.headers['x-cron-key'];
-    return typeof header === 'string' && header === secret;
+    if (!secret || typeof header !== 'string') return false;
+    const a = Buffer.from(secret);
+    const b = Buffer.from(header);
+    return a.length === b.length && timingSafeEqual(a, b);
   },
   /**
    * Keyed on the client address, and only that.
