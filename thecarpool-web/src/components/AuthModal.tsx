@@ -314,7 +314,7 @@ export default function AuthModal({ isOpen = true, onSuccess, onClose, initialMo
 
         {/* Footer Terms */}
         <p className="text-[11px] text-slate-400 dark:text-slate-500 text-center mt-6">
-          By continuing, you agree to TheCarPool's <Link href="/privacy" className="underline hover:text-slate-600 dark:hover:text-slate-300">Terms &amp; Privacy Policy</Link>.
+          By continuing, you agree to TheCarPool&apos;s <Link href="/privacy" className="underline hover:text-slate-600 dark:hover:text-slate-300">Terms &amp; Privacy Policy</Link>.
         </p>
       </div>
     </div>
