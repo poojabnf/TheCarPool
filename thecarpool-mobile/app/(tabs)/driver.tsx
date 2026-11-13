@@ -1067,6 +1067,13 @@ export default function DriverInterface() {
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
+        if (err.error === 'LICENCE_REQUIRED') {
+          Alert.alert('Add your driving licence', err.message || 'Add your licence before offering a ride.', [
+            { text: 'Not now', style: 'cancel' },
+            { text: 'Add licence', onPress: () => router.push('/licence' as any) },
+          ]);
+          return;
+        }
         Alert.alert('Failed to Post Ride', err.message || err.error || `Server error ${res.status}`);
         return;
       }

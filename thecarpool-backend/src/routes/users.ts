@@ -2,6 +2,7 @@ import { FastifyInstance } from 'fastify';
 import { db, storage } from '../server';
 import { requireAuth, requireAdmin } from '../middleware/auth';
 import { checkLicence, maskLicence } from '../lib/licence';
+import { verifyDrivingLicence, isDlVerificationConfigured } from '../lib/dlVerify';
 import {
   normalisePhone, phoneKey, phoneOf, portableProfile, decideLink,
   normaliseEmail, emailKey, emailOf,
@@ -226,8 +227,8 @@ export async function userRoutes(fastify: FastifyInstance) {
    */
   fastify.post('/licence', { preHandler: [requireAuth] }, async (request, reply) => {
     const uid = String(request.user!.id);
-    const { dl_number, dl_expiry } = (request.body as {
-      dl_number?: string; dl_expiry?: string;
+    const { dl_number, dl_expiry, dob } = (request.body as {
+      dl_number?: string; dl_expiry?: string; dob?: string;
     }) || {};
 
     const check = checkLicence(dl_number, dl_expiry);
@@ -243,6 +244,31 @@ export async function userRoutes(fastify: FastifyInstance) {
       // assume it was simply not fetched; null says nobody has checked.
       dl_verified_at: null,
     }, { merge: true });
+
+    // Independent check against the transport record, when a provider is
+    // configured and the driver gave their date of birth (the provider needs it).
+    if (isDlVerificationConfigured() && dob && !Number.isNaN(Date.parse(String(dob)))) {
+      const v = await verifyDrivingLicence(String(check.normalised), new Date(String(dob)).toISOString());
+      if (v.status === 'VERIFIED') {
+        await db.collection('users').doc(uid).set({
+          dl_verified_at: new Date().toISOString(),
+          dl_verified_name: v.holder_name || null,
+          dl_verification_provider: 'surepass',
+        }, { merge: true });
+        return reply.send({
+          dl_number_masked: maskLicence(check.normalised),
+          dl_expiry,
+          verified: true,
+          note: 'Licence verified against the transport department record.',
+        });
+      }
+      if (v.status === 'NOT_FOUND') {
+        return reply.code(400).send({
+          error: 'LICENCE_NOT_FOUND',
+          message: 'We could not find this licence with that date of birth. Please check both and try again.',
+        });
+      }
+    }
 
     return reply.send({
       dl_number_masked: maskLicence(check.normalised),

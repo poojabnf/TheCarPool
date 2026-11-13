@@ -5,8 +5,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   CreditCard, Settings, HelpCircle, ChevronRight, LogOut, ShieldCheck, Leaf, Receipt, Camera,
   Landmark, Car, Bell,
-  Mail, Headset, Flame, Plus, Minus, ChevronLeft, LifeBuoy,
-} from 'lucide-react-native';
+  Mail, Headset, Flame, Plus, Minus, ChevronLeft, LifeBuoy, IdCard } from 'lucide-react-native';
 import { auth } from '../../services/firebase';
 import { apiFetch } from '../../services/api';
 import { useAuthStore } from '../../store/authStore';
@@ -556,6 +555,12 @@ export default function AccountInterface() {
           title={t('payout_details')}
           sub={payoutDestination ? `Withdrawals go to ${payoutDestination}` : 'Add a UPI ID or bank account to withdraw'}
           onPress={() => router.push('/payout-method')}
+        />
+        <MenuRow
+          icon={<IdCard color={c.textSecondary} size={20} />}
+          title="Driving licence"
+          sub="Add or update the licence you drive with"
+          onPress={() => router.push('/licence' as any)}
         />
         <MenuRow icon={<Receipt color={c.textSecondary} size={20} />} title={t('booking_history')} sub={t('booking_history_sub')} onPress={() => setView('history')} />
         {/* Rides the user OFFERED, as opposed to booked. Previously only
