@@ -89,6 +89,8 @@ const ReferralSchema = z.object({
 });
 
 const REFERRAL_BONUS = 100; // ₹ ride-only credit for a user redeeming a valid referral.
+// The person who invited them gets the same, so both sides of the invite win.
+const REFERRER_BONUS = 100;
 // One referrer's code pays out at most this many bonuses, so a farm of fresh
 // accounts behind one code cannot mint unlimited ride credit.
 const REFERRAL_MAX_PER_REFERRER = 20;
@@ -1069,11 +1071,12 @@ export async function paymentRoutes(fastify: FastifyInstance) {
       const redemptionRef = db.collection('referral_redemptions').doc(uid);
       const referrerStatsRef = db.collection('referral_stats').doc(referrerUid);
       const walletRef = db.collection('wallets').doc(uid);
+      const referrerWalletRef = db.collection('wallets').doc(referrerUid);
       let newBalance = 0;
 
       await db.runTransaction(async (tx) => {
-        const [redemptionDoc, statsDoc, walletDoc] = await Promise.all([
-          tx.get(redemptionRef), tx.get(referrerStatsRef), tx.get(walletRef),
+        const [redemptionDoc, statsDoc, walletDoc, referrerWalletDoc] = await Promise.all([
+          tx.get(redemptionRef), tx.get(referrerStatsRef), tx.get(walletRef), tx.get(referrerWalletRef),
         ]);
         if (redemptionDoc.exists) {
           throw new Error('ALREADY_REDEEMED');
@@ -1087,12 +1090,15 @@ export async function paymentRoutes(fastify: FastifyInstance) {
         const patch = creditRideOnly(cur, REFERRAL_BONUS);
         newBalance = patch.available_wallet_balance;
         tx.set(walletRef, { ...cur, ...patch }, { merge: true });
+        const refCur = referrerWalletDoc.exists ? referrerWalletDoc.data()! : { available_wallet_balance: 0, escrow_locked_balance: 0, currency: defaultCurrency() };
+        tx.set(referrerWalletRef, { ...refCur, ...creditRideOnly(refCur, REFERRER_BONUS) }, { merge: true });
         tx.set(referrerStatsRef, { redemptions: used + 1, updated_at: new Date().toISOString() }, { merge: true });
         tx.set(redemptionRef, {
           user_id: uid,
           referrer_uid: referrerUid,
           referral_code: code,
           bonus: REFERRAL_BONUS,
+          referrer_bonus: REFERRER_BONUS,
           redeemed_at: new Date().toISOString(),
         });
       });

@@ -35,7 +35,7 @@ export interface StopEta {
 
 /** Cache of leg durations (seconds) keyed by the route's coordinates. */
 const legCache = new Map<string, { at: number; legs: number[] }>();
-const LEG_CACHE_TTL_MS = 60 * 60 * 1000; // an hour; road conditions drift slowly
+const LEG_CACHE_TTL_MS = 10 * 60 * 1000; // traffic-aware, so keep it fresh
 const LEG_CACHE_MAX = 300;
 
 function routeKey(origin: { lat: number; lng: number }, stops: StopInput[]): string {
@@ -79,12 +79,16 @@ export async function fetchLegDurations(
   if (cached) return cached;
 
   try {
-    const waypoints = stops.slice(0, -1).map((s) => `via:${s.lat},${s.lng}`).join('|');
+    // Stopover waypoints, not via: — via points are merged into one leg, so a
+    // multi-stop ride got a single duration and every stop fell back to none.
+    const waypoints = stops.slice(0, -1).map((s) => `${s.lat},${s.lng}`).join('|');
     const last = stops[stops.length - 1];
     const url = new URL('https://maps.googleapis.com/maps/api/directions/json');
     url.searchParams.set('origin', `${origin.lat},${origin.lng}`);
     url.searchParams.set('destination', `${last.lat},${last.lng}`);
     if (waypoints) url.searchParams.set('waypoints', waypoints);
+    // Live traffic: duration_in_traffic is returned when Google can provide it.
+    url.searchParams.set('departure_time', 'now');
     url.searchParams.set('key', process.env.GOOGLE_MAPS_API_KEY as string);
 
     const res = await fetch(url.toString());
@@ -93,7 +97,7 @@ export async function fetchLegDurations(
     const legs = data?.routes?.[0]?.legs;
     if (!Array.isArray(legs) || legs.length === 0) return null;
 
-    const durations = legs.map((l: any) => Number(l?.duration?.value) || 0);
+    const durations = legs.map((l: any) => Number(l?.duration_in_traffic?.value) || Number(l?.duration?.value) || 0);
     if (durations.some((d: number) => d <= 0)) return null;
     cacheSet(key, durations);
     return durations;
