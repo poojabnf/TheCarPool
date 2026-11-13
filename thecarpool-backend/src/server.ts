@@ -5,6 +5,7 @@ import cors from '@fastify/cors';
 import rateLimit from '@fastify/rate-limit';
 import { createClient } from 'redis';
 import { Server as SocketIOServer } from 'socket.io';
+import { createAdapter } from '@socket.io/redis-adapter';
 import * as dotenv from 'dotenv';
 import { validateEnv, allowedOrigins } from './lib/config';
 import { rideRoutes } from './routes/rides';
@@ -165,6 +166,23 @@ redisClient.on('connect', () => {
 
 // Attempt connection — failure is silent after the first warning
 redisClient.connect().catch(() => {});
+
+// With more than one backend instance (Cloud Run scales out), a rider's
+// socket and their driver's socket can land on different instances. The
+// Redis adapter relays room broadcasts between instances. Only enabled when
+// REDIS_URL is set explicitly; a single instance needs nothing.
+if (process.env.REDIS_URL) {
+  const pub = redisClient.duplicate();
+  const sub = redisClient.duplicate();
+  pub.on('error', () => {});
+  sub.on('error', () => {});
+  Promise.all([pub.connect(), sub.connect()])
+    .then(() => {
+      io.adapter(createAdapter(pub, sub));
+      fastify.log.info('Socket.IO Redis adapter enabled');
+    })
+    .catch((err) => fastify.log.warn({ err }, 'Socket.IO Redis adapter unavailable — single-instance broadcasts only'));
+}
 
 // Register real-time telemetry events
 setupTelemetrySocket(io, fastify.log);

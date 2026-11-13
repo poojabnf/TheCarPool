@@ -5,6 +5,7 @@ import { db } from '../server';
 import { sendPushToUser } from '../lib/fcm';
 import { isArrivingAtPickup } from '../lib/rideNotifications';
 import { isBookingActive } from '../lib/cashRides';
+import { nextStallState, type StallState } from '../lib/stallDetection';
 
 // Telemetry is accepted at most this often per socket.
 const TELEMETRY_MIN_INTERVAL_MS = 2000;
@@ -39,7 +40,7 @@ interface TelemetryPayload {
  */
 const CACHE_TTL_MS = 30_000;
 
-interface RideCacheEntry { at: number; routeCoords: { lat: number; lng: number }[] | null }
+interface RideCacheEntry { at: number; routeCoords: { lat: number; lng: number }[] | null; status?: string }
 interface BookingsCacheEntry { at: number; docs: { id: string; data: FirebaseFirestore.DocumentData }[] }
 
 function haversineDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
@@ -90,6 +91,7 @@ export function setupTelemetrySocket(io: SocketIOServer, log: FastifyBaseLogger)
     // driver may publish a ride's location; anyone else could otherwise push
     // fake positions, geofence alerts and rider notifications into any ride.
     const drivenRides = new Set<string>();
+    const stallState = new Map<string, StallState>();
     let lastTelemetryAt = 0;
 
     // Join ride-specific room for broadcasts (restricted to ride participants)
@@ -182,6 +184,7 @@ export function setupTelemetrySocket(io: SocketIOServer, log: FastifyBaseLogger)
             rideEntry = {
               at: Date.now(),
               routeCoords: rideDoc.exists ? (rideDoc.data()!.route_coords || []) : null,
+              status: rideDoc.exists ? String(rideDoc.data()!.status || '') : undefined,
             };
             rideCache.set(rideCacheKey, rideEntry);
           }
@@ -234,6 +237,36 @@ export function setupTelemetrySocket(io: SocketIOServer, log: FastifyBaseLogger)
               }
             } catch (e) {
               log.error(e, 'Arrival proximity check failed');
+            }
+
+            // Stalled-vehicle check-in: same spot for 10+ minutes mid-trip.
+            if (rideEntry.status === 'STARTED' || rideEntry.status === 'IN_PROGRESS') {
+              const st = nextStallState(stallState.get(rideKey), lat, lng, Date.now(), haversineDistance);
+              stallState.set(rideKey, st.state);
+              if (st.shouldAlert) {
+                log.warn({ rideId }, 'Vehicle stationary for 10+ minutes during trip');
+                await db.collection('safety_alerts').add({
+                  type: 'VEHICLE_STALLED',
+                  ride_id: rideKey,
+                  driver_user_id: String(userId),
+                  coordinates: { lat, lng },
+                  created_at: new Date().toISOString(),
+                  status: 'OPEN',
+                });
+                io.to(`ride_${rideId}`).emit('safety:alert', {
+                  type: 'VEHICLE_STALLED',
+                  message: 'The vehicle has not moved for 10 minutes.',
+                  coordinates: { lng, lat },
+                });
+                const bks = await db.collection('bookings').where('ride_id', '==', rideKey).get();
+                const riders = [...new Set(bks.docs.filter((b) => isBookingActive(b.data().escrow_status)).map((b) => String(b.data().rider_id)))];
+                await Promise.allSettled(riders.map((rider) => sendPushToUser(
+                  rider,
+                  'Are you OK?',
+                  'Your ride has not moved for 10 minutes. Open the trip screen — use SOS if you need help.',
+                  { type: 'VEHICLE_STALLED', ride_id: rideKey }
+                )));
+              }
             }
 
             if (!withinLimits && route_coords.length > 0) {
