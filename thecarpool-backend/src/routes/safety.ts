@@ -8,6 +8,8 @@ import { requireAuth } from '../middleware/auth';
 import { parseOrReply } from '../lib/validate';
 import { createMaskedCall, isMaskingConfigured } from '../lib/masking';
 import { hasPayoutMethod, maskPayoutMethod } from '../lib/payouts';
+import { sendEmail } from '../lib/email';
+import { createHash, randomInt } from 'crypto';
 
 /**
  * Where a deleted user's leftover wallet balance goes when they have no payout
@@ -117,7 +119,7 @@ export async function safetyRoutes(fastify: FastifyInstance) {
 
   // 3. Corporate Trust Circles & domains (Feature 23)
   fastify.post('/trust/verify-email', { preHandler: [requireAuth] }, async (request, reply) => {
-    const { corporate_email } = request.body as { corporate_email: string };
+    const { corporate_email, code } = request.body as { corporate_email: string; code?: string };
     const user_id = request.user!.id;
 
     if (!corporate_email || !corporate_email.includes('@')) {
@@ -145,12 +147,47 @@ export async function safetyRoutes(fastify: FastifyInstance) {
       const authedEmail = String(request.user?.email || '').toLowerCase();
       const authedDomain = authedEmail.includes('@') ? authedEmail.split('@')[1] : '';
 
-      if (authedDomain !== domain && request.user?.role !== 'ADMIN') {
-        // Require explicit domain match on authenticated token
-        return reply.code(403).send({
-          status: 'CHALLENGE_REQUIRED',
-          error: `Please sign in with your corporate @${domain} email account to join this Trust Circle.`
-        });
+      // A token email only counts if Firebase verified it; otherwise anyone
+      // could set an unverified work address on their account and join.
+      const tokenProvesDomain = authedDomain === domain && request.user?.emailVerified === true;
+
+      if (!tokenProvesDomain && request.user?.role !== 'ADMIN') {
+        const email = corporate_email.trim().toLowerCase();
+        const otpRef = db.collection('work_email_otps').doc(String(user_id));
+        const hash = (c: string) => createHash('sha256').update(`${user_id}:${email}:${c}`).digest('hex');
+
+        if (!code) {
+          const otp = String(randomInt(100000, 1000000));
+          await otpRef.set({
+            email, code_hash: hash(otp), attempts: 0,
+            expires_at: Date.now() + 10 * 60 * 1000,
+          });
+          const sent = await sendEmail({
+            to: email,
+            subject: 'Your TheCarPool work email code',
+            text: `Your code is ${otp}. It expires in 10 minutes.`,
+            html: `<p>Your TheCarPool work email code is <b>${otp}</b>.</p><p>It expires in 10 minutes. If you did not ask for this, ignore this email.</p>`,
+          });
+          if (!sent) {
+            return reply.code(503).send({ status: 'EMAIL_UNAVAILABLE', error: 'We could not send the code right now. Please try again later.' });
+          }
+          return reply.code(202).send({ status: 'CODE_SENT', message: `We sent a 6-digit code to ${email}.` });
+        }
+
+        const otpDoc = await otpRef.get();
+        const o = otpDoc.data() as { email: string; code_hash: string; attempts: number; expires_at: number } | undefined;
+        if (!o || o.email !== email || o.expires_at < Date.now()) {
+          return reply.code(400).send({ status: 'CODE_EXPIRED', error: 'That code has expired. Ask for a new one.' });
+        }
+        if (o.attempts >= 5) {
+          await otpRef.delete();
+          return reply.code(429).send({ status: 'TOO_MANY_ATTEMPTS', error: 'Too many wrong codes. Ask for a new one.' });
+        }
+        if (hash(String(code).trim()) !== o.code_hash) {
+          await otpRef.update({ attempts: o.attempts + 1 });
+          return reply.code(400).send({ status: 'WRONG_CODE', error: 'That code is not right.' });
+        }
+        await otpRef.delete();
       }
 
       await db.collection('users').doc(String(user_id)).update({ company_domain: domain });
