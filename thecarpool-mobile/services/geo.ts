@@ -124,3 +124,31 @@ export async function searchPlaces(query: string, attempt = 0): Promise<GeoOutco
     return { status: 'error', message: 'Could not load places. Check your connection.' };
   }
 }
+
+/**
+ * Google Maps turn-by-turn link for a driver: origin is the phone's current
+ * location (Maps fills it in), every pickup stop is queued as a waypoint in
+ * the order the driver listed them, and the ride's end is the destination.
+ * Maps opens the native app when installed and the web otherwise.
+ */
+export function buildNavigationUrl(ride: {
+  route_geojson?: { coordinates?: unknown };
+  pickup_points?: Array<{ lat?: number; lng?: number }>;
+}): string | null {
+  const coords = Array.isArray(ride?.route_geojson?.coordinates) ? (ride.route_geojson!.coordinates as any[]) : [];
+  const end = coords[coords.length - 1];
+  if (!Array.isArray(end) || !Number.isFinite(Number(end[0])) || !Number.isFinite(Number(end[1]))) return null;
+  const fmt = (lat: number, lng: number) => `${Number(lat).toFixed(6)},${Number(lng).toFixed(6)}`;
+  const stops = (Array.isArray(ride.pickup_points) ? ride.pickup_points : [])
+    .filter((p) => Number.isFinite(Number(p?.lat)) && Number.isFinite(Number(p?.lng)))
+    .slice(0, 9) // Google Maps accepts at most 9 waypoints in a URL.
+    .map((p) => fmt(Number(p.lat), Number(p.lng)));
+  const params = [
+    'api=1',
+    `destination=${encodeURIComponent(fmt(Number(end[1]), Number(end[0])))}`,
+    'travelmode=driving',
+    'dir_action=navigate',
+  ];
+  if (stops.length) params.push(`waypoints=${encodeURIComponent(stops.join('|'))}`);
+  return `https://www.google.com/maps/dir/?${params.join('&')}`;
+}

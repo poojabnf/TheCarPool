@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { buildNavigationUrl } from '../../services/geo';
 import { StyleSheet, View, Text, ScrollView, Dimensions, TextInput, Alert, ActivityIndicator, Modal, Linking, FlatList } from 'react-native';
 import { useRouter, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { PlusCircle, Activity, MapPin, Calendar, Users, X, Check, Car, Bike, Shield, Phone, Mail, ChevronDown, Search, Play, Lightbulb, BadgeCheck, HandCoins, KeyRound, Snowflake, Music, Cigarette, Venus } from 'lucide-react-native';
@@ -1433,6 +1434,18 @@ export default function DriverInterface() {
                       );
                     })()}
 
+                    {!isCompleted && buildNavigationUrl(r) && (
+                      <HapticPressable
+                        haptic="press"
+                        style={styles.navBtn}
+                        onPress={() => Linking.openURL(buildNavigationUrl(r)!).catch(() => Alert.alert('Could not open Maps', 'Please install Google Maps and try again.'))}
+                        activeOpacity={0.9}
+                        accessibilityLabel="Navigate with all pickups in Google Maps"
+                      >
+                        <Text style={styles.editRideBtnText} numberOfLines={1}>🧭 Navigate (all pickups)</Text>
+                      </HapticPressable>
+                    )}
+
                     {/* Lifecycle controls */}
                     {isCompleted ? (
                       <View style={{
@@ -2722,6 +2735,7 @@ const styles = StyleSheet.create({
   cancelRideBtn: { width: 66, backgroundColor: '#FEF2F2', borderWidth: 1, borderColor: '#FECACA', borderRadius: 10, height: 40, alignItems: 'center', justifyContent: 'center' },
   cancelRideBtnText: { color: '#DC2626', fontSize: 12.5, fontWeight: '700' },
   editRideBtn: { width: 54, backgroundColor: colors.inputBackground, borderWidth: 1, borderColor: colors.cardBorder, borderRadius: 10, height: 40, alignItems: 'center', justifyContent: 'center' },
+  navBtn: { marginTop: 12, backgroundColor: colors.inputBackground, borderWidth: 1, borderColor: colors.cardBorder, borderRadius: 10, height: 40, alignItems: 'center', justifyContent: 'center' },
   editRideBtnText: { color: colors.text, fontSize: 12.5, fontWeight: '700' },
   editBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' },
   editSheet: { backgroundColor: colors.background, borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 20, maxHeight: '85%' },
