@@ -24,6 +24,7 @@ import { settleDueBookingsForRide } from '../lib/rideSettlement';
 import { notifyUser } from '../lib/notify';
 import { getUserEmail, buildRideOfferedEmail, sendEmail } from '../lib/email';
 import { round2 } from '../lib/money';
+import { perSeatFareCeiling, polylineKm } from '../lib/pricing';
 import { refundPaymentToSource } from '../lib/razorpay';
 import { reverseTransfer } from '../lib/route';
 import { isInServiceBounds, outOfAreaMessage } from '../lib/serviceArea';
@@ -637,6 +638,22 @@ export async function rideRoutes(fastify: FastifyInstance) {
     }
     if (Number(seats_total) <= 0 || Number(price_split) < 0) {
       return reply.code(400).send({ error: 'seats_total must be positive and price_split non-negative.' });
+    }
+
+    // Cost-sharing ceiling: above this a private car is operating as a taxi.
+    {
+      const km = Number(distance_km) > 0 ? Number(distance_km) : polylineKm(route_geojson?.coordinates);
+      if (km > 0) {
+        const vt = vehicle_type === 'BIKE' ? 'BIKE' : 'CAR';
+        const ceiling = perSeatFareCeiling(km, vt, Boolean(ac_available));
+        if (Number(price_split) > ceiling) {
+          return reply.code(400).send({
+            error: 'FARE_ABOVE_COST_SHARE',
+            max_price_split: ceiling,
+            message: `Carpool fares can only cover running costs. For this ${Math.round(km)} km trip the most you can ask per seat is ₹${ceiling}.`,
+          });
+        }
+      }
     }
 
     // Stop fares are checked against the full-journey fare here rather than

@@ -62,3 +62,26 @@ describe('fuelSavings', () => {
     expect(r.prevented_fuel_liters).toBe(0);
   });
 });
+
+import { perSeatFareCeiling, polylineKm, FARE_CEILING_FLOOR_INR } from '../pricing';
+
+describe('perSeatFareCeiling', () => {
+  it('caps a seat at half the running cost of the trip', () => {
+    // 100 km, AC car: 14/km -> 1400 total -> 700 per seat max
+    expect(perSeatFareCeiling(100, 'CAR', true)).toBe(700);
+  });
+  it('never drops below the floor for short hops', () => {
+    expect(perSeatFareCeiling(1, 'CAR', true)).toBe(FARE_CEILING_FLOOR_INR);
+  });
+});
+
+describe('polylineKm', () => {
+  it('measures a route roughly', () => {
+    const km = polylineKm([[77.2, 28.6], [77.3, 28.6], [77.4, 28.6]]);
+    expect(km).toBeGreaterThan(18);
+    expect(km).toBeLessThan(21);
+  });
+  it('handles junk', () => {
+    expect(polylineKm(null)).toBe(0);
+  });
+});

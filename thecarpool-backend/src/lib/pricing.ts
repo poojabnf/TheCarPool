@@ -100,3 +100,45 @@ function round2(n: number): number {
 function round1(n: number): number {
   return parseFloat((Number.isFinite(n) ? n : 0).toFixed(1));
 }
+
+/**
+ * Legal cost-sharing ceiling for one seat.
+ *
+ * Carpooling in a private (non-transport) vehicle is only lawful in India as
+ * cost recovery: the driver may recoup running costs, not profit. Anything
+ * above that is an unpermitted taxi. The ceiling is the full running cost of
+ * the journey split between the driver and ONE rider — even a single
+ * passenger may cover at most half the trip — plus a small floor so very
+ * short hops are not priced at a few rupees.
+ */
+export const FARE_CEILING_FLOOR_INR = 60;
+
+export function perSeatFareCeiling(
+  routeLengthKm: number,
+  vehicleType: 'CAR' | 'BIKE' = 'CAR',
+  acAvailable = true
+): number {
+  const { suggested_total_compensation } = suggestPricing(routeLengthKm, vehicleType, acAvailable, 1);
+  return Math.max(FARE_CEILING_FLOOR_INR, Math.ceil(suggested_total_compensation / 2));
+}
+
+/** Road-distance estimate (km) for a [lng, lat] polyline: great-circle × 1.3. */
+export function polylineKm(coords: unknown): number {
+  if (!Array.isArray(coords)) return 0;
+  const R = 6371;
+  const rad = (d: number) => (d * Math.PI) / 180;
+  let km = 0;
+  for (let i = 1; i < coords.length; i++) {
+    const a = coords[i - 1] as number[];
+    const b = coords[i] as number[];
+    if (!Array.isArray(a) || !Array.isArray(b)) continue;
+    const [lng1, lat1, lng2, lat2] = [a[0], a[1], b[0], b[1]].map(Number);
+    if (![lng1, lat1, lng2, lat2].every(Number.isFinite)) continue;
+    const dLat = rad(lat2 - lat1);
+    const dLng = rad(lng2 - lng1);
+    const h = Math.sin(dLat / 2) ** 2 + Math.cos(rad(lat1)) * Math.cos(rad(lat2)) * Math.sin(dLng / 2) ** 2;
+    km += 2 * R * Math.asin(Math.sqrt(h));
+  }
+  // A two-point route is a straight line; roads are rarely that direct.
+  return coords.length <= 2 ? km * 1.3 : km;
+}
